@@ -1,0 +1,455 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;700;800&display=swap"
+      rel="stylesheet"
+    />
+    <title><%= title %></title>
+    <link rel="stylesheet" href="/stylesheets/style.css" />
+  </head>
+  <body class="bg-slate-100 text-slate-900" style="font-family: 'Manrope', sans-serif">
+    <%- include('helpers/nav', { title: 'BhutanDevi Trade and Suppliers', q, activeCategory, hasSidebar: false, topNavCategories, searchSuggestions, basePath }) %>
+
+    <main class="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
+      <%
+        function toAnchor(value) {
+          return String(value || '')
+            .toLowerCase()
+            .replace(/[^a-z0-9]+/g, '-')
+            .replace(/^-+|-+$/g, '');
+        }
+
+        var orderedBoards = Array.isArray(categoryBoards) ? categoryBoards.filter(function(board) {
+          return board && board.name;
+        }) : [];
+      %>
+
+      <header class="flex flex-wrap items-center gap-3">
+        <div>
+          <h1 class="text-3xl font-extrabold tracking-tight text-slate-900">Admin Categories</h1>
+          <p class="mt-1 text-sm text-slate-600">Categories are inherited from sidebar. Showing 2 items each.</p>
+        </div>
+        <a
+          href="/"
+          class="ml-auto inline-flex items-center rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm font-semibold text-slate-700 hover:bg-slate-100"
+        >
+          View Store
+        </a>
+      </header>
+
+      <% if (statusMessage) { %>
+      <div class="mt-4 rounded-xl border border-emerald-300 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-700">
+        <%= statusMessage %>
+      </div>
+      <% } %>
+
+      <% if (errorMessage) { %>
+      <div class="mt-4 rounded-xl border border-red-300 bg-red-50 px-4 py-3 text-sm font-medium text-red-700">
+        <%= errorMessage %>
+      </div>
+      <% } %>
+
+      <section class="mt-6 rounded-2xl border border-slate-300 bg-slate-200/70 p-3">
+        <div class="overflow-x-auto">
+          <ul class="flex min-w-max items-center gap-2 pb-1">
+            <% orderedBoards.forEach(function(board) { %>
+            <li class="shrink-0">
+              <a
+                href="#category-<%= toAnchor(board.name) %>"
+                class="flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-3 py-2 transition hover:bg-slate-50"
+              >
+                <span class="inline-flex h-9 w-9 items-center justify-center rounded-full bg-slate-300 text-2xl font-semibold text-slate-700">
+                  <%= String(board.name || '?').charAt(0).toUpperCase() %>
+                </span>
+                <span class="text-lg font-semibold text-slate-800"><%= board.name %></span>
+                <span class="text-xl text-slate-500">&#9662;</span>
+              </a>
+            </li>
+            <% }) %>
+
+            <li class="shrink-0">
+              <a
+                href="#add-category-form"
+                class="inline-flex items-center rounded-xl border border-blue-300 bg-blue-50 px-4 py-2 text-sm font-semibold text-blue-700 hover:bg-blue-100"
+              >
+                + Add Category
+              </a>
+            </li>
+          </ul>
+        </div>
+      </section>
+
+      <% orderedBoards.forEach(function(board) { %>
+      <%
+        var boardItems = Array.isArray(board.items) ? board.items : [];
+        var visibleItems = boardItems.slice(0, 2);
+      %>
+      <section
+        id="category-<%= toAnchor(board.name) %>"
+        class="mt-6 rounded-xl border border-slate-300 bg-white shadow-sm"
+      >
+        <div class="flex flex-wrap items-center gap-2 border-b border-slate-300 px-4 py-3">
+          <h2 class="text-xl font-bold text-slate-900"><%= board.name %></h2>
+          <div class="ml-auto flex items-center gap-2">
+            <button
+              type="button"
+              data-delete-category-trigger="<%= toAnchor(board.name) %>"
+              data-category-name="<%= board.name %>"
+              class="inline-flex items-center rounded-md border border-red-300 bg-red-50 px-3 py-1.5 text-xs font-semibold text-red-700 hover:bg-red-100"
+            >
+              Delete Category
+            </button>
+            <span class="rounded-full border border-slate-300 bg-slate-50 px-2.5 py-1 text-xs font-semibold text-slate-600">
+              Showing <%= visibleItems.length %> of <%= boardItems.length %>
+            </span>
+          </div>
+        </div>
+        <form action="/admin/categories/delete" method="post" class="hidden" data-delete-category-form="<%= toAnchor(board.name) %>">
+          <input type="hidden" name="categoryName" value="<%= board.name %>" />
+        </form>
+
+        <div class="overflow-x-auto">
+          <table class="w-full min-w-[58rem] table-fixed border-collapse">
+            <tbody>
+              <tr>
+                <% if (visibleItems.length) { %>
+                <% visibleItems.forEach(function(item) { %>
+                <td class="w-72 align-top border-r border-slate-300 p-0">
+                  <div class="h-full" data-admin-card="<%= item.id %>">
+                    <div class="flex items-center justify-between border-b border-slate-300 px-3 py-2">
+                      <h3 class="text-lg font-bold text-slate-900"><%= item.name %></h3>
+                      <div class="flex items-center gap-1">
+                        <button
+                          type="button"
+                          title="Edit item"
+                          data-edit-toggle="<%= item.id %>"
+                          class="inline-flex h-8 w-8 items-center justify-center rounded-md border border-blue-300 bg-blue-50 text-blue-700 hover:bg-blue-100"
+                        >
+                          &#9998;
+                        </button>
+                        <button
+                          type="button"
+                          title="Delete item"
+                          data-delete-trigger="<%= item.id %>"
+                          data-product-name="<%= item.name %>"
+                          class="inline-flex h-8 w-8 items-center justify-center rounded-md border border-red-300 bg-red-50 text-red-700 hover:bg-red-100"
+                        >
+                          &#128465;
+                        </button>
+                      </div>
+                    </div>
+
+                    <div class="space-y-2 border-b border-slate-300 px-3 py-3" data-view-panel="<%= item.id %>">
+                      <div class="text-sm text-slate-800"><span class="font-semibold">Title:</span> <%= item.name %></div>
+                      <div class="text-sm text-slate-800"><span class="font-semibold">Description:</span> <%= item.spec %></div>
+                      <div class="text-sm text-slate-800"><span class="font-semibold">MRP:</span> <%= item.price %></div>
+                      <div class="font-mono text-xs text-slate-500">ID: <%= item.id %></div>
+                      <div>
+                        <p class="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-600">Image</p>
+                        <img
+                          src="<%= item.image || '/images/productParts/no-image.webp' %>"
+                          alt="<%= item.name %>"
+                          onerror="this.onerror=null;this.src='/images/productParts/no-image.webp';"
+                          class="h-20 w-full rounded-md border border-slate-200 bg-slate-50 object-cover"
+                          loading="lazy"
+                        />
+                      </div>
+                    </div>
+
+                    <form
+                      action="/admin/products/edit"
+                      method="post"
+                      enctype="multipart/form-data"
+                      class="hidden space-y-2 px-3 py-3"
+                      data-edit-form="<%= item.id %>"
+                    >
+                      <input type="hidden" name="productId" value="<%= item.id %>" />
+                      <input type="hidden" name="currentImagePath" value="<%= item.image || '' %>" />
+                      <label class="block text-xs font-semibold uppercase tracking-wide text-slate-600">Category</label>
+                      <input
+                        type="text"
+                        name="productCategory"
+                        value="<%= item.type || board.name %>"
+                        required
+                        class="w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm text-slate-800 focus:outline-none"
+                      />
+                      <label class="block text-xs font-semibold uppercase tracking-wide text-slate-600">Title</label>
+                      <input
+                        type="text"
+                        name="productName"
+                        value="<%= item.name %>"
+                        required
+                        class="w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm text-slate-800 focus:outline-none"
+                      />
+                      <label class="block text-xs font-semibold uppercase tracking-wide text-slate-600">Description</label>
+                      <input
+                        type="text"
+                        name="productSpec"
+                        value="<%= item.spec %>"
+                        class="w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm text-slate-800 focus:outline-none"
+                      />
+                      <label class="block text-xs font-semibold uppercase tracking-wide text-slate-600">MRP</label>
+                      <input
+                        type="text"
+                        name="productPrice"
+                        value="<%= item.price %>"
+                        required
+                        class="w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm text-slate-800 focus:outline-none"
+                      />
+                      <label class="block text-xs font-semibold uppercase tracking-wide text-slate-600">Choose Image File (optional)</label>
+                      <div class="flex items-center gap-2">
+                        <input
+                          type="file"
+                          name="productImageFile"
+                          accept="image/*"
+                          class="w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm text-slate-800 file:mr-3 file:rounded file:border-0 file:bg-slate-200 file:px-2 file:py-1 file:text-xs file:font-semibold file:text-slate-700"
+                        />
+                        <button
+                          type="submit"
+                          class="inline-flex shrink-0 items-center rounded-md border border-blue-300 bg-blue-50 px-3 py-1.5 text-xs font-semibold text-blue-700 hover:bg-blue-100"
+                        >
+                          Save All
+                        </button>
+                        <button
+                          type="button"
+                          data-edit-cancel="<%= item.id %>"
+                          class="inline-flex shrink-0 items-center rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-100"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </form>
+
+                    <form action="/admin/products/delete" method="post" class="hidden" data-delete-form="<%= item.id %>">
+                      <input type="hidden" name="productId" value="<%= item.id %>" />
+                    </form>
+                  </div>
+                </td>
+                <% }) %>
+                <% } else { %>
+                <td class="w-72 align-top border-r border-slate-300 p-0">
+                  <div class="px-3 py-6 text-sm font-medium text-slate-500">No items yet. Add 2 items for this category.</div>
+                </td>
+                <% } %>
+
+                <td class="w-72 align-top p-0">
+                  <form action="/admin/products" method="post" enctype="multipart/form-data" class="h-full border-l border-slate-300">
+                    <input type="hidden" name="productCategory" value="<%= board.name %>" />
+                    <div class="border-b border-slate-300 px-3 py-2 text-lg font-bold text-blue-700">+ Add</div>
+                    <div class="space-y-2 px-3 py-3">
+                      <input
+                        type="text"
+                        name="productName"
+                        required
+                        placeholder="Title"
+                        class="w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm text-slate-800 focus:outline-none"
+                      />
+                      <input
+                        type="text"
+                        name="productSpec"
+                        placeholder="Description"
+                        class="w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm text-slate-800 focus:outline-none"
+                      />
+                      <input
+                        type="text"
+                        name="productPrice"
+                        required
+                        placeholder="MRP (e.g. NPR 1,500)"
+                        class="w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm text-slate-800 focus:outline-none"
+                      />
+                      <input
+                        type="file"
+                        name="productImageFile"
+                        accept="image/*"
+                        required
+                        class="w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm text-slate-800 file:mr-3 file:rounded file:border-0 file:bg-slate-200 file:px-2 file:py-1 file:text-xs file:font-semibold file:text-slate-700"
+                      />
+                      <button
+                        type="submit"
+                        class="inline-flex items-center rounded-md bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-700"
+                      >
+                        Add Item
+                      </button>
+                    </div>
+                  </form>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+      <% }) %>
+
+      <section id="add-category-form" class="mt-8 rounded-xl border border-slate-300 bg-white p-4">
+        <h2 class="text-sm font-bold uppercase tracking-wide text-slate-700">Add New Category (Future)</h2>
+        <form action="/admin/categories" method="post" class="mt-3 grid gap-2 md:grid-cols-[2fr_3fr_auto]">
+          <input
+            type="text"
+            name="categoryName"
+            required
+            placeholder="Category name (e.g. Brake Shoe)"
+            class="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 focus:outline-none"
+          />
+          <input
+            type="text"
+            name="categoryDescription"
+            placeholder="Description (optional)"
+            class="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 focus:outline-none"
+          />
+          <button
+            type="submit"
+            class="inline-flex items-center justify-center rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700"
+          >
+            Add Category
+          </button>
+        </form>
+      </section>
+    </main>
+
+    <div id="delete-alert" class="fixed inset-0 z-50 hidden items-center justify-center bg-slate-900/50 p-4">
+      <div class="w-full max-w-md rounded-xl border border-slate-300 bg-white p-5 shadow-xl">
+        <h3 class="text-lg font-bold text-slate-900" id="delete-alert-title">Delete</h3>
+        <p class="mt-2 text-sm text-slate-700" id="delete-alert-message">Are you sure you want to delete this product?</p>
+        <div class="mt-4 flex items-center justify-end gap-2">
+          <button
+            type="button"
+            id="delete-alert-cancel"
+            class="inline-flex items-center rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            id="delete-alert-confirm"
+            class="inline-flex items-center rounded-md border border-red-600 bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700"
+          >
+            Delete
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      (function () {
+        var deleteAlert = document.getElementById('delete-alert');
+        var deleteAlertTitle = document.getElementById('delete-alert-title');
+        var deleteAlertMessage = document.getElementById('delete-alert-message');
+        var deleteAlertCancel = document.getElementById('delete-alert-cancel');
+        var deleteAlertConfirm = document.getElementById('delete-alert-confirm');
+        var pendingDeleteForm = null;
+
+        function getCardElements(cardId) {
+          return {
+            form: document.querySelector('[data-edit-form="' + cardId + '"]'),
+            view: document.querySelector('[data-view-panel="' + cardId + '"]'),
+          };
+        }
+
+        function toggleEdit(cardId, isEditMode) {
+          var card = getCardElements(cardId);
+          if (!card.form || !card.view) {
+            return;
+          }
+
+          if (isEditMode) {
+            card.view.classList.add('hidden');
+            card.form.classList.remove('hidden');
+            var firstInput = card.form.querySelector('input[type="text"]');
+            if (firstInput) {
+              firstInput.focus();
+              firstInput.select();
+            }
+            return;
+          }
+
+          card.form.classList.add('hidden');
+          card.view.classList.remove('hidden');
+        }
+
+        function showDeleteAlert(form, title, message) {
+          pendingDeleteForm = form;
+          deleteAlertTitle.textContent = title || 'Delete';
+          deleteAlertMessage.textContent = message || 'Are you sure? This action cannot be undone.';
+          deleteAlert.classList.remove('hidden');
+          deleteAlert.classList.add('flex');
+        }
+
+        function hideDeleteAlert() {
+          pendingDeleteForm = null;
+          deleteAlert.classList.add('hidden');
+          deleteAlert.classList.remove('flex');
+        }
+
+        document.querySelectorAll('[data-edit-toggle]').forEach(function (button) {
+          button.addEventListener('click', function () {
+            toggleEdit(button.getAttribute('data-edit-toggle'), true);
+          });
+        });
+
+        document.querySelectorAll('[data-edit-cancel]').forEach(function (button) {
+          button.addEventListener('click', function () {
+            toggleEdit(button.getAttribute('data-edit-cancel'), false);
+          });
+        });
+
+        document.querySelectorAll('[data-delete-trigger]').forEach(function (button) {
+          button.addEventListener('click', function () {
+            var cardId = button.getAttribute('data-delete-trigger');
+            var form = document.querySelector('[data-delete-form="' + cardId + '"]');
+            if (!form) {
+              return;
+            }
+
+            showDeleteAlert(
+              form,
+              'Delete Product',
+              'Delete "' + (button.getAttribute('data-product-name') || 'this product') + '"? This action cannot be undone.'
+            );
+          });
+        });
+
+        document.querySelectorAll('[data-delete-category-trigger]').forEach(function (button) {
+          button.addEventListener('click', function () {
+            var categoryKey = button.getAttribute('data-delete-category-trigger');
+            var categoryName = button.getAttribute('data-category-name') || 'this category';
+            var form = document.querySelector('[data-delete-category-form="' + categoryKey + '"]');
+            if (!form) {
+              return;
+            }
+
+            showDeleteAlert(
+              form,
+              'Delete Category',
+              'Delete category "' + categoryName + '" and all products inside it? This action cannot be undone.'
+            );
+          });
+        });
+
+        deleteAlertCancel.addEventListener('click', hideDeleteAlert);
+
+        deleteAlertConfirm.addEventListener('click', function () {
+          if (pendingDeleteForm) {
+            pendingDeleteForm.submit();
+          }
+        });
+
+        deleteAlert.addEventListener('click', function (event) {
+          if (event.target === deleteAlert) {
+            hideDeleteAlert();
+          }
+        });
+
+        document.addEventListener('keydown', function (event) {
+          if (event.key === 'Escape') {
+            hideDeleteAlert();
+          }
+        });
+      })();
+    </script>
+  </body>
+</html>

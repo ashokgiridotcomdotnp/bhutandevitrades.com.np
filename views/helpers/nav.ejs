@@ -1,0 +1,96 @@
+<%
+  var currentBasePath = basePath === '/home' ? '/home' : '/';
+
+  function buildCategoryHref(categoryName) {
+    var params = [];
+    if (categoryName) {
+      params.push('category=' + encodeURIComponent(categoryName));
+    }
+    return currentBasePath + (params.length ? '?' + params.join('&') : '');
+  }
+
+  var navCategories = Array.isArray(topNavCategories)
+    ? topNavCategories
+        .map(function (group) {
+          return group && group.name ? String(group.name) : '';
+        })
+        .filter(Boolean)
+    : ['Helmet', 'Engine Oil', 'Tyres', 'Grease', 'Chain Sprocket', 'Shock'];
+
+  var normalizedActiveCategory = (activeCategory || '').toLowerCase();
+  var sidebarEnabled = typeof hasSidebar !== 'undefined' ? hasSidebar : false;
+%>
+<nav class="sticky top-0 z-50 border-b border-slate-200 bg-white">
+  <div class="w-full px-4 sm:px-6 lg:px-8">
+    <div class="grid h-16 items-center gap-4 lg:grid-cols-[minmax(0,26rem)_minmax(0,1fr)]">
+      <div class="flex min-w-0 items-center gap-3">
+        <a href="<%= currentBasePath %>" class="inline-flex items-center justify-center rounded-full bg-blue-600 p-2 text-white">
+          <img src="/icons/logo.svg" alt="BhutanDevi logo" class="h-7 w-7 rounded-full bg-white p-1" />
+        </a>
+
+        <form action="<%= currentBasePath %>" method="get" class="min-w-0 flex-1">
+          <label for="search-input" class="sr-only">Search products</label>
+          <div class="flex items-center rounded-full bg-slate-100 px-3">
+            <span class="text-slate-500" aria-hidden="true">&#128269;</span>
+            <input
+              id="search-input"
+              type="search"
+              name="q"
+              value="<%= q || '' %>"
+              placeholder="Search products"
+              class="w-full border-0 bg-transparent px-2 py-2.5 text-sm text-slate-700 placeholder:text-slate-500 focus:outline-none"
+            />
+            <button
+              type="submit"
+              class="ml-1 inline-flex h-7 items-center rounded-full bg-slate-200 px-2 text-xs font-semibold text-slate-700 hover:bg-slate-300"
+            >
+              Go
+            </button>
+          </div>
+        </form>
+
+        <a
+          href="/admin"
+          class="inline-flex h-9 shrink-0 items-center rounded-full border border-slate-300 bg-white px-3 text-xs font-semibold text-slate-700 hover:bg-slate-100"
+        >
+          Admin
+        </a>
+
+        <% if (sidebarEnabled) { %>
+        <button
+          id="mobile-sidebar-open"
+          type="button"
+          aria-label="Open categories"
+          aria-controls="mobile-category-sidebar"
+          aria-expanded="false"
+          class="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-slate-200 text-slate-700 hover:bg-slate-300 lg:hidden"
+        >
+          <span aria-hidden="true">&#9776;</span>
+        </button>
+        <% } %>
+      </div>
+
+      <div class="hidden h-full items-end justify-center lg:flex">
+        <div class="flex h-full w-full max-w-5xl items-end justify-start gap-1.5 overflow-x-auto pb-0.5">
+          <% navCategories.forEach(function (categoryName) { %>
+          <% var normalizedNavCategory = String(categoryName || '').toLowerCase(); %>
+          <a
+            href="<%= buildCategoryHref(categoryName) %>"
+            title="<%= categoryName %>"
+            class="group relative inline-flex h-full min-w-[120px] shrink-0 items-center justify-center border-b-4 px-3 transition <%= normalizedActiveCategory === normalizedNavCategory ? 'border-blue-600 text-blue-600' : 'border-transparent text-slate-600 hover:rounded-t-lg hover:bg-slate-100' %>"
+          >
+            <span class="sr-only"><%= categoryName %></span>
+            <span class="pointer-events-none absolute top-1 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-md bg-slate-900 px-2 py-0.5 text-xs font-semibold text-white opacity-0 shadow-sm transition group-hover:opacity-100">
+              <%= categoryName %>
+            </span>
+            <span class="inline-flex h-7 w-7 items-center justify-center rounded-full bg-slate-200 text-xs font-bold <%= normalizedActiveCategory === normalizedNavCategory ? 'text-blue-700' : 'text-slate-600' %>">
+              <%= String(categoryName).charAt(0).toUpperCase() %>
+            </span>
+            <span class="ml-2 max-w-[9rem] truncate text-xs font-semibold"><%= categoryName %></span>
+          </a>
+          <% }) %>
+        </div>
+      </div>
+    </div>
+  </div>
+</nav>

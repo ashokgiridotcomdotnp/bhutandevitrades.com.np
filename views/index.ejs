@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;700;800&display=swap"
+      rel="stylesheet"
+    />
+    <title><%= title %></title>
+    <link rel="stylesheet" href="/stylesheets/style.css" />
+  </head>
+  <body class="bg-slate-100 text-slate-900" style="font-family: 'Manrope', sans-serif">
+    <%- include('helpers/nav', { title, q, activeCategory, hasSidebar: true, topNavCategories: categoryGroups, searchSuggestions, basePath }) %>
+
+    <main class="px-3 py-4 sm:px-4 lg:px-6">
+      <div class="mx-auto grid max-w-[1800px] gap-4 lg:grid-cols-[18rem_minmax(0,1fr)]">
+        <%- include('helpers/sidebar', { categoryGroups, hasQuery, q, activeCategory, openCategoryName, basePath }) %>
+
+        <section class="min-w-0 space-y-4">
+          <%- include('singleProduct', { q, activeCategory, productSections, showCarousel, carouselImages }) %>
+        </section>
+      </div>
+    </main>
+
+    <% if (showCarousel && Array.isArray(carouselImages) && carouselImages.length > 1) { %>
+    <script>
+      (function() {
+        var root = document.querySelector('[data-home-carousel]');
+        if (!root) {
+          return;
+        }
+
+        var track = root.querySelector('[data-carousel-track]');
+        var dots = root.querySelectorAll('[data-carousel-dot]');
+        var prevBtn = root.querySelector('[data-carousel-prev]');
+        var nextBtn = root.querySelector('[data-carousel-next]');
+        var totalSlides = dots.length;
+        var activeIndex = 0;
+        var autoTimer;
+
+        if (!track || totalSlides <= 1) {
+          return;
+        }
+
+        function update() {
+          track.style.transform = 'translateX(-' + (activeIndex * 100) + '%)';
+          dots.forEach(function(dot, idx) {
+            dot.style.backgroundColor = idx === activeIndex ? 'rgb(37 99 235)' : 'rgba(255, 255, 255, 0.7)';
+          });
+        }
+
+        function goNext() {
+          activeIndex = (activeIndex + 1) % totalSlides;
+          update();
+        }
+
+        function goPrev() {
+          activeIndex = (activeIndex - 1 + totalSlides) % totalSlides;
+          update();
+        }
+
+        function restartAuto() {
+          if (autoTimer) {
+            clearInterval(autoTimer);
+          }
+          autoTimer = setInterval(goNext, 4500);
+        }
+
+        if (nextBtn) {
+          nextBtn.addEventListener('click', function() {
+            goNext();
+            restartAuto();
+          });
+        }
+
+        if (prevBtn) {
+          prevBtn.addEventListener('click', function() {
+            goPrev();
+            restartAuto();
+          });
+        }
+
+        dots.forEach(function(dot) {
+          dot.addEventListener('click', function() {
+            var index = Number(dot.getAttribute('data-carousel-index'));
+            if (Number.isNaN(index)) {
+              return;
+            }
+            activeIndex = index;
+            update();
+            restartAuto();
+          });
+        });
+
+        update();
+        restartAuto();
+      })();
+    </script>
+    <% } %>
+  </body>
+</html>

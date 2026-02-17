@@ -1,0 +1,223 @@
+<%
+  var currentBasePath = basePath === '/home' ? '/home' : '/';
+
+  function buildCategoryHref(categoryName) {
+    var params = [];
+    if (categoryName) {
+      params.push('category=' + encodeURIComponent(categoryName));
+    }
+    return currentBasePath + (params.length ? '?' + params.join('&') : '');
+  }
+
+  function buildSubcategoryHref(categoryName, subCategoryName) {
+    var params = [];
+    if (categoryName) {
+      params.push('category=' + encodeURIComponent(categoryName));
+    }
+    if (subCategoryName) {
+      params.push('q=' + encodeURIComponent(subCategoryName));
+    }
+    return currentBasePath + (params.length ? '?' + params.join('&') : '');
+  }
+%>
+<aside
+  id="mobile-category-sidebar"
+  class="fixed inset-y-0 left-0 z-[60] w-80 max-w-[88vw] -translate-x-full overflow-y-auto border-r border-slate-200 bg-slate-100 pb-6 pt-3 shadow-xl transition-transform duration-300 lg:sticky lg:top-20 lg:z-auto lg:h-[calc(100vh-5.5rem)] lg:w-auto lg:max-w-none lg:translate-x-0 lg:border-r-0 lg:bg-transparent lg:pb-0 lg:pt-0 lg:shadow-none lg:pr-2"
+>
+  <div class="mb-2 flex items-center justify-between px-3 lg:hidden">
+    <span class="text-sm font-bold text-slate-800">Categories</span>
+    <button
+      id="mobile-sidebar-close"
+      type="button"
+      aria-label="Close categories"
+      class="inline-flex h-9 w-9 items-center justify-center rounded-full bg-slate-200 text-slate-700 hover:bg-slate-300"
+    >
+      <span aria-hidden="true">&#10005;</span>
+    </button>
+  </div>
+
+  <a href="<%= currentBasePath %>" class="flex items-center gap-3 rounded-xl px-3 py-2 transition hover:bg-slate-200">
+    <img src="/icons/logo.svg" alt="BhutanDevi avatar" class="h-10 w-10 rounded-full border border-slate-300 bg-white p-1" />
+    <span class="truncate text-sm font-semibold text-slate-900">BhutanDevi Trade</span>
+  </a>
+
+  <% categoryGroups.forEach(function(group) { %>
+  <details
+    data-category-accordion-item
+    data-category-name="<%= group.name %>"
+    data-category-href="<%= buildCategoryHref(group.name) %>"
+    class="group mt-1"
+    <%= openCategoryName === group.name || group.isActive ? 'open' : '' %>
+  >
+    <summary
+      class="flex cursor-pointer list-none items-center gap-3 rounded-xl px-3 py-2 transition <%= group.isActive ? 'bg-blue-100 text-blue-700' : 'text-slate-800 hover:bg-slate-200' %>"
+    >
+      <span class="inline-flex h-10 w-10 items-center justify-center rounded-full <%= group.isActive ? 'bg-blue-600 text-white' : 'bg-slate-200 text-slate-700' %>">
+        <%= group.name.charAt(0).toUpperCase() %>
+      </span>
+      <span class="truncate text-sm font-medium"><%= group.name %></span>
+      <span class="ml-auto text-xs text-slate-500 transition group-open:rotate-180" aria-hidden="true">▼</span>
+    </summary>
+
+    <% if (Array.isArray(group.items) && group.items.length > 0) { %>
+    <div class="mt-1 flex flex-wrap gap-1.5 pl-14 pr-2">
+      <a
+        href="<%= buildCategoryHref(group.name) %>"
+        class="inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-semibold transition <%= group.isActive ? 'border-blue-400 bg-blue-100 text-blue-700' : 'border-slate-300 bg-white text-slate-600 hover:bg-slate-100' %>"
+      >
+        All <%= group.name %>
+      </a>
+      <% group.items.forEach(function(item) { %>
+      <a
+        href="<%= buildSubcategoryHref(group.name, item.label) %>"
+        class="inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-medium transition <%= item.isMatch ? 'border-blue-400 bg-blue-100 text-blue-700' : 'border-slate-300 bg-white text-slate-600 hover:bg-slate-100' %>"
+      >
+        <%= item.label %>
+      </a>
+      <% }) %>
+    </div>
+    <% } %>
+  </details>
+  <% }) %>
+
+  <% if (activeCategory) { %>
+  <a
+    href="<%= buildCategoryHref('') %>"
+    class="mt-3 inline-flex rounded-lg border border-blue-300 bg-blue-50 px-3 py-1.5 text-xs font-semibold text-blue-700 hover:bg-blue-100"
+  >
+    Clear category: <%= activeCategory %>
+  </a>
+  <% } %>
+
+  <div class="mt-5 border-t border-slate-300 pt-4">
+    <h3 class="px-3 text-sm font-semibold text-slate-600">Shortcuts</h3>
+    <ul class="mt-2 space-y-1 px-1">
+      <li class="rounded-xl px-2 py-2 text-sm text-slate-700 hover:bg-slate-200">Latest Helmet Designs</li>
+      <li class="rounded-xl px-2 py-2 text-sm text-slate-700 hover:bg-slate-200">Engine Oil Brands</li>
+      <li class="rounded-xl px-2 py-2 text-sm text-slate-700 hover:bg-slate-200">Tyre Size Collection</li>
+    </ul>
+  </div>
+</aside>
+<button
+  id="mobile-sidebar-backdrop"
+  type="button"
+  aria-label="Close categories panel"
+  class="fixed inset-0 z-50 hidden bg-slate-900/40 lg:hidden"
+></button>
+<script>
+  (function() {
+    var sidebar = document.getElementById('mobile-category-sidebar');
+    var openBtn = document.getElementById('mobile-sidebar-open');
+    var closeBtn = document.getElementById('mobile-sidebar-close');
+    var backdrop = document.getElementById('mobile-sidebar-backdrop');
+
+    function isDesktop() {
+      return window.matchMedia('(min-width: 1024px)').matches;
+    }
+
+    function openSidebar() {
+      if (!sidebar || isDesktop()) {
+        return;
+      }
+
+      sidebar.classList.remove('-translate-x-full');
+      if (backdrop) {
+        backdrop.classList.remove('hidden');
+      }
+      document.body.classList.add('overflow-hidden');
+      if (openBtn) {
+        openBtn.setAttribute('aria-expanded', 'true');
+      }
+    }
+
+    function closeSidebar() {
+      if (!sidebar || isDesktop()) {
+        return;
+      }
+
+      sidebar.classList.add('-translate-x-full');
+      if (backdrop) {
+        backdrop.classList.add('hidden');
+      }
+      document.body.classList.remove('overflow-hidden');
+      if (openBtn) {
+        openBtn.setAttribute('aria-expanded', 'false');
+      }
+    }
+
+    if (openBtn) {
+      openBtn.addEventListener('click', openSidebar);
+    }
+
+    if (closeBtn) {
+      closeBtn.addEventListener('click', closeSidebar);
+    }
+
+    if (backdrop) {
+      backdrop.addEventListener('click', closeSidebar);
+    }
+
+    if (sidebar) {
+      sidebar.querySelectorAll('a').forEach(function(link) {
+        link.addEventListener('click', closeSidebar);
+      });
+    }
+
+    document.addEventListener('keydown', function(event) {
+      if (event.key === 'Escape') {
+        closeSidebar();
+      }
+    });
+
+    window.addEventListener('resize', function() {
+      if (isDesktop()) {
+        if (backdrop) {
+          backdrop.classList.add('hidden');
+        }
+        document.body.classList.remove('overflow-hidden');
+        if (openBtn) {
+          openBtn.setAttribute('aria-expanded', 'false');
+        }
+      }
+    });
+
+    if (!sidebar) {
+      return;
+    }
+
+    var items = sidebar.querySelectorAll('[data-category-accordion-item]');
+    items.forEach(function(item) {
+      var summary = item.querySelector('summary');
+      if (summary) {
+        summary.addEventListener('click', function() {
+          item.setAttribute('data-user-clicked', '1');
+        });
+      }
+
+      item.addEventListener('toggle', function() {
+        if (!item.open) {
+          return;
+        }
+
+        items.forEach(function(other) {
+          if (other !== item) {
+            other.open = false;
+          }
+        });
+
+        var href = item.getAttribute('data-category-href');
+        var targetCategory = (item.getAttribute('data-category-name') || '').toLowerCase();
+        var params = new URLSearchParams(window.location.search);
+        var currentCategory = (params.get('category') || '').toLowerCase();
+        var currentQuery = (params.get('q') || '').trim();
+
+        var wasUserClicked = item.getAttribute('data-user-clicked') === '1';
+        item.setAttribute('data-user-clicked', '0');
+
+        if (wasUserClicked && href && (currentCategory !== targetCategory || currentQuery)) {
+          window.location.assign(href);
+        }
+      });
+    });
+  })();
+</script>
