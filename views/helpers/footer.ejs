@@ -1,0 +1,158 @@
+<%
+  var currentBasePath = basePath === '/home' ? '/home' : '/';
+  var authenticatedUser = currentUser && currentUser.email ? currentUser : null;
+  var categoryNames = [];
+  var seenCategoryNames = {};
+  var rawStoreWhatsappNumber = typeof storeWhatsappNumber === 'string' ? storeWhatsappNumber : '';
+  var normalizedStoreWhatsappNumber = rawStoreWhatsappNumber.replace(/[^0-9]/g, '');
+  var socialFacebookHref = '#';
+  var socialWhatsappHref = normalizedStoreWhatsappNumber ? ('https://wa.me/' + normalizedStoreWhatsappNumber) : 'https://wa.me/';
+  var socialTiktokHref = '#';
+
+  function buildCategoryHref(categoryName) {
+    var params = [];
+    if (categoryName) {
+      params.push('category=' + encodeURIComponent(categoryName));
+    }
+    return currentBasePath + (params.length ? '?' + params.join('&') : '');
+  }
+
+  function buildSearchHref(searchValue) {
+    var params = [];
+    if (searchValue) {
+      params.push('q=' + encodeURIComponent(searchValue));
+    }
+    return currentBasePath + (params.length ? '?' + params.join('&') : '');
+  }
+
+  if (Array.isArray(categoryGroups)) {
+    categoryGroups.forEach(function (group) {
+      var rawName = group && group.name ? String(group.name).trim() : '';
+      var normalizedName = rawName.toLowerCase();
+
+      if (!rawName || seenCategoryNames[normalizedName]) {
+        return;
+      }
+
+      seenCategoryNames[normalizedName] = true;
+      categoryNames.push(rawName);
+    });
+  }
+
+  if (!categoryNames.length) {
+    categoryNames = ['Helmet', 'Engine Oil', 'Tyres', 'Grease', 'Chain Sprocket', 'Shock'];
+  }
+%>
+
+<footer class="bd-footer">
+  <div class="app-shell bd-footer-wrap">
+    <div class="bd-footer-grid">
+      <section>
+        <h2 class="bd-footer-title">BhutanDevi Trade</h2>
+        <span class="bd-footer-line" aria-hidden="true"></span>
+        <ul class="bd-footer-list">
+          <li><a href="<%= currentBasePath %>">Home</a></li>
+          <li><a href="<%= currentBasePath %>">Browse Products</a></li>
+          <li><a href="/profile">Profile Settings</a></li>
+          <li><a href="/my-orders">My Orders</a></li>
+          <% if (authenticatedUser) { %>
+          <li><span>Logged in as <%= authenticatedUser.name || authenticatedUser.email %></span></li>
+          <% } else { %>
+          <li><a href="/login">Login</a></li>
+          <li><a href="/signup">Create Account</a></li>
+          <% } %>
+        </ul>
+      </section>
+
+      <section>
+        <h2 class="bd-footer-title">Product Categories</h2>
+        <span class="bd-footer-line" aria-hidden="true"></span>
+        <ul class="bd-footer-list">
+          <% categoryNames.slice(0, 10).forEach(function (categoryName) { %>
+          <li><a href="<%= buildCategoryHref(categoryName) %>"><%= categoryName %></a></li>
+          <% }) %>
+        </ul>
+      </section>
+
+      <section>
+        <h2 class="bd-footer-title">Rider Essentials</h2>
+        <span class="bd-footer-line" aria-hidden="true"></span>
+        <ul class="bd-footer-list">
+          <li><a href="<%= buildCategoryHref('Helmet') %>">Helmet Collection</a></li>
+          <li><a href="<%= buildCategoryHref('Tyres') %>">Tyres and Tubes</a></li>
+          <li><a href="<%= buildCategoryHref('Shock') %>">Shock Absorbers</a></li>
+          <li><a href="<%= buildCategoryHref('Chain Sprocket') %>">Chain Sprocket</a></li>
+          <li><a href="<%= buildCategoryHref('Grease') %>">Grease and Lubricants</a></li>
+        </ul>
+      </section>
+
+      <section>
+        <h2 class="bd-footer-title">Service & Account</h2>
+        <span class="bd-footer-line" aria-hidden="true"></span>
+        <ul class="bd-footer-list">
+          <li><a href="/profile">Update Profile</a></li>
+          <li><a href="/forgot-password">Forgot Password</a></li>
+          <li><a href="/login?error=login-required">Login to Order</a></li>
+          <li><span>Email and WhatsApp order support</span></li>
+        </ul>
+      </section>
+
+      <section>
+        <h2 class="bd-footer-title">Quick Search</h2>
+        <span class="bd-footer-line" aria-hidden="true"></span>
+        <ul class="bd-footer-list">
+          <li><a href="<%= buildSearchHref('vega') %>">Search Vega</a></li>
+          <li><a href="<%= buildSearchHref('engine oil') %>">Search Engine Oil</a></li>
+          <li><a href="<%= buildSearchHref('tyre') %>">Search Tyre Size</a></li>
+          <li><a href="<%= buildSearchHref('shock') %>">Search Shock</a></li>
+          <li><a href="<%= buildSearchHref('chain sprocket') %>">Search Chain Sprocket</a></li>
+        </ul>
+      </section>
+
+      <section>
+        <h2 class="bd-footer-title">Customer Help</h2>
+        <span class="bd-footer-line" aria-hidden="true"></span>
+        <ul class="bd-footer-list">
+          <li><span>Genuine motorcycle parts</span></li>
+          <li><span>Fast response on order requests</span></li>
+          <li><span>Price and stock confirmation before dispatch</span></li>
+          <li><span>Support for spare parts selection</span></li>
+          <li><span>Serving riders across Nepal</span></li>
+        </ul>
+      </section>
+
+      <section>
+        <h2 class="bd-footer-title">Social Media</h2>
+        <span class="bd-footer-line" aria-hidden="true"></span>
+        <ul class="bd-footer-list">
+          <li>
+            <a href="<%= socialFacebookHref %>" target="_blank" rel="noopener noreferrer" class="bd-footer-social-link">
+              <img src="/icons/facebook.svg" alt="" aria-hidden="true" class="bd-footer-social-icon" />
+              <span>Facebook</span>
+            </a>
+          </li>
+          <li>
+            <a href="<%= socialWhatsappHref %>" target="_blank" rel="noopener noreferrer" class="bd-footer-social-link">
+              <img src="/icons/whatsapp.svg" alt="" aria-hidden="true" class="bd-footer-social-icon" />
+              <span>WhatsApp</span>
+            </a>
+          </li>
+          <li>
+            <a href="<%= socialTiktokHref %>" target="_blank" rel="noopener noreferrer" class="bd-footer-social-link">
+              <img src="/icons/tiktok.svg" alt="" aria-hidden="true" class="bd-footer-social-icon" />
+              <span>TikTok</span>
+            </a>
+          </li>
+        </ul>
+      </section>
+    </div>
+
+    <div class="bd-footer-bottom">
+      <span class="bd-footer-brand">
+        <img src="/icons/logo.svg" alt="" aria-hidden="true" />
+        <span>BhutanDevi Trade and Suppliers</span>
+      </span>
+      <p class="bd-footer-copy">Built for daily riders, garages, and workshops. Copyright © <%= new Date().getFullYear() %> BhutanDevi Trade.</p>
+    </div>
+  </div>
+</footer>

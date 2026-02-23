@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;700;800&display=swap" rel="stylesheet" />
+    <title><%= title %></title>
+    <link rel="stylesheet" href="/stylesheets/style.css" />
+  </head>
+  <body class="text-slate-900">
+    <%- include('helpers/nav', { title: 'BhutanDevi Trade and Suppliers', q, activeCategory, hasSidebar: true, topNavCategories, searchSuggestions, basePath, currentPath, currentUser, showUserAuthActions }) %>
+
+    <main class="app-shell py-6">
+      <%
+        var ordersList = Array.isArray(orders) ? orders : [];
+
+        function formatOrderDate(value) {
+          var parsedDate = value ? new Date(value) : null;
+
+          if (!parsedDate || Number.isNaN(parsedDate.getTime())) {
+            return '-';
+          }
+
+          return parsedDate.toLocaleString('en-NP', {
+            year: 'numeric',
+            month: 'short',
+            day: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit'
+          });
+        }
+
+        function getStatusLabel(statusValue) {
+          var status = String(statusValue || '').toLowerCase();
+
+          if (status === 'submitted') {
+            return 'Submitted';
+          }
+
+          if (status === 'email-failed') {
+            return 'Saved (Email Failed)';
+          }
+
+          return 'Pending';
+        }
+
+        function getStatusClass(statusValue) {
+          var status = String(statusValue || '').toLowerCase();
+
+          if (status === 'submitted') {
+            return 'border-emerald-200 bg-emerald-50 text-emerald-700';
+          }
+
+          if (status === 'email-failed') {
+            return 'border-amber-200 bg-amber-50 text-amber-700';
+          }
+
+          return 'border-slate-200 bg-slate-100 text-slate-600';
+        }
+
+        function getAdminStatusLabel(adminStatusValue) {
+          var status = String(adminStatusValue || '').toLowerCase();
+
+          if (status === 'accepted') {
+            return 'Accepted';
+          }
+
+          return 'Pending Review';
+        }
+
+        function getAdminStatusClass(adminStatusValue) {
+          var status = String(adminStatusValue || '').toLowerCase();
+
+          if (status === 'accepted') {
+            return 'border-emerald-200 bg-emerald-50 text-emerald-700';
+          }
+
+          return 'border-amber-200 bg-amber-50 text-amber-700';
+        }
+      %>
+      <div id="home-layout-grid" class="grid gap-5 lg:grid-cols-[20rem_minmax(0,1fr)]">
+        <%- include('helpers/sidebar', { categoryGroups, hasQuery, q, activeCategory, openCategoryName, basePath, currentUser, showUserAuthActions, currentPath }) %>
+
+        <section class="min-w-0 pro-page-enter">
+          <section class="mx-auto w-full max-w-6xl pro-panel p-5 sm:p-6 pro-stagger">
+            <div class="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h1 class="text-3xl font-extrabold tracking-tight text-slate-900">My Orders</h1>
+                <p class="mt-1 text-sm text-slate-600">Latest orders appear first.</p>
+              </div>
+              <div class="flex items-center gap-2">
+                <span class="inline-flex items-center rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-semibold text-slate-700">
+                  Total: <%= ordersList.length %>
+                </span>
+                <a href="/home" class="pro-btn-secondary">Browse Products</a>
+              </div>
+            </div>
+
+            <% if (ordersLoadError) { %>
+            <div class="mt-5 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700">
+              <%= ordersLoadError %>
+            </div>
+            <% } %>
+
+            <% if (!ordersLoadError && !ordersList.length) { %>
+            <div class="mt-5 rounded-xl border border-slate-200 bg-slate-50 p-5 text-sm font-medium text-slate-700">
+              You have not placed any orders yet.
+            </div>
+            <% } %>
+
+            <% if (ordersList.length) { %>
+            <div class="mt-5 grid gap-3 xl:grid-cols-2">
+              <% ordersList.forEach(function (orderItem) { %>
+              <%
+                var productName = orderItem && orderItem.productName ? String(orderItem.productName) : 'Product';
+                var productType = orderItem && orderItem.productType ? String(orderItem.productType) : 'Category';
+                var quantity = orderItem && orderItem.quantity ? Number(orderItem.quantity) : 1;
+                var unitPriceLabel = orderItem && orderItem.unitPriceLabel ? String(orderItem.unitPriceLabel) : 'Contact for price';
+                var totalLabel = orderItem && orderItem.totalLabel ? String(orderItem.totalLabel) : 'Contact for price';
+                var phoneNumber = orderItem && orderItem.phoneNumber ? String(orderItem.phoneNumber) : '-';
+                var note = orderItem && orderItem.note ? String(orderItem.note) : '-';
+                var customerName = orderItem && orderItem.customerName ? String(orderItem.customerName) : '-';
+                var createdAtLabel = formatOrderDate(orderItem ? orderItem.createdAt : '');
+                var statusLabel = getStatusLabel(orderItem ? orderItem.status : '');
+                var statusClass = getStatusClass(orderItem ? orderItem.status : '');
+                var adminStatusLabel = getAdminStatusLabel(orderItem ? orderItem.adminStatus : '');
+                var adminStatusClass = getAdminStatusClass(orderItem ? orderItem.adminStatus : '');
+                var adminMessage = orderItem && orderItem.adminMessage ? String(orderItem.adminMessage) : '';
+                var adminAcceptedAtLabel = formatOrderDate(orderItem ? orderItem.adminAcceptedAt : '');
+                var productId = orderItem && orderItem.productId ? String(orderItem.productId) : '';
+              %>
+              <article class="flex h-full flex-col rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+                <div class="flex flex-wrap items-start justify-between gap-2">
+                  <div>
+                    <h2 class="text-lg font-extrabold tracking-tight text-slate-900"><%= productName %></h2>
+                    <p class="text-xs font-semibold uppercase tracking-wide text-slate-500"><%= productType %></p>
+                  </div>
+                  <span class="inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-bold <%= adminStatusClass %>"><%= adminStatusLabel %></span>
+                </div>
+
+                <div class="mt-3 grid gap-2 text-sm text-slate-700 sm:grid-cols-2">
+                  <p><span class="font-semibold text-slate-900">Quantity:</span> <%= quantity %></p>
+                  <p><span class="font-semibold text-slate-900">Unit Price:</span> <%= unitPriceLabel %></p>
+                  <p><span class="font-semibold text-slate-900">Total:</span> <%= totalLabel %></p>
+                  <p><span class="font-semibold text-slate-900">Ordered At:</span> <%= createdAtLabel %></p>
+                  <p><span class="font-semibold text-slate-900">Name:</span> <%= customerName %></p>
+                  <p><span class="font-semibold text-slate-900">Phone:</span> <%= phoneNumber %></p>
+                  <p><span class="font-semibold text-slate-900">Request Status:</span> <span class="inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-semibold <%= statusClass %>"><%= statusLabel %></span></p>
+                  <p><span class="font-semibold text-slate-900">Accepted At:</span> <%= adminAcceptedAtLabel %></p>
+                </div>
+
+                <p class="mt-2 text-sm text-slate-700"><span class="font-semibold text-slate-900">Note:</span> <%= note %></p>
+
+                <% if (adminMessage) { %>
+                <div class="mt-3 rounded-lg border border-cyan-200 bg-cyan-50 px-3 py-2">
+                  <p class="text-xs font-semibold uppercase tracking-wide text-cyan-800">Admin Message</p>
+                  <p class="mt-1 text-sm font-medium text-cyan-900"><%= adminMessage %></p>
+                </div>
+                <% } %>
+
+                <% if (productId) { %>
+                <div class="mt-auto pt-3">
+                  <a href="/order/<%= encodeURIComponent(productId) %>" class="pro-btn-secondary px-3 py-1.5 text-xs">Order Again</a>
+                </div>
+                <% } %>
+              </article>
+              <% }) %>
+            </div>
+            <% } %>
+          </section>
+        </section>
+      </div>
+    </main>
+    <%- include('helpers/footer', { basePath, currentPath, categoryGroups, currentUser }) %>
+  </body>
+</html>

@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;700;800&display=swap" rel="stylesheet" />
+    <title><%= title %></title>
+    <link rel="stylesheet" href="/stylesheets/style.css" />
+  </head>
+  <body class="text-slate-900">
+    <main class="app-shell flex min-h-screen items-center justify-center py-8 pro-page-enter">
+      <section class="pro-panel w-full max-w-md p-6 sm:p-7 pro-stagger">
+        <div>
+          <p class="text-xs font-semibold uppercase tracking-[0.18em] text-cyan-700">Secure Access</p>
+          <h1 class="mt-1 text-2xl font-extrabold tracking-tight text-slate-900 sm:text-3xl">Admin Login</h1>
+          <p class="mt-1 text-sm text-slate-500">Sign in to manage products, categories, and pricing.</p>
+        </div>
+
+        <% if (!hasAuthEnabled) { %>
+        <div class="mt-4 rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-800">
+          Admin authentication is currently disabled in environment settings.
+        </div>
+        <% } %>
+
+        <% if (statusMessage) { %>
+        <div class="mt-4 flex items-start justify-between gap-3 rounded-xl border border-emerald-300 bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-700" data-success-alert>
+          <span><%= statusMessage %></span>
+          <button
+            type="button"
+            class="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-emerald-300 bg-white/80 text-emerald-700 hover:bg-white"
+            data-dismiss-alert
+            aria-label="Dismiss success message"
+          >
+            &times;
+          </button>
+        </div>
+        <% } %>
+
+        <% if (errorMessage) { %>
+        <div class="mt-4 rounded-xl border border-red-300 bg-red-50 px-3 py-2 text-sm font-medium text-red-700" data-error-alert>
+          <%= errorMessage %>
+        </div>
+        <% } %>
+
+        <form action="/admin/login" method="post" class="mt-4 space-y-3">
+          <input type="hidden" name="next" value="<%= nextPath %>" />
+          <div>
+            <label for="admin-username" class="mb-1.5 block text-sm font-semibold text-slate-800">Username</label>
+            <input id="admin-username" type="text" name="username" autocomplete="username" required class="pro-input" />
+          </div>
+          <div>
+            <label for="admin-password" class="mb-1.5 block text-sm font-semibold text-slate-800">Password</label>
+            <input id="admin-password" type="password" name="password" autocomplete="current-password" required class="pro-input" />
+          </div>
+          <button type="submit" class="pro-btn-primary w-full">Sign In</button>
+        </form>
+      </section>
+    </main>
+    <script src="/javascripts/flash-alert.js"></script>
+  </body>
+</html>

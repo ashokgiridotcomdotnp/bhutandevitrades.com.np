@@ -5,17 +5,12 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link
-      href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;700;800&display=swap"
-      rel="stylesheet"
-    />
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;700;800&display=swap" rel="stylesheet" />
     <title><%= title %></title>
     <link rel="stylesheet" href="/stylesheets/style.css" />
   </head>
-  <body class="bg-slate-100 text-slate-900" style="font-family: 'Manrope', sans-serif">
-    <%- include('helpers/nav', { title: 'BhutanDevi Trade and Suppliers', q, activeCategory, hasSidebar: false, topNavCategories, searchSuggestions, basePath }) %>
-
-    <main class="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
+  <body class="text-slate-900">
+    <main class="app-shell py-6 pro-page-enter">
       <%
         function toAnchor(value) {
           return String(value || '')
@@ -24,309 +19,567 @@
             .replace(/^-+|-+$/g, '');
         }
 
-        var orderedBoards = Array.isArray(categoryBoards) ? categoryBoards.filter(function(board) {
-          return board && board.name;
-        }) : [];
+        function toCount(value) {
+          var parsed = Number(value);
+          return Number.isFinite(parsed) ? parsed : 0;
+        }
+
+        var orderedBoards = Array.isArray(categoryBoards)
+          ? categoryBoards.filter(function (board) {
+              return board && board.name;
+            })
+          : [];
+        var stats = dashboardStats && typeof dashboardStats === 'object' ? dashboardStats : {};
+        var defaultCategoryName = orderedBoards.length ? orderedBoards[0].name : '';
+        var dashboardImageInputId = 'dashboard-product-image-file';
+        var subcategoryOptionsByCategory = {};
+        var productRows = [];
+        var productOrderById = adminProductOrderById && typeof adminProductOrderById === 'object' ? adminProductOrderById : {};
+
+        function addSubcategoryOption(categoryName, value) {
+          var cleanedCategoryName = String(categoryName || '').trim();
+          var cleanedValue = String(value || '').trim();
+          var categoryKey = toAnchor(cleanedCategoryName);
+          var optionKey = toAnchor(cleanedValue);
+
+          if (!categoryKey || !cleanedValue || !optionKey) {
+            return;
+          }
+
+          if (!Array.isArray(subcategoryOptionsByCategory[categoryKey])) {
+            subcategoryOptionsByCategory[categoryKey] = [];
+            subcategoryOptionsByCategory[categoryKey + ':seen'] = {};
+          }
+
+          if (subcategoryOptionsByCategory[categoryKey + ':seen'][optionKey]) {
+            return;
+          }
+
+          subcategoryOptionsByCategory[categoryKey + ':seen'][optionKey] = true;
+          subcategoryOptionsByCategory[categoryKey].push(cleanedValue);
+        }
+
+        orderedBoards.forEach(function (board) {
+          (board.items || []).forEach(function (item) {
+            addSubcategoryOption(board && board.name, item && item.name);
+          });
+        });
+
+        if (Array.isArray(topNavCategories)) {
+          topNavCategories.forEach(function (group) {
+            (group.items || []).forEach(function (itemName) {
+              addSubcategoryOption(group && group.name, itemName);
+            });
+          });
+        }
+
+        if (!Array.isArray(subcategoryOptionsByCategory.helmet) || !subcategoryOptionsByCategory.helmet.length) {
+          subcategoryOptionsByCategory.helmet = ['Vega'];
+        }
+
+        Object.keys(subcategoryOptionsByCategory).forEach(function (key) {
+          if (key.indexOf(':seen') !== -1) {
+            delete subcategoryOptionsByCategory[key];
+            return;
+          }
+
+          subcategoryOptionsByCategory[key].sort(function (left, right) {
+            return left.localeCompare(right);
+          });
+        });
+
+        orderedBoards.forEach(function (board) {
+          var boardItems = Array.isArray(board.items) ? board.items : [];
+
+          boardItems.forEach(function (item) {
+            if (!item || !item.id) {
+              return;
+            }
+
+            productRows.push({
+              id: item.id,
+              categoryName: board.name,
+              name: item.name,
+              spec: item.spec,
+              price: item.price,
+              image: item.image,
+              addedOrder: Number(productOrderById[item.id]) || 0,
+            });
+          });
+        });
+
+        productRows.sort(function (a, b) {
+          return (
+            (Number(b.addedOrder) - Number(a.addedOrder)) ||
+            String(a.categoryName || '').localeCompare(String(b.categoryName || '')) ||
+            String(a.name || '').localeCompare(String(b.name || ''))
+          );
+        });
+
+        var parsedOverviewPageSize = Number(productOverviewPageSize);
+        var resolvedOverviewPageSize = Number.isFinite(parsedOverviewPageSize) && parsedOverviewPageSize > 0
+          ? Math.floor(parsedOverviewPageSize)
+          : 20;
+        var overviewTotalPages = Math.max(1, Math.ceil(productRows.length / resolvedOverviewPageSize));
+        var parsedOverviewCurrentPage = Number(productOverviewPage);
+        var overviewCurrentPage = Number.isFinite(parsedOverviewCurrentPage) && parsedOverviewCurrentPage > 0
+          ? Math.floor(parsedOverviewCurrentPage)
+          : 1;
+
+        if (overviewCurrentPage > overviewTotalPages) {
+          overviewCurrentPage = overviewTotalPages;
+        }
+
+        var overviewStartIndex = (overviewCurrentPage - 1) * resolvedOverviewPageSize;
+        var overviewRows = productRows.slice(overviewStartIndex, overviewStartIndex + resolvedOverviewPageSize);
+
+        function buildAdminProductsPageHref(targetPage) {
+          var safeTargetPage = Number(targetPage);
+
+          if (!Number.isFinite(safeTargetPage) || safeTargetPage < 1) {
+            safeTargetPage = 1;
+          }
+
+          safeTargetPage = Math.floor(safeTargetPage);
+
+          if (safeTargetPage <= 1) {
+            return '/admin';
+          }
+
+          return '/admin?productsPage=' + safeTargetPage;
+        }
+
+        var adminProductsRedirectPath = buildAdminProductsPageHref(overviewCurrentPage);
       %>
 
-      <header class="flex flex-wrap items-center gap-3">
-        <div>
-          <h1 class="text-3xl font-extrabold tracking-tight text-slate-900">Admin Categories</h1>
-          <p class="mt-1 text-sm text-slate-600">Categories are inherited from sidebar. Showing 2 items each.</p>
+      <header class="mb-5 pro-panel px-6 py-5 pro-stagger">
+        <div class="flex flex-wrap items-center gap-3">
+          <div>
+            <h1 class="text-2xl font-extrabold tracking-tight text-slate-900">Admin Dashboard</h1>
+            <p class="mt-0.5 text-sm text-slate-600">Manage categories and products from one place.</p>
+          </div>
+
+          <div class="ml-auto flex flex-wrap items-center gap-2">
+            <a
+              href="/"
+              class="pro-btn-secondary"
+            >
+              View Storefront
+            </a>
+            <a
+              href="/admin/orders"
+              class="pro-btn-secondary"
+            >
+              Order Requests
+            </a>
+            <form action="/admin/logout" method="post">
+              <button type="submit" class="pro-btn-secondary gap-1.5">
+                <img src="/icons/logout.svg" alt="" aria-hidden="true" class="shrink-0" style="width: 14px; height: 14px;" />
+                <span>Logout</span>
+              </button>
+            </form>
+            <% if (defaultCategoryName) { %>
+            <a
+              href="/admin/categories/<%= toAnchor(defaultCategoryName) %>"
+              class="pro-btn-primary"
+            >
+              Open Category Workspace
+            </a>
+            <% } %>
+          </div>
         </div>
-        <a
-          href="/"
-          class="ml-auto inline-flex items-center rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm font-semibold text-slate-700 hover:bg-slate-100"
-        >
-          View Store
-        </a>
       </header>
 
       <% if (statusMessage) { %>
-      <div class="mt-4 rounded-xl border border-emerald-300 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-700">
+      <div
+        data-success-alert
+        role="status"
+        class="rounded-xl border border-emerald-300 bg-emerald-50/95 px-4 py-2.5 text-sm font-semibold text-emerald-700 shadow-lg backdrop-blur"
+      >
         <%= statusMessage %>
       </div>
       <% } %>
 
       <% if (errorMessage) { %>
-      <div class="mt-4 rounded-xl border border-red-300 bg-red-50 px-4 py-3 text-sm font-medium text-red-700">
+      <div class="mb-4 rounded-xl border border-red-300 bg-red-50 px-4 py-3 text-sm font-medium text-red-700" data-error-alert>
         <%= errorMessage %>
       </div>
       <% } %>
 
-      <section class="mt-6 rounded-2xl border border-slate-300 bg-slate-200/70 p-3">
-        <div class="overflow-x-auto">
-          <ul class="flex min-w-max items-center gap-2 pb-1">
-            <% orderedBoards.forEach(function(board) { %>
-            <li class="shrink-0">
-              <a
-                href="#category-<%= toAnchor(board.name) %>"
-                class="flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-3 py-2 transition hover:bg-slate-50"
-              >
-                <span class="inline-flex h-9 w-9 items-center justify-center rounded-full bg-slate-300 text-2xl font-semibold text-slate-700">
-                  <%= String(board.name || '?').charAt(0).toUpperCase() %>
-                </span>
-                <span class="text-lg font-semibold text-slate-800"><%= board.name %></span>
-                <span class="text-xl text-slate-500">&#9662;</span>
-              </a>
-            </li>
-            <% }) %>
-
-            <li class="shrink-0">
-              <a
-                href="#add-category-form"
-                class="inline-flex items-center rounded-xl border border-blue-300 bg-blue-50 px-4 py-2 text-sm font-semibold text-blue-700 hover:bg-blue-100"
-              >
-                + Add Category
-              </a>
-            </li>
-          </ul>
-        </div>
+      <section class="mb-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4 pro-stagger">
+        <article class="pro-panel h-full p-4">
+          <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Categories</p>
+          <p class="mt-2 text-3xl font-extrabold text-slate-900"><%= toCount(stats.totalCategories) %></p>
+          <p class="mt-1 text-xs text-slate-500"><%= toCount(stats.emptyCategories) %> empty categories</p>
+        </article>
+        <article class="pro-panel h-full p-4">
+          <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Products</p>
+          <p class="mt-2 text-3xl font-extrabold text-slate-900"><%= toCount(stats.totalProducts) %></p>
+          <p class="mt-1 text-xs text-slate-500"><%= toCount(stats.adminOnlyProducts) %> admin-added</p>
+        </article>
+        <article class="pro-panel h-full p-4">
+          <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Overrides</p>
+          <p class="mt-2 text-3xl font-extrabold text-slate-900"><%= toCount(stats.productOverrides) %></p>
+          <p class="mt-1 text-xs text-slate-500"><%= toCount(stats.priceOverrides) %> price, <%= toCount(stats.imageOverrides) %> image</p>
+        </article>
+        <article class="pro-panel p-4">
+          <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Deleted</p>
+          <p class="mt-2 text-3xl font-extrabold text-slate-900"><%= toCount(stats.deletedProductIds) %></p>
+          <p class="mt-1 text-xs text-slate-500"><%= toCount(stats.deletedCategoryNames) %> categories deleted</p>
+        </article>
       </section>
 
-      <% orderedBoards.forEach(function(board) { %>
-      <%
-        var boardItems = Array.isArray(board.items) ? board.items : [];
-        var visibleItems = boardItems.slice(0, 2);
-      %>
-      <section
-        id="category-<%= toAnchor(board.name) %>"
-        class="mt-6 rounded-xl border border-slate-300 bg-white shadow-sm"
-      >
-        <div class="flex flex-wrap items-center gap-2 border-b border-slate-300 px-4 py-3">
-          <h2 class="text-xl font-bold text-slate-900"><%= board.name %></h2>
-          <div class="ml-auto flex items-center gap-2">
+      <section class="mb-4 grid gap-4 xl:grid-cols-[minmax(0,0.75fr)_minmax(0,1.25fr)] pro-stagger">
+        <article class="pro-panel h-full p-4">
+          <h2 class="text-xl font-extrabold tracking-tight text-slate-900">Create Category</h2>
+          <form action="/admin/categories" method="post" class="mt-3 grid gap-2 md:grid-cols-2">
+            <input type="hidden" name="redirectTo" value="<%= adminProductsRedirectPath %>" />
+            <input
+              type="text"
+              name="categoryName"
+              required
+              placeholder="Category name"
+              class="pro-input"
+            />
+            <input
+              type="text"
+              name="categoryDescription"
+              placeholder="Description (optional)"
+              class="pro-input"
+            />
+            <textarea
+              name="categoryItems"
+              rows="2"
+              placeholder="Optional items, comma separated"
+              class="md:col-span-2 pro-input"
+            ></textarea>
             <button
-              type="button"
-              data-delete-category-trigger="<%= toAnchor(board.name) %>"
-              data-category-name="<%= board.name %>"
-              class="inline-flex items-center rounded-md border border-red-300 bg-red-50 px-3 py-1.5 text-xs font-semibold text-red-700 hover:bg-red-100"
+              type="submit"
+              class="pro-btn-primary"
             >
-              Delete Category
+              Save Category
             </button>
-            <span class="rounded-full border border-slate-300 bg-slate-50 px-2.5 py-1 text-xs font-semibold text-slate-600">
-              Showing <%= visibleItems.length %> of <%= boardItems.length %>
-            </span>
-          </div>
+          </form>
+        </article>
+
+        <article class="pro-panel h-full p-4">
+          <h3 class="text-xl font-extrabold tracking-tight text-slate-900">Quick Add Product</h3>
+          <form action="/admin/products" method="post" enctype="multipart/form-data" class="mt-3 grid items-start gap-3 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_20rem]">
+            <input type="hidden" name="redirectTo" value="<%= adminProductsRedirectPath %>" />
+
+            <div class="grid content-start gap-2 md:grid-cols-2 xl:col-span-2">
+              <select
+                id="quick-add-category-input"
+                data-product-category-input
+                name="productCategory"
+                required
+                class="pro-input"
+              >
+                <option value="" selected>Select category</option>
+                <% orderedBoards.forEach(function (board) { %>
+                <option value="<%= board.name %>"><%= board.name %></option>
+                <% }) %>
+              </select>
+
+              <select
+                id="quick-add-subcategory-input"
+                data-product-subcategory-picker
+                name="productName"
+                required
+                class="pro-input"
+              >
+                <option value="">Select subcategory</option>
+              </select>
+              <input
+                type="text"
+                id="quick-add-subcategory-custom-input"
+                data-product-subcategory-custom-input
+                name="productName"
+                disabled
+                placeholder="Enter subcategory title (e.g. Vega)"
+                class="pro-input hidden md:col-span-2"
+              />
+
+              <div class="hidden md:col-span-2" data-helmet-coverage-container>
+                <select
+                  id="quick-add-helmet-coverage"
+                  name="productHelmetCoverage"
+                  data-helmet-coverage-picker
+                  class="w-full pro-input"
+                >
+                  <option value="">Helmet type (Half / Full)</option>
+                  <option value="Half">Half</option>
+                  <option value="Full">Full</option>
+                </select>
+              </div>
+              <input
+                type="number"
+                name="productPrice"
+                data-product-mrp-input
+                min="0"
+                step="0.01"
+                required
+                placeholder="MRP (e.g. 1500)"
+                class="pro-input"
+              />
+              <input
+                type="number"
+                name="productDiscountPercent"
+                data-product-discount-input
+                min="0"
+                max="100"
+                step="0.01"
+                value="0"
+                placeholder="Discount % (optional)"
+                class="pro-input"
+              />
+              <div class="hidden md:col-span-2 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2" data-product-price-preview>
+                <p class="text-xs font-semibold uppercase tracking-wide text-emerald-700">Price Preview</p>
+                <div class="mt-1 flex items-end gap-2">
+                  <span class="hidden text-sm font-semibold text-red-600 line-through" data-product-price-original></span>
+                  <span class="text-lg font-extrabold text-emerald-700" data-product-price-final></span>
+                </div>
+              </div>
+            </div>
+
+            <div class="space-y-2 xl:row-span-2">
+              <div class="pro-file-zone flex flex-wrap items-center gap-2">
+                <input
+                  id="<%= dashboardImageInputId %>"
+                  type="file"
+                  name="productImageFile"
+                  accept="image/*"
+                  required
+                  data-file-input
+                  class="sr-only"
+                />
+                <label
+                  for="<%= dashboardImageInputId %>"
+                  class="pro-btn-secondary px-3 py-1.5 text-xs"
+                >
+                  Choose Product Photo
+                </label>
+                <span data-file-name-for="<%= dashboardImageInputId %>" data-file-default-text="No photo chosen" class="text-sm text-slate-600">
+                  No photo chosen
+                </span>
+              </div>
+
+              <button
+                type="submit"
+                class="pro-btn-primary w-full"
+              >
+                Add Product
+              </button>
+            </div>
+
+            <div class="grid gap-2 md:grid-cols-2 xl:col-span-2">
+              <input
+                type="number"
+                name="productQuantity"
+                min="0"
+                step="1"
+                required
+                placeholder="Quantity"
+                class="pro-input"
+              />
+              <input
+                type="text"
+                name="productSpec"
+                placeholder="Description"
+                class="pro-input"
+              />
+            </div>
+          </form>
+        </article>
+      </section>
+
+      <section class="mb-4 pro-panel p-4 pro-stagger">
+        <div class="flex flex-wrap items-center gap-2">
+          <h2 class="text-xl font-extrabold tracking-tight text-slate-900">Categories</h2>
+          <span class="ml-auto rounded-full border border-slate-300 bg-slate-50 px-2.5 py-1 text-xs font-semibold text-slate-600"><%= orderedBoards.length %> categories</span>
         </div>
-        <form action="/admin/categories/delete" method="post" class="hidden" data-delete-category-form="<%= toAnchor(board.name) %>">
-          <input type="hidden" name="categoryName" value="<%= board.name %>" />
-        </form>
 
-        <div class="overflow-x-auto">
-          <table class="w-full min-w-[58rem] table-fixed border-collapse">
-            <tbody>
-              <tr>
-                <% if (visibleItems.length) { %>
-                <% visibleItems.forEach(function(item) { %>
-                <td class="w-72 align-top border-r border-slate-300 p-0">
-                  <div class="h-full" data-admin-card="<%= item.id %>">
-                    <div class="flex items-center justify-between border-b border-slate-300 px-3 py-2">
-                      <h3 class="text-lg font-bold text-slate-900"><%= item.name %></h3>
-                      <div class="flex items-center gap-1">
-                        <button
-                          type="button"
-                          title="Edit item"
-                          data-edit-toggle="<%= item.id %>"
-                          class="inline-flex h-8 w-8 items-center justify-center rounded-md border border-blue-300 bg-blue-50 text-blue-700 hover:bg-blue-100"
-                        >
-                          &#9998;
-                        </button>
-                        <button
-                          type="button"
-                          title="Delete item"
-                          data-delete-trigger="<%= item.id %>"
-                          data-product-name="<%= item.name %>"
-                          class="inline-flex h-8 w-8 items-center justify-center rounded-md border border-red-300 bg-red-50 text-red-700 hover:bg-red-100"
-                        >
-                          &#128465;
-                        </button>
-                      </div>
-                    </div>
+        <% if (!orderedBoards.length) { %>
+        <div class="mt-3 rounded-lg border border-slate-300 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+          No categories available yet. Create your first category above.
+        </div>
+        <% } else { %>
+        <div class="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3 pro-stagger">
+          <% orderedBoards.forEach(function (board) { %>
+          <%
+            var boardItems = Array.isArray(board.items) ? board.items : [];
+            var boardKey = toAnchor(board.name);
+            var previewItems = boardItems.slice(0, 3);
+          %>
+          <article class="rounded-xl border border-slate-200 bg-slate-50/80 p-3 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-sm">
+            <div class="flex items-start gap-2">
+              <div class="min-w-0 flex-1">
+                <h3 class="truncate text-lg font-bold text-slate-900"><%= board.name %></h3>
+                <p class="text-xs text-slate-500"><%= boardItems.length %> products</p>
+              </div>
+              <span class="rounded-full bg-blue-100 px-2 py-0.5 text-xs font-bold text-blue-700"><%= boardItems.length %></span>
+            </div>
 
-                    <div class="space-y-2 border-b border-slate-300 px-3 py-3" data-view-panel="<%= item.id %>">
-                      <div class="text-sm text-slate-800"><span class="font-semibold">Title:</span> <%= item.name %></div>
-                      <div class="text-sm text-slate-800"><span class="font-semibold">Description:</span> <%= item.spec %></div>
-                      <div class="text-sm text-slate-800"><span class="font-semibold">MRP:</span> <%= item.price %></div>
-                      <div class="font-mono text-xs text-slate-500">ID: <%= item.id %></div>
-                      <div>
-                        <p class="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-600">Image</p>
-                        <img
-                          src="<%= item.image || '/images/productParts/no-image.webp' %>"
-                          alt="<%= item.name %>"
-                          onerror="this.onerror=null;this.src='/images/productParts/no-image.webp';"
-                          class="h-20 w-full rounded-md border border-slate-200 bg-slate-50 object-cover"
-                          loading="lazy"
-                        />
-                      </div>
-                    </div>
+            <% if (previewItems.length) { %>
+            <ul class="mt-3 space-y-1.5">
+              <% previewItems.forEach(function (item) { %>
+              <li class="flex items-center justify-between gap-2 border-t border-slate-200 pt-1.5">
+                <span class="truncate text-sm font-medium text-slate-800"><%= item.name || 'Untitled Product' %></span>
+                <span class="shrink-0 text-sm font-semibold text-slate-700"><%= item.price || '-' %></span>
+              </li>
+              <% }) %>
+            </ul>
+            <% } else { %>
+            <p class="mt-3 text-xs text-slate-500">No products in this category yet.</p>
+            <% } %>
 
-                    <form
-                      action="/admin/products/edit"
-                      method="post"
-                      enctype="multipart/form-data"
-                      class="hidden space-y-2 px-3 py-3"
-                      data-edit-form="<%= item.id %>"
-                    >
-                      <input type="hidden" name="productId" value="<%= item.id %>" />
-                      <input type="hidden" name="currentImagePath" value="<%= item.image || '' %>" />
-                      <label class="block text-xs font-semibold uppercase tracking-wide text-slate-600">Category</label>
-                      <input
-                        type="text"
-                        name="productCategory"
-                        value="<%= item.type || board.name %>"
-                        required
-                        class="w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm text-slate-800 focus:outline-none"
-                      />
-                      <label class="block text-xs font-semibold uppercase tracking-wide text-slate-600">Title</label>
-                      <input
-                        type="text"
-                        name="productName"
-                        value="<%= item.name %>"
-                        required
-                        class="w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm text-slate-800 focus:outline-none"
-                      />
-                      <label class="block text-xs font-semibold uppercase tracking-wide text-slate-600">Description</label>
-                      <input
-                        type="text"
-                        name="productSpec"
-                        value="<%= item.spec %>"
-                        class="w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm text-slate-800 focus:outline-none"
-                      />
-                      <label class="block text-xs font-semibold uppercase tracking-wide text-slate-600">MRP</label>
-                      <input
-                        type="text"
-                        name="productPrice"
-                        value="<%= item.price %>"
-                        required
-                        class="w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm text-slate-800 focus:outline-none"
-                      />
-                      <label class="block text-xs font-semibold uppercase tracking-wide text-slate-600">Choose Image File (optional)</label>
-                      <div class="flex items-center gap-2">
-                        <input
-                          type="file"
-                          name="productImageFile"
-                          accept="image/*"
-                          class="w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm text-slate-800 file:mr-3 file:rounded file:border-0 file:bg-slate-200 file:px-2 file:py-1 file:text-xs file:font-semibold file:text-slate-700"
-                        />
-                        <button
-                          type="submit"
-                          class="inline-flex shrink-0 items-center rounded-md border border-blue-300 bg-blue-50 px-3 py-1.5 text-xs font-semibold text-blue-700 hover:bg-blue-100"
-                        >
-                          Save All
-                        </button>
-                        <button
-                          type="button"
-                          data-edit-cancel="<%= item.id %>"
-                          class="inline-flex shrink-0 items-center rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-100"
-                        >
-                          Cancel
-                        </button>
-                      </div>
-                    </form>
+            <div class="mt-3 flex items-center gap-2">
+              <a
+                href="/admin/categories/<%= boardKey %>"
+                class="pro-btn-secondary flex-1 px-3 py-1.5 text-xs"
+              >
+                Manage
+              </a>
+              <button
+                type="button"
+                data-delete-category-trigger="<%= boardKey %>"
+                data-category-name="<%= board.name %>"
+                class="pro-btn-danger-muted flex-1 px-3 py-1.5 text-xs"
+              >
+                Delete
+              </button>
+            </div>
 
-                    <form action="/admin/products/delete" method="post" class="hidden" data-delete-form="<%= item.id %>">
-                      <input type="hidden" name="productId" value="<%= item.id %>" />
-                    </form>
+            <form action="/admin/categories/delete" method="post" class="hidden" data-delete-category-form="<%= boardKey %>">
+              <input type="hidden" name="categoryName" value="<%= board.name %>" />
+              <input type="hidden" name="redirectTo" value="<%= adminProductsRedirectPath %>" />
+            </form>
+          </article>
+          <% }) %>
+        </div>
+        <% } %>
+      </section>
+
+      <section class="pro-panel p-4 pro-stagger">
+        <div class="flex flex-wrap items-center gap-2">
+          <h2 class="text-xl font-extrabold tracking-tight text-slate-900">Product Overview</h2>
+          <span class="ml-auto rounded-full border border-slate-300 bg-slate-50 px-2.5 py-1 text-xs font-semibold text-slate-600"><%= productRows.length %> products</span>
+        </div>
+
+        <% if (!productRows.length) { %>
+        <div class="mt-4 text-sm text-slate-500">No products found in current category boards.</div>
+        <% } else { %>
+        <div class="mt-3 overflow-x-auto">
+          <table class="w-full min-w-[64rem] border-collapse">
+            <thead>
+              <tr class="bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-600">
+                <th class="rounded-l-md border border-slate-200 px-3 py-2">Product</th>
+                <th class="border border-slate-200 px-3 py-2">Category</th>
+                <th class="border border-slate-200 px-3 py-2">Price</th>
+                <th class="border border-slate-200 px-3 py-2">Spec</th>
+                <th class="rounded-r-md border border-slate-200 px-3 py-2">Actions</th>
+              </tr>
+            </thead>
+            <tbody class="text-sm text-slate-700">
+              <% overviewRows.forEach(function (row) { %>
+              <tr class="transition-colors hover:bg-slate-50">
+                <td class="border border-slate-200 px-3 py-2">
+                  <div class="flex items-center gap-2">
+                    <img
+                      src="<%= row.image || '/images/productParts/no-image.webp' %>"
+                      alt="<%= row.name %>"
+                      onerror="this.onerror=null;this.src='/images/productParts/no-image.webp';"
+                      class="h-10 w-10 rounded-md border border-slate-200 bg-white object-cover"
+                      loading="lazy"
+                    />
+                    <span class="font-semibold text-slate-800"><%= row.name || 'Untitled Product' %></span>
                   </div>
                 </td>
-                <% }) %>
-                <% } else { %>
-                <td class="w-72 align-top border-r border-slate-300 p-0">
-                  <div class="px-3 py-6 text-sm font-medium text-slate-500">No items yet. Add 2 items for this category.</div>
-                </td>
-                <% } %>
-
-                <td class="w-72 align-top p-0">
-                  <form action="/admin/products" method="post" enctype="multipart/form-data" class="h-full border-l border-slate-300">
-                    <input type="hidden" name="productCategory" value="<%= board.name %>" />
-                    <div class="border-b border-slate-300 px-3 py-2 text-lg font-bold text-blue-700">+ Add</div>
-                    <div class="space-y-2 px-3 py-3">
-                      <input
-                        type="text"
-                        name="productName"
-                        required
-                        placeholder="Title"
-                        class="w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm text-slate-800 focus:outline-none"
-                      />
-                      <input
-                        type="text"
-                        name="productSpec"
-                        placeholder="Description"
-                        class="w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm text-slate-800 focus:outline-none"
-                      />
-                      <input
-                        type="text"
-                        name="productPrice"
-                        required
-                        placeholder="MRP (e.g. NPR 1,500)"
-                        class="w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm text-slate-800 focus:outline-none"
-                      />
-                      <input
-                        type="file"
-                        name="productImageFile"
-                        accept="image/*"
-                        required
-                        class="w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm text-slate-800 file:mr-3 file:rounded file:border-0 file:bg-slate-200 file:px-2 file:py-1 file:text-xs file:font-semibold file:text-slate-700"
-                      />
-                      <button
-                        type="submit"
-                        class="inline-flex items-center rounded-md bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-700"
-                      >
-                        Add Item
-                      </button>
-                    </div>
+                <td class="border border-slate-200 px-3 py-2 font-medium"><%= row.categoryName || 'Other' %></td>
+                <td class="border border-slate-200 px-3 py-2"><%= row.price || 'Contact for price' %></td>
+                <td class="border border-slate-200 px-3 py-2"><%= row.spec || 'N/A' %></td>
+                <td class="border border-slate-200 px-3 py-2">
+                  <div class="flex flex-wrap items-center gap-2">
+                    <a
+                      href="/admin/categories/<%= toAnchor(row.categoryName) %>"
+                      class="pro-btn-secondary px-2.5 py-1 text-xs"
+                    >
+                      Open
+                    </a>
+                    <button
+                      type="button"
+                      data-delete-product-trigger="<%= row.id %>"
+                      data-product-name="<%= row.name %>"
+                      class="pro-btn-danger-muted px-2.5 py-1 text-xs"
+                    >
+                      Delete
+                    </button>
+                  </div>
+                  <form action="/admin/products/delete" method="post" class="hidden" data-delete-product-form="<%= row.id %>">
+                    <input type="hidden" name="productId" value="<%= row.id %>" />
+                    <input type="hidden" name="redirectTo" value="<%= adminProductsRedirectPath %>" />
                   </form>
                 </td>
               </tr>
+              <% }) %>
             </tbody>
           </table>
         </div>
-      </section>
-      <% }) %>
 
-      <section id="add-category-form" class="mt-8 rounded-xl border border-slate-300 bg-white p-4">
-        <h2 class="text-sm font-bold uppercase tracking-wide text-slate-700">Add New Category (Future)</h2>
-        <form action="/admin/categories" method="post" class="mt-3 grid gap-2 md:grid-cols-[2fr_3fr_auto]">
-          <input
-            type="text"
-            name="categoryName"
-            required
-            placeholder="Category name (e.g. Brake Shoe)"
-            class="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 focus:outline-none"
-          />
-          <input
-            type="text"
-            name="categoryDescription"
-            placeholder="Description (optional)"
-            class="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 focus:outline-none"
-          />
-          <button
-            type="submit"
-            class="inline-flex items-center justify-center rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700"
+        <% if (overviewTotalPages > 1) { %>
+        <div class="mt-3 flex flex-wrap items-center justify-between gap-2">
+          <a
+            href="<%= buildAdminProductsPageHref(overviewCurrentPage - 1) %>"
+            class="pro-btn-secondary px-3 py-1.5 text-xs <%= overviewCurrentPage <= 1 ? 'pointer-events-none opacity-50' : '' %>"
+            aria-disabled="<%= overviewCurrentPage <= 1 ? 'true' : 'false' %>"
           >
-            Add Category
-          </button>
-        </form>
+            Prev
+          </a>
+
+          <div class="flex flex-wrap items-center justify-center gap-1.5">
+            <% for (var overviewPageNumber = 1; overviewPageNumber <= overviewTotalPages; overviewPageNumber += 1) { %>
+            <% if (overviewPageNumber === 1 || overviewPageNumber === overviewTotalPages || Math.abs(overviewPageNumber - overviewCurrentPage) <= 1) { %>
+            <a
+              href="<%= buildAdminProductsPageHref(overviewPageNumber) %>"
+              class="inline-flex min-w-[2.15rem] items-center justify-center rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition <%= overviewPageNumber === overviewCurrentPage ? 'border-cyan-600 bg-cyan-600 text-white' : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-100' %>"
+            >
+              <%= overviewPageNumber %>
+            </a>
+            <% } else if ((overviewPageNumber === 2 && overviewCurrentPage > 4) || (overviewPageNumber === overviewTotalPages - 1 && overviewCurrentPage < overviewTotalPages - 3)) { %>
+            <span class="px-1 text-xs font-semibold text-slate-500">…</span>
+            <% } %>
+            <% } %>
+          </div>
+
+          <a
+            href="<%= buildAdminProductsPageHref(overviewCurrentPage + 1) %>"
+            class="pro-btn-secondary px-3 py-1.5 text-xs <%= overviewCurrentPage >= overviewTotalPages ? 'pointer-events-none opacity-50' : '' %>"
+            aria-disabled="<%= overviewCurrentPage >= overviewTotalPages ? 'true' : 'false' %>"
+          >
+            Next
+          </a>
+        </div>
+        <% } %>
+        <% } %>
       </section>
     </main>
 
     <div id="delete-alert" class="fixed inset-0 z-50 hidden items-center justify-center bg-slate-900/50 p-4">
-      <div class="w-full max-w-md rounded-xl border border-slate-300 bg-white p-5 shadow-xl">
+      <div class="pro-panel w-full max-w-md p-5">
         <h3 class="text-lg font-bold text-slate-900" id="delete-alert-title">Delete</h3>
-        <p class="mt-2 text-sm text-slate-700" id="delete-alert-message">Are you sure you want to delete this product?</p>
+        <p class="mt-2 text-sm text-slate-700" id="delete-alert-message">Are you sure you want to delete this category?</p>
         <div class="mt-4 flex items-center justify-end gap-2">
           <button
             type="button"
             id="delete-alert-cancel"
-            class="inline-flex items-center rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100"
+            class="pro-btn-secondary"
           >
             Cancel
           </button>
           <button
             type="button"
             id="delete-alert-confirm"
-            class="inline-flex items-center rounded-md border border-red-600 bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700"
+            class="pro-btn-danger"
           >
             Delete
           </button>
@@ -334,122 +587,8 @@
       </div>
     </div>
 
-    <script>
-      (function () {
-        var deleteAlert = document.getElementById('delete-alert');
-        var deleteAlertTitle = document.getElementById('delete-alert-title');
-        var deleteAlertMessage = document.getElementById('delete-alert-message');
-        var deleteAlertCancel = document.getElementById('delete-alert-cancel');
-        var deleteAlertConfirm = document.getElementById('delete-alert-confirm');
-        var pendingDeleteForm = null;
-
-        function getCardElements(cardId) {
-          return {
-            form: document.querySelector('[data-edit-form="' + cardId + '"]'),
-            view: document.querySelector('[data-view-panel="' + cardId + '"]'),
-          };
-        }
-
-        function toggleEdit(cardId, isEditMode) {
-          var card = getCardElements(cardId);
-          if (!card.form || !card.view) {
-            return;
-          }
-
-          if (isEditMode) {
-            card.view.classList.add('hidden');
-            card.form.classList.remove('hidden');
-            var firstInput = card.form.querySelector('input[type="text"]');
-            if (firstInput) {
-              firstInput.focus();
-              firstInput.select();
-            }
-            return;
-          }
-
-          card.form.classList.add('hidden');
-          card.view.classList.remove('hidden');
-        }
-
-        function showDeleteAlert(form, title, message) {
-          pendingDeleteForm = form;
-          deleteAlertTitle.textContent = title || 'Delete';
-          deleteAlertMessage.textContent = message || 'Are you sure? This action cannot be undone.';
-          deleteAlert.classList.remove('hidden');
-          deleteAlert.classList.add('flex');
-        }
-
-        function hideDeleteAlert() {
-          pendingDeleteForm = null;
-          deleteAlert.classList.add('hidden');
-          deleteAlert.classList.remove('flex');
-        }
-
-        document.querySelectorAll('[data-edit-toggle]').forEach(function (button) {
-          button.addEventListener('click', function () {
-            toggleEdit(button.getAttribute('data-edit-toggle'), true);
-          });
-        });
-
-        document.querySelectorAll('[data-edit-cancel]').forEach(function (button) {
-          button.addEventListener('click', function () {
-            toggleEdit(button.getAttribute('data-edit-cancel'), false);
-          });
-        });
-
-        document.querySelectorAll('[data-delete-trigger]').forEach(function (button) {
-          button.addEventListener('click', function () {
-            var cardId = button.getAttribute('data-delete-trigger');
-            var form = document.querySelector('[data-delete-form="' + cardId + '"]');
-            if (!form) {
-              return;
-            }
-
-            showDeleteAlert(
-              form,
-              'Delete Product',
-              'Delete "' + (button.getAttribute('data-product-name') || 'this product') + '"? This action cannot be undone.'
-            );
-          });
-        });
-
-        document.querySelectorAll('[data-delete-category-trigger]').forEach(function (button) {
-          button.addEventListener('click', function () {
-            var categoryKey = button.getAttribute('data-delete-category-trigger');
-            var categoryName = button.getAttribute('data-category-name') || 'this category';
-            var form = document.querySelector('[data-delete-category-form="' + categoryKey + '"]');
-            if (!form) {
-              return;
-            }
-
-            showDeleteAlert(
-              form,
-              'Delete Category',
-              'Delete category "' + categoryName + '" and all products inside it? This action cannot be undone.'
-            );
-          });
-        });
-
-        deleteAlertCancel.addEventListener('click', hideDeleteAlert);
-
-        deleteAlertConfirm.addEventListener('click', function () {
-          if (pendingDeleteForm) {
-            pendingDeleteForm.submit();
-          }
-        });
-
-        deleteAlert.addEventListener('click', function (event) {
-          if (event.target === deleteAlert) {
-            hideDeleteAlert();
-          }
-        });
-
-        document.addEventListener('keydown', function (event) {
-          if (event.key === 'Escape') {
-            hideDeleteAlert();
-          }
-        });
-      })();
-    </script>
+    <script id="admin-page-data" type="application/json"><%- JSON.stringify({ subcategoryOptionsByCategory: subcategoryOptionsByCategory }).replace(/</g, '\\u003c') %></script>
+    <script src="/javascripts/flash-alert.js"></script>
+    <script src="/javascripts/admin.js"></script>
   </body>
 </html>

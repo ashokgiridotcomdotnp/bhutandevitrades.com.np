@@ -1,9 +1,220 @@
 {
-  "categories": [],
-  "products": [],
+  "categories": [
+    {
+      "name": "Helmet",
+      "description": "In motorcycle and scooter helmets there are a lot of different kinds of models and types of helmets.",
+      "items": [
+        "Full Face Helmets",
+        "Vega",
+        "STM"
+      ]
+    },
+    {
+      "name": "Tyre",
+      "description": "All Kind Of Tyre is Available",
+      "items": [
+        "Yamaha",
+        "Bajaj",
+        "Honda"
+      ]
+    },
+    {
+      "name": "Mobil",
+      "description": "All Kind Of Mobil Is Here.",
+      "items": [
+        "Servo",
+        "Motul"
+      ]
+    },
+    {
+      "name": "Shock",
+      "description": "Added from admin panel",
+      "items": [
+        "Fz"
+      ]
+    }
+  ],
+  "products": [
+    {
+      "id": "helmet-full-face-helmets",
+      "type": "Helmet",
+      "name": "Full Face Helmets",
+      "spec": "Full face helmet is available",
+      "price": "4600",
+      "originalPrice": "",
+      "discountPercent": "",
+      "quantity": "",
+      "image": "/uploads/products/helmet1-1771408174631-601059158.webp",
+      "images": [
+        "/uploads/products/helmet1-1771408174631-601059158.webp"
+      ]
+    },
+    {
+      "id": "helmet-vega",
+      "type": "Helmet",
+      "name": "Vega",
+      "spec": "Thi sis also vega helmet.",
+      "price": "5500",
+      "originalPrice": "",
+      "discountPercent": "",
+      "quantity": "",
+      "image": "/uploads/products/vega-1771427489531-11677488.webp",
+      "images": [
+        "/uploads/products/vega-1771427489531-11677488.webp"
+      ]
+    },
+    {
+      "id": "helmet-stm",
+      "type": "Helmet",
+      "name": "STM",
+      "spec": "This is STM helmet",
+      "price": "1500",
+      "originalPrice": "",
+      "discountPercent": "",
+      "quantity": "",
+      "image": "/uploads/products/vega-1771491802961-623044969.webp",
+      "images": [
+        "/uploads/products/vega-1771491802961-623044969.webp"
+      ]
+    },
+    {
+      "id": "helmet-vega-2",
+      "type": "Helmet",
+      "name": "Vega",
+      "spec": "This is the 2nd Vega Helmet",
+      "price": "2500",
+      "originalPrice": "",
+      "discountPercent": "",
+      "quantity": "",
+      "image": "/uploads/products/kpi-1771517962319-866121643.jpeg",
+      "images": [
+        "/uploads/products/kpi-1771517962319-866121643.jpeg"
+      ]
+    },
+    {
+      "id": "helmet-kpi-2",
+      "type": "Helmet",
+      "name": "KPI",
+      "spec": "This is cheap and Good KPI Helmet",
+      "price": "1200",
+      "originalPrice": "",
+      "discountPercent": "",
+      "quantity": "",
+      "image": "/uploads/products/helmet1-1771518271290-543033391.webp",
+      "images": [
+        "/uploads/products/helmet1-1771518271290-543033391.webp"
+      ]
+    },
+    {
+      "id": "helmet-kpi-3",
+      "type": "Helmet",
+      "name": "Kpi",
+      "spec": "This is full face Helmet of KPI",
+      "price": "4500",
+      "originalPrice": "",
+      "discountPercent": "",
+      "quantity": "",
+      "image": "/uploads/products/kpi-1771518343501-49732929.jpeg",
+      "images": [
+        "/uploads/products/kpi-1771518343501-49732929.jpeg"
+      ]
+    },
+    {
+      "id": "helmet-stm-2",
+      "type": "Helmet",
+      "name": "STM",
+      "spec": "Type: Half | 1st Stm helmet",
+      "price": "1200",
+      "originalPrice": "",
+      "discountPercent": "",
+      "quantity": "",
+      "image": "/uploads/products/helmet1-1771518601434-634866155.webp",
+      "images": [
+        "/uploads/products/helmet1-1771518601434-634866155.webp"
+      ]
+    },
+    {
+      "id": "helmet-stm-3",
+      "type": "Helmet",
+      "name": "STM",
+      "spec": "Type: Full | Full STM Helmet",
+      "price": "4500",
+      "originalPrice": "",
+      "discountPercent": "",
+      "quantity": "",
+      "image": "/uploads/products/vega-1771518684786-736103980.webp",
+      "images": [
+        "/uploads/products/vega-1771518684786-736103980.webp"
+      ]
+    },
+    {
+      "id": "tyre-honda",
+      "type": "Tyre",
+      "name": "Honda",
+      "spec": "Honda Tubeless Tyre is On Offer",
+      "price": "NPR 1,540",
+      "originalPrice": "NPR 2,200",
+      "discountPercent": "30",
+      "quantity": "12",
+      "image": "/uploads/products/tyre-1771582173895-580549558.webp",
+      "images": [
+        "/uploads/products/tyre-1771582173895-580549558.webp"
+      ]
+    },
+    {
+      "id": "mobil-servo",
+      "type": "Mobil",
+      "name": "Servo",
+      "spec": "Motul Oil is Available",
+      "price": "NPR 1,700",
+      "originalPrice": "NPR 2,000",
+      "discountPercent": "15",
+      "quantity": "10",
+      "image": "/uploads/products/20251201-184800-1771758686791-655804453-opt.webp",
+      "images": [
+        "/uploads/products/20251201-184800-1771758686791-655804453-opt.webp"
+      ]
+    },
+    {
+      "id": "mobil-motul",
+      "type": "Mobil",
+      "name": "Motul",
+      "spec": "Motul Oil is Available",
+      "price": "NPR 4,140",
+      "originalPrice": "NPR 4,600",
+      "discountPercent": "10",
+      "quantity": "10",
+      "image": "/uploads/products/20251021-171228-1771758766188-648003391-opt.webp",
+      "images": [
+        "/uploads/products/20251021-171228-1771758766188-648003391-opt.webp"
+      ]
+    },
+    {
+      "id": "shock-fz",
+      "type": "Shock",
+      "name": "Fz",
+      "spec": "Yamaha Fz Shock is Available in Discounted Price .",
+      "price": "NPR 180",
+      "originalPrice": "NPR 200",
+      "discountPercent": "10",
+      "quantity": "100",
+      "image": "/uploads/products/whatsapp-image-2026-02-11-at-10-07-05-1-1771849638992-867639513-opt.webp",
+      "images": [
+        "/uploads/products/whatsapp-image-2026-02-11-at-10-07-05-1-1771849638992-867639513-opt.webp"
+      ]
+    }
+  ],
   "priceOverrides": {},
   "imageOverrides": {},
   "productOverrides": {},
-  "deletedProductIds": [],
-  "deletedCategoryNames": []
+  "deletedProductIds": [
+    "engine-oil-motul",
+    "engine-oil-servo-20w-50",
+    "tyres-fz-tire-2"
+  ],
+  "deletedCategoryNames": [
+    "Grease",
+    "Engine Oil",
+    "Chain Sprocket"
+  ]
 }

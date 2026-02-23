@@ -5,22 +5,40 @@ var express = require('express');
 var path = require('path');
 var cookieParser = require('cookie-parser');
 var logger = require('morgan');
+var helmet = require('helmet');
+var compression = require('compression');
 var database = require('./lib/db');
+var userAuth = require('./lib/userAuth');
 
 var indexRouter = require('./routes/index');
 
 var app = express();
 
-database.connectToDatabase();
+database.connectToDatabase().catch(function (error) {
+  if (error && error.message) {
+    console.error('Initial MongoDB connect failed:', error.message);
+  } else {
+    console.error('Initial MongoDB connect failed');
+  }
+});
 
 // view engine setup
 app.set('views', path.join(__dirname, 'views'));
 app.set('view engine', 'ejs');
 
+app.disable('x-powered-by');
 app.use(logger('dev'));
+app.use(helmet({
+  // This app currently relies on inline scripts/styles and third-party font assets.
+  // Keep CSP off until explicit nonces/hashes are implemented.
+  contentSecurityPolicy: false,
+  crossOriginEmbedderPolicy: false,
+}));
+app.use(compression({ threshold: 1024 }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 app.use(cookieParser());
+app.use(userAuth.attachUserContext);
 app.use(express.static(path.join(__dirname, 'public')));
 
 app.use('/', indexRouter);

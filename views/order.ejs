@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;700;800&display=swap" rel="stylesheet" />
+    <title><%= title %></title>
+    <link rel="stylesheet" href="/stylesheets/style.css" />
+  </head>
+  <body class="text-slate-900">
+    <%- include('helpers/nav', { title: 'BhutanDevi Trade and Suppliers', q, activeCategory, hasSidebar: true, topNavCategories, searchSuggestions, basePath, currentPath, currentUser, showUserAuthActions }) %>
+
+    <main class="app-shell py-6">
+      <div id="home-layout-grid" class="grid gap-5 lg:grid-cols-[20rem_minmax(0,1fr)]">
+        <%- include('helpers/sidebar', { categoryGroups, hasQuery, q, activeCategory, openCategoryName, basePath, currentUser, showUserAuthActions, currentPath }) %>
+
+        <section class="min-w-0 pro-page-enter">
+          <%
+            function extractNumericPrice(value) {
+              var normalizedValue = String(value || '').replace(/,/g, '').replace(/[^0-9.]/g, '');
+              var parsedValue = Number(normalizedValue);
+
+              if (!Number.isFinite(parsedValue) || parsedValue <= 0) {
+                return 0;
+              }
+
+              return parsedValue;
+            }
+
+            function formatNprAmount(value) {
+              var parsedValue = Number(value);
+
+              if (!Number.isFinite(parsedValue) || parsedValue < 0) {
+                return '';
+              }
+
+              return parsedValue.toLocaleString('en-IN', {
+                maximumFractionDigits: 2,
+                minimumFractionDigits: 0
+              });
+            }
+
+            function parseAvailableStockQuantity(value) {
+              var cleanValue = String(value || '').trim();
+              var parsedValue = Number(cleanValue);
+
+              if (!cleanValue) {
+                return null;
+              }
+
+              if (!Number.isFinite(parsedValue) || parsedValue < 0) {
+                return null;
+              }
+
+              return Math.floor(parsedValue);
+            }
+
+            var normalizedWhatsappNumber = String(storeWhatsappNumber || '').replace(/[^0-9]/g, '');
+            var whatsappBaseUrl = normalizedWhatsappNumber ? ('https://wa.me/' + normalizedWhatsappNumber) : 'https://wa.me/';
+            var hasStoreContactNumber = Boolean(normalizedWhatsappNumber);
+            var callHref = hasStoreContactNumber ? ('tel:+' + normalizedWhatsappNumber) : '#';
+            var unitPriceValue = extractNumericPrice(product && product.price ? product.price : '');
+            var unitPriceLabel = unitPriceValue > 0 ? ('NPR ' + formatNprAmount(unitPriceValue)) : (product && product.price ? product.price : 'Contact for price');
+            var productId = product && product.id ? String(product.id) : '';
+            var productName = product && product.name ? String(product.name) : 'Product';
+            var productType = product && product.type ? String(product.type) : (sectionTitle || 'Category');
+            var productDetailHref = productId ? ('/products/' + encodeURIComponent(productId)) : '/';
+            var defaultCustomerName = currentUser && currentUser.name ? currentUser.name : '';
+            var defaultCustomerEmail = currentUser && currentUser.email ? currentUser.email : '';
+            var availableStockQuantity = parseAvailableStockQuantity(product && typeof product.quantity !== 'undefined' ? product.quantity : '');
+            var hasKnownStockQuantity = availableStockQuantity !== null;
+            var isOutOfStock = hasKnownStockQuantity && availableStockQuantity < 1;
+            var quantityInputMax = hasKnownStockQuantity && availableStockQuantity > 0 ? availableStockQuantity : 999;
+          %>
+
+          <article class="pro-panel p-4 sm:p-6 pro-stagger">
+            <div class="flex flex-wrap items-center gap-2">
+              <a href="<%= productDetailHref %>" class="pro-btn-secondary">Back to Product</a>
+              <span class="pro-chip ml-auto">Order Page</span>
+            </div>
+
+            <div class="mt-5 grid gap-6 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
+              <div class="space-y-3">
+                <div class="pro-panel-muted p-5">
+                  <div class="rounded-xl bg-white p-3">
+                    <img
+                      src="<%= product.image || '/images/productParts/no-image.webp' %>"
+                      alt="<%= productName %>"
+                      onerror="this.onerror=null;this.src='/images/productParts/no-image.webp';"
+                      class="mx-auto h-56 w-full max-w-md object-contain sm:h-72"
+                    />
+                  </div>
+                </div>
+
+                <div class="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                  <p class="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Product</p>
+                  <h1 class="mt-1 text-2xl font-extrabold tracking-tight text-slate-900"><%= productName %></h1>
+                  <p class="mt-1 text-sm font-semibold text-slate-600"><%= productType %></p>
+                  <p class="mt-3 text-sm text-slate-600"><%= product && product.spec ? product.spec : 'No additional specification provided.' %></p>
+                </div>
+              </div>
+
+              <form
+                class="space-y-3"
+                data-order-page-form
+                data-whatsapp-base-url="<%= whatsappBaseUrl %>"
+                data-order-unit-price-value="<%= unitPriceValue %>"
+                data-order-unit-price-label="<%= unitPriceLabel %>"
+                data-order-stock-quantity="<%= hasKnownStockQuantity ? availableStockQuantity : '' %>"
+              >
+                <input type="hidden" value="<%= productId %>" data-order-product-id />
+                <input type="hidden" value="<%= productName %>" data-order-product-name />
+                <input type="hidden" value="<%= productType %>" data-order-product-type />
+
+                <div class="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                  <p class="text-sm font-extrabold text-slate-900"><%= productName %></p>
+                  <p class="text-xs font-semibold uppercase tracking-wide text-slate-500"><%= productType %></p>
+                  <% if (hasKnownStockQuantity) { %>
+                  <p class="mt-1 text-xs font-semibold uppercase tracking-wide text-slate-500">Available Stock: <%= availableStockQuantity %></p>
+                  <% } %>
+                </div>
+
+                <div class="hidden rounded-xl border border-emerald-300 bg-emerald-50 px-3 py-2.5 text-sm font-medium text-emerald-700" data-order-success></div>
+                <div class="hidden rounded-xl border border-red-300 bg-red-50 px-3 py-2.5 text-sm font-medium text-red-700" data-order-error></div>
+                <% if (isOutOfStock) { %>
+                <div class="rounded-xl border border-red-300 bg-red-50 px-3 py-2.5 text-sm font-semibold text-red-700">
+                  This product is currently out of stock.
+                </div>
+                <% } %>
+
+                <div class="grid gap-3 sm:grid-cols-2">
+                  <div>
+                    <label for="order-page-quantity" class="mb-1.5 block text-sm font-semibold text-slate-800">Quantity</label>
+                    <input
+                      id="order-page-quantity"
+                      type="number"
+                      min="1"
+                      max="<%= quantityInputMax %>"
+                      step="1"
+                      value="1"
+                      required
+                      class="pro-input"
+                      data-order-quantity
+                    />
+                  </div>
+                  <div>
+                    <label for="order-page-unit-price" class="mb-1.5 block text-sm font-semibold text-slate-800">Unit Price</label>
+                    <input
+                      id="order-page-unit-price"
+                      type="text"
+                      value="<%= unitPriceLabel %>"
+                      readonly
+                      class="pro-input"
+                      data-order-unit-price
+                    />
+                  </div>
+                </div>
+
+                <div class="rounded-xl border border-cyan-200 bg-cyan-50 px-3 py-2">
+                  <p class="text-xs font-semibold uppercase tracking-wide text-cyan-800">Order Total</p>
+                  <p class="text-2xl font-extrabold tracking-tight text-cyan-900" data-order-total><%= unitPriceValue > 0 ? ('NPR ' + formatNprAmount(unitPriceValue)) : 'Contact for price' %></p>
+                </div>
+
+                <div class="grid gap-3 sm:grid-cols-2">
+                  <div>
+                    <label for="order-page-customer-name" class="mb-1.5 block text-sm font-semibold text-slate-800">Your Name</label>
+                    <input
+                      id="order-page-customer-name"
+                      type="text"
+                      value="<%= defaultCustomerName %>"
+                      class="pro-input"
+                      placeholder="Full name"
+                      minlength="2"
+                      maxlength="140"
+                      autocomplete="name"
+                      required
+                      data-order-customer-name
+                    />
+                  </div>
+                  <div>
+                    <label for="order-page-phone" class="mb-1.5 block text-sm font-semibold text-slate-800">Phone Number</label>
+                    <input
+                      id="order-page-phone"
+                      type="tel"
+                      class="pro-input"
+                      placeholder="98XXXXXXXX"
+                      inputmode="numeric"
+                      pattern="^(?:\+?977)?9\d{9}$"
+                      minlength="10"
+                      maxlength="14"
+                      title="Enter a valid phone number like 98XXXXXXXX or +97798XXXXXXXX"
+                      autocomplete="tel"
+                      required
+                      data-order-phone
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label for="order-page-customer-email" class="mb-1.5 block text-sm font-semibold text-slate-800">Account Email</label>
+                  <input id="order-page-customer-email" type="email" value="<%= defaultCustomerEmail %>" class="pro-input" readonly required data-order-customer-email />
+                </div>
+
+                <div>
+                  <label for="order-page-note" class="mb-1.5 block text-sm font-semibold text-slate-800">Note</label>
+                  <textarea id="order-page-note" rows="2" class="pro-input" placeholder="Delivery location / extra request" minlength="3" maxlength="1000" required data-order-note></textarea>
+                </div>
+
+                <div class="grid grid-cols-1 gap-2 border-t border-slate-200 pt-3 sm:flex sm:flex-wrap sm:items-center sm:justify-end">
+                  <a
+                    href="<%= callHref %>"
+                    class="pro-btn-secondary w-full gap-1.5 px-3 py-2 text-xs sm:w-auto sm:py-1.5 <%= hasStoreContactNumber ? '' : 'pointer-events-none opacity-50' %>"
+                    aria-disabled="<%= hasStoreContactNumber ? 'false' : 'true' %>"
+                  >
+                    <img src="/icons/phone.svg" alt="" aria-hidden="true" class="shrink-0" style="width: 14px; height: 14px;" />
+                    <span>Call</span>
+                  </a>
+                  <button
+                    type="submit"
+                    class="pro-btn-secondary w-full gap-1.5 px-3 py-2 text-xs sm:w-auto sm:py-1.5 <%= isOutOfStock ? 'cursor-not-allowed opacity-50' : '' %>"
+                    data-order-submit
+                    data-order-method="email"
+                    <%= isOutOfStock ? 'disabled aria-disabled=\"true\"' : '' %>
+                  >
+                    <img src="/icons/order-balck.svg" alt="" aria-hidden="true" class="shrink-0" style="width: 14px; height: 14px;" />
+                    <span data-order-submit-label>Order with Email</span>
+                  </button>
+                  <button
+                    type="submit"
+                    class="pro-btn-primary w-full gap-1.5 px-3 py-2 text-xs sm:w-auto sm:py-1.5 <%= isOutOfStock ? 'cursor-not-allowed opacity-50' : '' %>"
+                    data-order-submit
+                    data-order-method="whatsapp"
+                    <%= isOutOfStock ? 'disabled aria-disabled=\"true\"' : '' %>
+                  >
+                    <img src="/icons/whatsapp.svg" alt="" aria-hidden="true" class="shrink-0" style="width: 14px; height: 14px;" />
+                    <span data-order-submit-label>Order with WhatsApp</span>
+                  </button>
+                </div>
+              </form>
+            </div>
+          </article>
+        </section>
+      </div>
+    </main>
+    <div
+      class="pointer-events-none fixed inset-0 z-[120] hidden items-center justify-center bg-slate-900/40 backdrop-blur-[2px]"
+      data-order-loading-overlay
+      aria-hidden="true"
+    >
+      <div class="flex flex-col items-center gap-2 rounded-2xl border border-slate-200 bg-white px-6 py-5 shadow-2xl">
+        <img src="/icons/loading.svg" alt="" aria-hidden="true" class="h-10 w-10 animate-spin" />
+        <p class="text-sm font-semibold text-slate-700">Submitting order...</p>
+      </div>
+    </div>
+    <%- include('helpers/footer', { basePath, currentPath, categoryGroups, currentUser }) %>
+    <script src="/javascripts/flash-alert.js"></script>
+    <script src="/javascripts/order-page.js"></script>
+  </body>
+</html>

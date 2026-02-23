@@ -1,0 +1,663 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;700;800&display=swap" rel="stylesheet" />
+    <title><%= title %></title>
+    <link rel="stylesheet" href="/stylesheets/style.css" />
+  </head>
+  <body class="text-slate-900">
+    <%- include('helpers/nav', { title: 'BhutanDevi Trade and Suppliers', q, activeCategory, hasSidebar: false, topNavCategories, searchSuggestions, basePath, currentPath: categoryPagePath, currentUser: null, showUserAuthActions: false }) %>
+
+    <main class="app-shell py-6 pro-page-enter">
+      <%
+        function toAnchor(value) {
+          return String(value || '')
+            .toLowerCase()
+            .replace(/[^a-z0-9]+/g, '-')
+            .replace(/^-+|-+$/g, '');
+        }
+
+        function categoryPageHref(categoryName) {
+          return '/admin/categories/' + toAnchor(categoryName);
+        }
+
+        function toInputNumberValue(value) {
+          var cleanedValue = String(value || '').replace(/,/g, '').trim();
+          var matchedValue = cleanedValue.match(/-?\d+(\.\d+)?/);
+          return matchedValue ? matchedValue[0] : '';
+        }
+
+        var boardItems = Array.isArray(categoryBoard && categoryBoard.items) ? categoryBoard.items : [];
+        var availableBoards = Array.isArray(categoryBoards)
+          ? categoryBoards.filter(function (board) {
+              return board && board.name;
+            })
+          : [];
+        var normalizedCategoryName = toAnchor(categoryBoard && categoryBoard.name);
+        var isHelmetCategory = normalizedCategoryName === 'helmet';
+        var addProductSubcategoryOptions = [];
+        var seenAddProductSubcategories = {};
+        var addImageInputId = 'add-image-' + toAnchor(categoryBoard.name || 'product');
+
+        function addProductSubcategoryOption(value) {
+          var cleanedValue = String(value || '').trim();
+          var key = toAnchor(cleanedValue);
+
+          if (!cleanedValue || !key || seenAddProductSubcategories[key]) {
+            return;
+          }
+
+          seenAddProductSubcategories[key] = true;
+          addProductSubcategoryOptions.push(cleanedValue);
+        }
+
+        boardItems.forEach(function (item) {
+          addProductSubcategoryOption(item && item.name);
+        });
+
+        if (Array.isArray(topNavCategories)) {
+          topNavCategories.forEach(function (group) {
+            if (toAnchor(group && group.name) !== normalizedCategoryName) {
+              return;
+            }
+
+            (group.items || []).forEach(function (itemName) {
+              addProductSubcategoryOption(itemName);
+            });
+          });
+        }
+
+        if (isHelmetCategory && addProductSubcategoryOptions.length === 0) {
+          addProductSubcategoryOption('Vega');
+        }
+
+        addProductSubcategoryOptions.sort(function (left, right) {
+          return left.localeCompare(right);
+        });
+
+        var parsedCategoryItemsPageSize = Number(categoryItemsPageSize);
+        var resolvedCategoryItemsPageSize = Number.isFinite(parsedCategoryItemsPageSize) && parsedCategoryItemsPageSize > 0
+          ? Math.floor(parsedCategoryItemsPageSize)
+          : 12;
+        var categoryItemsTotalPages = Math.max(1, Math.ceil(boardItems.length / resolvedCategoryItemsPageSize));
+        var parsedCategoryItemsCurrentPage = Number(categoryItemsPage);
+        var categoryItemsCurrentPage = Number.isFinite(parsedCategoryItemsCurrentPage) && parsedCategoryItemsCurrentPage > 0
+          ? Math.floor(parsedCategoryItemsCurrentPage)
+          : 1;
+
+        if (categoryItemsCurrentPage > categoryItemsTotalPages) {
+          categoryItemsCurrentPage = categoryItemsTotalPages;
+        }
+
+        var categoryItemsStartIndex = (categoryItemsCurrentPage - 1) * resolvedCategoryItemsPageSize;
+        var paginatedBoardItems = boardItems.slice(
+          categoryItemsStartIndex,
+          categoryItemsStartIndex + resolvedCategoryItemsPageSize
+        );
+
+        function buildCategoryItemsPageHref(targetPage) {
+          var safeTargetPage = Number(targetPage);
+
+          if (!Number.isFinite(safeTargetPage) || safeTargetPage < 1) {
+            safeTargetPage = 1;
+          }
+
+          safeTargetPage = Math.floor(safeTargetPage);
+
+          if (safeTargetPage <= 1) {
+            return categoryPagePath;
+          }
+
+          return categoryPagePath + '?itemsPage=' + safeTargetPage;
+        }
+
+        var categoryItemsRedirectPath = buildCategoryItemsPageHref(categoryItemsCurrentPage);
+      %>
+
+      <section class="pro-panel overflow-hidden pro-stagger">
+        <div class="grid lg:grid-cols-[17rem_minmax(0,1fr)]">
+          <aside class="border-b border-slate-200 bg-slate-50/80 p-5 lg:border-b-0 lg:border-r">
+            <div class="flex items-center gap-3 border-b border-slate-200 pb-5">
+              <span class="inline-flex h-10 w-10 items-center justify-center rounded-full bg-slate-900 text-sm font-bold text-white">
+                <%= String(categoryBoard.name || 'C').charAt(0).toUpperCase() %>
+              </span>
+              <div>
+                <p class="text-sm font-semibold text-slate-600"><%= categoryBoard.name %> Category Workspace</p>
+              </div>
+            </div>
+
+            <nav class="mt-5 space-y-1.5 pro-stagger">
+              <div class="rounded-lg bg-slate-200 px-3 py-2 text-sm font-bold text-slate-800">Products</div>
+              <div class="space-y-1.5 border-l-2 border-slate-200 pl-3">
+                <% availableBoards.forEach(function(board) { %>
+                <% var isActiveBoard = toAnchor(board.name) === toAnchor(categoryBoard.name); %>
+                <a
+                  href="<%= categoryPageHref(board.name) %>"
+                  class="block rounded-md px-2.5 py-1.5 text-sm font-medium transition <%= isActiveBoard ? 'bg-blue-100 text-blue-700' : 'text-slate-700 hover:bg-slate-200' %>"
+                >
+                  <%= board.name %>
+                </a>
+                <% }) %>
+              </div>
+            </nav>
+
+          </aside>
+
+          <div class="bg-slate-50/70">
+            <div class="flex flex-wrap items-center gap-3 border-b border-slate-200 bg-white px-5 py-4 sm:px-7">
+              <h1 class="text-3xl font-extrabold tracking-tight text-slate-900">Add Product to <%= categoryBoard.name %></h1>
+              <span class="rounded-full bg-slate-200 px-3 py-1 text-sm font-bold text-slate-700"><%= boardItems.length %> Total Products</span>
+              <form action="/admin/logout" method="post" class="ml-auto">
+                <button type="submit" class="pro-btn-secondary gap-1.5">
+                  <img src="/icons/logout.svg" alt="" aria-hidden="true" class="shrink-0" style="width: 14px; height: 14px;" />
+                  <span>Logout</span>
+                </button>
+              </form>
+              <a
+                href="/admin"
+                class="pro-btn-secondary"
+              >
+                Cancel
+              </a>
+            </div>
+
+            <% if (statusMessage) { %>
+            <div
+              data-success-alert
+              role="status"
+              class="rounded-xl border border-emerald-300 bg-emerald-50/95 px-4 py-2.5 text-sm font-semibold text-emerald-700 shadow-lg backdrop-blur"
+            >
+              <%= statusMessage %>
+            </div>
+            <% } %>
+
+            <% if (errorMessage) { %>
+            <div class="mx-4 mt-4 rounded-xl border border-red-300 bg-red-50 px-4 py-3 text-sm font-medium text-red-700 sm:mx-6" data-error-alert>
+              <%= errorMessage %>
+            </div>
+            <% } %>
+
+            <div class="space-y-5 p-5 sm:p-7 pro-stagger">
+              <section class="pro-panel pro-stagger">
+                <div class="border-b border-slate-200 px-6 py-4">
+                  <h2 class="text-3xl font-extrabold tracking-tight text-slate-900">Product Information</h2>
+                  <p class="mt-1 text-sm text-slate-500">Fill the details below and publish to this category.</p>
+                </div>
+
+                <form
+                  id="category-product-create-form"
+                  action="/admin/products"
+                  method="post"
+                  enctype="multipart/form-data"
+                  class="grid gap-6 p-6 lg:grid-cols-[minmax(0,1fr)_22rem]"
+                >
+                  <input type="hidden" name="productCategory" value="<%= categoryBoard.name %>" />
+                  <input type="hidden" name="redirectTo" value="<%= categoryItemsRedirectPath %>" />
+
+                  <div class="space-y-5">
+                    <div class="grid gap-3 md:grid-cols-2">
+                      <div class="<%= isHelmetCategory ? 'md:col-span-1' : 'md:col-span-2' %>">
+                        <label for="category-add-subcategory-select" class="mb-1.5 block text-sm font-semibold text-slate-800">Subcategory <span class="text-red-600">*</span></label>
+                        <select
+                          id="category-add-subcategory-select"
+                          data-add-subcategory-picker
+                          name="productName"
+                          required
+                          class="pro-input"
+                        >
+                          <option value=""><%= addProductSubcategoryOptions.length ? 'Select subcategory' : 'No subcategory available' %></option>
+                          <% addProductSubcategoryOptions.forEach(function(optionName) { %>
+                          <option value="<%= optionName %>"><%= optionName %></option>
+                          <% }) %>
+                        </select>
+                        <input
+                          type="text"
+                          id="category-add-subcategory-custom-input"
+                          data-add-subcategory-custom-input
+                          name="productName"
+                          disabled
+                          placeholder="Enter subcategory title"
+                          class="pro-input mt-2 hidden"
+                        />
+                      </div>
+
+                      <% if (isHelmetCategory) { %>
+                      <div class="md:col-span-1">
+                        <label class="mb-1.5 block text-sm font-semibold text-slate-800">Helmet Type <span class="text-red-600">*</span></label>
+                        <select id="helmet-coverage-select" name="productHelmetCoverage" required data-helmet-coverage-select class="sr-only">
+                          <option value="">Select type</option>
+                          <option value="Half">Half</option>
+                          <option value="Full">Full</option>
+                        </select>
+                        <div class="grid grid-cols-2 gap-1.5 rounded-xl border border-slate-200 bg-white p-1">
+                          <button
+                            type="button"
+                            data-helmet-coverage-option="Half"
+                            class="rounded-md px-3 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-900 hover:text-white"
+                          >
+                            Half Helmet
+                          </button>
+                          <button
+                            type="button"
+                            data-helmet-coverage-option="Full"
+                            class="rounded-md px-3 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-900 hover:text-white"
+                          >
+                            Full Helmet
+                          </button>
+                        </div>
+                      </div>
+                      <% } %>
+                    </div>
+
+                    <div class="grid gap-3 md:grid-cols-2">
+                      <div>
+                        <label for="new-product-price" class="mb-1.5 block text-sm font-semibold text-slate-800">MRP (NPR) <span class="text-red-600">*</span></label>
+                        <input
+                          type="number"
+                          id="new-product-price"
+                          name="productPrice"
+                          data-add-form-mrp-input
+                          min="0"
+                          step="0.01"
+                          required
+                          placeholder="0.00"
+                          class="pro-input"
+                        />
+                      </div>
+                      <div>
+                        <label for="new-product-quantity" class="mb-1.5 block text-sm font-semibold text-slate-800">Stock Quantity <span class="text-red-600">*</span></label>
+                        <input
+                          type="number"
+                          id="new-product-quantity"
+                          name="productQuantity"
+                          min="0"
+                          step="1"
+                          required
+                          placeholder="Stock Quantity"
+                          class="pro-input"
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label for="new-product-discount" class="mb-1.5 block text-sm font-semibold text-slate-800">Discount (%)</label>
+                      <input
+                        type="number"
+                        id="new-product-discount"
+                        name="productDiscountPercent"
+                        data-add-form-discount-input
+                        min="0"
+                        max="100"
+                        step="0.01"
+                        value="0"
+                        placeholder="0"
+                        class="pro-input"
+                      />
+                    </div>
+
+                    <div class="hidden rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2" data-add-form-price-preview>
+                      <p class="text-xs font-semibold uppercase tracking-wide text-emerald-700">Price Preview</p>
+                      <div class="mt-1 flex items-end gap-2">
+                        <span class="hidden text-sm font-semibold text-red-600 line-through" data-add-form-price-original></span>
+                        <span class="text-lg font-extrabold text-emerald-700" data-add-form-price-final></span>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label for="new-product-spec" class="mb-1.5 block text-sm font-semibold text-slate-800">Description <span class="text-red-600">*</span></label>
+                      <textarea
+                        id="new-product-spec"
+                        name="productSpec"
+                        rows="4"
+                        placeholder="Write a brief description about the product..."
+                        class="pro-input"
+                      ></textarea>
+                    </div>
+
+                  </div>
+
+                  <div class="space-y-4">
+                    <div>
+                      <label class="mb-1.5 block text-sm font-semibold text-slate-800">Product Images <span class="text-red-600">*</span></label>
+                      <div class="pro-file-zone text-center">
+                      <input
+                        id="<%= addImageInputId %>"
+                        type="file"
+                        name="productImageFile"
+                        accept="image/*"
+                        required
+                        data-file-input
+                        class="sr-only"
+                      />
+                      <label
+                        for="<%= addImageInputId %>"
+                        class="pro-btn-secondary"
+                      >
+                        Upload Photos
+                      </label>
+                      <p class="mt-2 text-xs text-slate-500">Drag &amp; drop or browse</p>
+                      <span data-file-name-for="<%= addImageInputId %>" data-file-default-text="No photo chosen" class="mt-3 block text-sm font-medium text-slate-700">
+                        No photo chosen
+                      </span>
+                      <img
+                        src=""
+                        alt="Selected product preview"
+                        data-image-preview-for="<%= addImageInputId %>"
+                        class="mx-auto mt-3 hidden h-36 w-full max-w-[180px] rounded-xl border border-slate-200 bg-white object-contain p-2"
+                      />
+                    </div>
+                    </div>
+                  </div>
+ 
+
+                  <div class="lg:col-span-2 flex flex-wrap justify-end gap-2 border-t border-slate-200 pt-4">
+                    <a
+                      href="<%= categoryItemsRedirectPath %>"
+                      class="pro-btn-secondary"
+                    >
+                      Cancel
+                    </a>
+                    <button
+                      type="submit"
+                      class="pro-btn-primary"
+                    >
+                      Add Product
+                    </button>
+                  </div>
+                </form>
+              </section>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="pro-panel mt-6 pro-stagger">
+        <div class="flex flex-wrap items-center gap-2 border-b border-slate-200 px-5 py-4">
+          <h2 class="text-xl font-bold text-slate-900"><%= categoryBoard.name %> Products</h2>
+          <div class="ml-auto flex items-center gap-2">
+            <button
+              type="button"
+              data-delete-category-trigger="single-category"
+              data-category-name="<%= categoryBoard.name %>"
+              class="pro-btn-danger-muted px-3 py-1.5 text-xs"
+            >
+              Delete Category
+            </button>
+            <span class="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-semibold text-slate-600">
+              <%= boardItems.length %> products
+            </span>
+          </div>
+        </div>
+
+        <form action="/admin/categories/delete" method="post" class="hidden" data-delete-category-form="single-category">
+          <input type="hidden" name="categoryName" value="<%= categoryBoard.name %>" />
+          <input type="hidden" name="redirectTo" value="/admin" />
+        </form>
+
+        <% if (boardItems.length === 0) { %>
+        <div class="px-4 py-8 text-sm font-medium text-slate-500">No products yet in this category. Add your first product above.</div>
+        <% } %>
+
+        <% if (boardItems.length) { %>
+        <div class="p-5 pro-stagger">
+          <div class="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
+            <table class="w-full min-w-[980px] text-sm">
+              <thead class="bg-slate-100/90 text-left text-xs font-semibold uppercase tracking-wide text-slate-600">
+                <tr>
+                  <th class="px-3 py-2.5">Product</th>
+                  <th class="px-3 py-2.5">Category</th>
+                  <th class="px-3 py-2.5">Description</th>
+                  <th class="px-3 py-2.5">Price</th>
+                  <th class="px-3 py-2.5">Stock</th>
+                  <th class="px-3 py-2.5">Image</th>
+                  <th class="px-3 py-2.5 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-slate-200">
+                <% paginatedBoardItems.forEach(function(item) { %>
+                <% var editImageInputId = 'edit-image-' + item.id; %>
+                <% var hasItemDiscount = item.originalPrice && item.originalPrice !== item.price; %>
+                <% var editMrpInputValue = toInputNumberValue(item.originalPrice || item.price); %>
+                <% var editDiscountInputValue = toInputNumberValue(item.discountPercent); %>
+                <% var editQuantityInputValue = toInputNumberValue(item.quantity); %>
+                <% var stockValue = item.quantity || item.quantity === 0 ? item.quantity : '-'; %>
+                <tr class="align-top bg-white" data-view-panel="<%= item.id %>">
+                  <td class="px-3 py-3">
+                    <p class="text-base font-bold text-slate-900"><%= item.name %></p>
+                    <p class="mt-1 font-mono text-xs text-slate-500">ID: <%= item.id %></p>
+                  </td>
+                  <td class="px-3 py-3 text-slate-800"><%= item.type %></td>
+                  <td class="px-3 py-3 text-slate-700"><%= item.spec %></td>
+                  <td class="px-3 py-3 text-slate-800">
+                    <% if (hasItemDiscount) { %>
+                    <p class="text-xs font-semibold text-red-600 line-through"><%= item.originalPrice %></p>
+                    <% } %>
+                    <p class="font-semibold text-emerald-700"><%= item.price %></p>
+                    <% if (item.discountPercent) { %>
+                    <p class="mt-1 text-xs font-semibold text-slate-600">Discount: <%= item.discountPercent %>%</p>
+                    <% } %>
+                  </td>
+                  <td class="px-3 py-3 font-semibold text-slate-800"><%= stockValue %></td>
+                  <td class="px-3 py-3">
+                    <img
+                      src="<%= item.image || '/images/productParts/no-image.webp' %>"
+                      alt="<%= item.name %>"
+                      onerror="this.onerror=null;this.src='/images/productParts/no-image.webp';"
+                      class="h-16 w-24 rounded-md border border-slate-200 bg-white object-cover"
+                      loading="lazy"
+                    />
+                  </td>
+                  <td class="px-3 py-3">
+                    <div class="flex items-center justify-end gap-1.5">
+                      <button
+                        type="button"
+                        title="Edit item"
+                        data-edit-toggle="<%= item.id %>"
+                        class="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-blue-300 bg-blue-50 text-blue-700 hover:bg-blue-100"
+                      >
+                        &#9998;
+                      </button>
+                      <button
+                        type="button"
+                        title="Delete item"
+                        data-delete-trigger="<%= item.id %>"
+                        data-product-name="<%= item.name %>"
+                        class="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-red-300 bg-red-50 text-red-700 hover:bg-red-100"
+                      >
+                        &#128465;
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+                <tr class="hidden bg-slate-50" data-edit-row="<%= item.id %>">
+                  <td colspan="7" class="px-3 py-3">
+                    <form
+                      action="/admin/products/edit"
+                      method="post"
+                      enctype="multipart/form-data"
+                      class="hidden space-y-2 rounded-xl border border-slate-200 bg-white p-3"
+                      data-edit-form="<%= item.id %>"
+                    >
+                      <input type="hidden" name="productId" value="<%= item.id %>" />
+                      <input type="hidden" name="currentImagePath" value="<%= item.image || '' %>" />
+                      <input type="hidden" name="redirectTo" value="<%= categoryItemsRedirectPath %>" />
+                      <label class="block text-xs font-semibold uppercase tracking-wide text-slate-600">Category</label>
+                      <input
+                        type="text"
+                        name="productCategory"
+                        value="<%= item.type || categoryBoard.name %>"
+                        required
+                        class="pro-input"
+                      />
+                      <label class="block text-xs font-semibold uppercase tracking-wide text-slate-600">Title</label>
+                      <input
+                        type="text"
+                        name="productName"
+                        value="<%= item.name %>"
+                        required
+                        class="pro-input"
+                      />
+                      <label class="block text-xs font-semibold uppercase tracking-wide text-slate-600">Description</label>
+                      <input
+                        type="text"
+                        name="productSpec"
+                        value="<%= item.spec %>"
+                        class="pro-input"
+                      />
+                      <label class="block text-xs font-semibold uppercase tracking-wide text-slate-600">MRP</label>
+                      <input
+                        type="number"
+                        name="productPrice"
+                        value="<%= editMrpInputValue %>"
+                        min="0"
+                        step="0.01"
+                        data-form-mrp-input
+                        required
+                        class="pro-input"
+                      />
+                      <label class="block text-xs font-semibold uppercase tracking-wide text-slate-600">Discount (%)</label>
+                      <input
+                        type="number"
+                        name="productDiscountPercent"
+                        value="<%= editDiscountInputValue || '0' %>"
+                        min="0"
+                        max="100"
+                        step="0.01"
+                        data-form-discount-input
+                        class="pro-input"
+                      />
+                      <div class="hidden rounded-lg border border-emerald-200 bg-emerald-50 px-2 py-1.5" data-form-price-preview>
+                        <p class="text-[11px] font-semibold uppercase tracking-wide text-emerald-700">Price Preview</p>
+                        <div class="mt-0.5 flex items-end gap-2">
+                          <span class="hidden text-xs font-semibold text-red-600 line-through" data-form-price-original></span>
+                          <span class="text-sm font-extrabold text-emerald-700" data-form-price-final></span>
+                        </div>
+                      </div>
+                      <label class="block text-xs font-semibold uppercase tracking-wide text-slate-600">Quantity</label>
+                      <input
+                        type="number"
+                        name="productQuantity"
+                        value="<%= editQuantityInputValue %>"
+                        min="0"
+                        step="1"
+                        class="pro-input"
+                      />
+                      <label class="block text-xs font-semibold uppercase tracking-wide text-slate-600">Choose Image File (optional)</label>
+                      <div class="flex flex-wrap items-center gap-2">
+                        <input
+                          id="<%= editImageInputId %>"
+                          type="file"
+                          name="productImageFile"
+                          accept="image/*"
+                          data-file-input
+                          class="sr-only"
+                        />
+                        <label
+                          for="<%= editImageInputId %>"
+                          class="inline-flex items-center rounded-lg border border-slate-300 bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-200"
+                        >
+                          Choose Product Photo
+                        </label>
+                        <span data-file-name-for="<%= editImageInputId %>" data-file-default-text="Keep current photo" class="text-xs text-slate-600">
+                          Keep current photo
+                        </span>
+                        <button
+                          type="submit"
+                          class="pro-btn-primary px-3 py-1.5 text-xs"
+                        >
+                          Save All
+                        </button>
+                        <button
+                          type="button"
+                          data-edit-cancel="<%= item.id %>"
+                          class="pro-btn-secondary px-3 py-1.5 text-xs"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </form>
+
+                    <form action="/admin/products/delete" method="post" class="hidden" data-delete-form="<%= item.id %>">
+                      <input type="hidden" name="productId" value="<%= item.id %>" />
+                      <input type="hidden" name="redirectTo" value="<%= categoryItemsRedirectPath %>" />
+                    </form>
+                  </td>
+                </tr>
+                <% }) %>
+              </tbody>
+            </table>
+          </div>
+        </div>
+        <% } %>
+
+        <% if (categoryItemsTotalPages > 1) { %>
+        <div class="px-5 pb-5">
+          <div class="flex flex-wrap items-center justify-between gap-2 border-t border-slate-200 pt-3">
+            <a
+              href="<%= buildCategoryItemsPageHref(categoryItemsCurrentPage - 1) %>"
+              class="pro-btn-secondary px-3 py-1.5 text-xs <%= categoryItemsCurrentPage <= 1 ? 'pointer-events-none opacity-50' : '' %>"
+              aria-disabled="<%= categoryItemsCurrentPage <= 1 ? 'true' : 'false' %>"
+            >
+              Prev
+            </a>
+
+            <div class="flex flex-wrap items-center justify-center gap-1.5">
+              <% for (var categoryPageNumber = 1; categoryPageNumber <= categoryItemsTotalPages; categoryPageNumber += 1) { %>
+              <% if (categoryPageNumber === 1 || categoryPageNumber === categoryItemsTotalPages || Math.abs(categoryPageNumber - categoryItemsCurrentPage) <= 1) { %>
+              <a
+                href="<%= buildCategoryItemsPageHref(categoryPageNumber) %>"
+                class="inline-flex min-w-[2.15rem] items-center justify-center rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition <%= categoryPageNumber === categoryItemsCurrentPage ? 'border-cyan-600 bg-cyan-600 text-white' : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-100' %>"
+              >
+                <%= categoryPageNumber %>
+              </a>
+              <% } else if ((categoryPageNumber === 2 && categoryItemsCurrentPage > 4) || (categoryPageNumber === categoryItemsTotalPages - 1 && categoryItemsCurrentPage < categoryItemsTotalPages - 3)) { %>
+              <span class="px-1 text-xs font-semibold text-slate-500">…</span>
+              <% } %>
+              <% } %>
+            </div>
+
+            <a
+              href="<%= buildCategoryItemsPageHref(categoryItemsCurrentPage + 1) %>"
+              class="pro-btn-secondary px-3 py-1.5 text-xs <%= categoryItemsCurrentPage >= categoryItemsTotalPages ? 'pointer-events-none opacity-50' : '' %>"
+              aria-disabled="<%= categoryItemsCurrentPage >= categoryItemsTotalPages ? 'true' : 'false' %>"
+            >
+              Next
+            </a>
+          </div>
+        </div>
+        <% } %>
+      </section>
+    </main>
+
+    <div id="delete-alert" class="fixed inset-0 z-50 hidden items-center justify-center bg-slate-900/50 p-4">
+      <div class="pro-panel w-full max-w-md p-5">
+        <h3 class="text-lg font-bold text-slate-900" id="delete-alert-title">Delete</h3>
+        <p class="mt-2 text-sm text-slate-700" id="delete-alert-message">Are you sure you want to delete this product?</p>
+        <div class="mt-4 flex items-center justify-end gap-2">
+          <button
+            type="button"
+            id="delete-alert-cancel"
+            class="pro-btn-secondary"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            id="delete-alert-confirm"
+            class="pro-btn-danger"
+          >
+            Delete
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <script id="admin-category-page-data" type="application/json"><%- JSON.stringify({ addProductSubcategoryOptions: addProductSubcategoryOptions }).replace(/</g, '\\u003c') %></script>
+    <script src="/javascripts/flash-alert.js"></script>
+    <script src="/javascripts/admin-category.js"></script>
+  </body>
+</html>

@@ -9,31 +9,138 @@
 
         section.items.forEach(function(item) {
           sectionBasedCatalog.push({
+            id: item.id || '',
+            type: item.type || section.title || 'Product',
             title: item.name || 'N/A',
             description: item.spec || 'N/A',
             mrp: item.price || 'Contact for price',
-            image: item.image || '/images/productParts/no-image.webp'
+            originalMrp: item.originalPrice || '',
+            discountPercent: item.discountPercent || '',
+            quantity: item.quantity || '',
+            image: item.image || '/images/productParts/no-image.webp',
+            addedOrder: Number(item.addedOrder) || 0
           });
         });
       });
   }
 
+  sectionBasedCatalog.sort(function(left, right) {
+    var leftOrder = Number(left && left.addedOrder);
+    var rightOrder = Number(right && right.addedOrder);
+    var normalizedLeftOrder = Number.isFinite(leftOrder) ? leftOrder : 0;
+    var normalizedRightOrder = Number.isFinite(rightOrder) ? rightOrder : 0;
+
+    return (
+      (normalizedRightOrder - normalizedLeftOrder) ||
+      String(left && left.type ? left.type : '').localeCompare(String(right && right.type ? right.type : '')) ||
+      String(left && left.title ? left.title : '').localeCompare(String(right && right.title ? right.title : ''))
+    );
+  });
+
   var visibleCatalog = sectionBasedCatalog;
+  var pageSize = Number(storePageSize);
+  var safePageSize = Number.isFinite(pageSize) && pageSize > 0 ? Math.floor(pageSize) : 10;
+  var requestedPage = Number(storeCurrentPage);
+  var totalPagesFromController = Number(storeTotalPages);
+  var totalPages = Number.isFinite(totalPagesFromController) && totalPagesFromController > 0
+    ? Math.floor(totalPagesFromController)
+    : Math.max(1, Math.ceil(visibleCatalog.length / safePageSize));
+  var currentPage = Number.isFinite(requestedPage) && requestedPage > 0 ? Math.floor(requestedPage) : 1;
+  var basePathForPagination = typeof basePath === 'string' && basePath ? basePath : '/';
+  var normalizedWhatsappNumber = String(storeWhatsappNumber || '').replace(/[^0-9]/g, '');
+  var whatsappBaseUrl = normalizedWhatsappNumber ? ('https://wa.me/' + normalizedWhatsappNumber) : 'https://wa.me/';
+  var hasStoreContactNumber = Boolean(normalizedWhatsappNumber);
+  var callHref = hasStoreContactNumber ? ('tel:+' + normalizedWhatsappNumber) : '#';
+  var authenticatedUser = currentUser && currentUser.email ? currentUser : null;
+  var canPlaceOrder = Boolean(authenticatedUser);
+  var loginToOrderHref = '/login?error=login-required';
+
+  function extractNumericPrice(value) {
+    var normalizedValue = String(value || '').replace(/,/g, '').replace(/[^0-9.]/g, '');
+    var parsedValue = Number(normalizedValue);
+
+    if (!Number.isFinite(parsedValue) || parsedValue <= 0) {
+      return 0;
+    }
+
+    return parsedValue;
+  }
+
+  function formatNprAmount(value) {
+    var parsedValue = Number(value);
+
+    if (!Number.isFinite(parsedValue) || parsedValue < 0) {
+      return '';
+    }
+
+    return parsedValue.toLocaleString('en-IN', {
+      maximumFractionDigits: 2,
+      minimumFractionDigits: 0
+    });
+  }
+
+  if (currentPage > totalPages) {
+    currentPage = totalPages;
+  }
+
+  var startIndex = (currentPage - 1) * safePageSize;
+  var paginatedCatalog = visibleCatalog.slice(startIndex, startIndex + safePageSize);
+
+  function buildStorePageHref(targetPage) {
+    var safeTargetPage = Number(targetPage);
+    var params = [];
+
+    if (!Number.isFinite(safeTargetPage) || safeTargetPage < 1) {
+      safeTargetPage = 1;
+    }
+
+    safeTargetPage = Math.floor(safeTargetPage);
+
+    if (q) {
+      params.push('q=' + encodeURIComponent(q));
+    }
+
+    if (activeCategory) {
+      params.push('category=' + encodeURIComponent(activeCategory));
+    }
+
+    if (safeTargetPage > 1) {
+      params.push('page=' + safeTargetPage);
+    }
+
+    return basePathForPagination + (params.length ? '?' + params.join('&') : '');
+  }
+
+  var nextPageHref = currentPage < totalPages ? buildStorePageHref(currentPage + 1) : '';
 %>
 
-<section id="products" class="space-y-10">
+<section
+  id="products"
+  class="space-y-6 pro-stagger"
+  data-store-products
+  data-current-page="<%= currentPage %>"
+  data-total-pages="<%= totalPages %>"
+  data-next-page-href="<%= nextPageHref %>"
+>
   <% if (showCarousel && Array.isArray(carouselImages) && carouselImages.length > 0) { %>
-  <section data-home-carousel class="relative overflow-hidden rounded-2xl border border-slate-300 bg-white shadow-sm">
+  <section data-home-carousel class="pro-panel relative overflow-hidden">
     <div data-carousel-track class="flex transition duration-500 ease-out">
       <% carouselImages.forEach(function(image, index) { %>
-      <div class="w-full shrink-0">
+      <div class="relative w-full shrink-0">
         <img
           src="<%= image %>"
           alt="BhutanDevi banner <%= index + 1 %>"
           class="h-56 w-full object-cover sm:h-64 md:h-72"
         />
+        <div class="absolute inset-0 bg-gradient-to-r from-slate-900/55 via-slate-900/20 to-transparent"></div>
       </div>
       <% }) %>
+    </div>
+
+    <div class="pointer-events-none absolute inset-x-0 bottom-0 p-4 text-white sm:p-6">
+      <p class="text-xs font-semibold uppercase tracking-[0.2em] text-cyan-200">BhutanDevi Collection</p>
+      <h2 class="mt-1 text-2xl font-extrabold tracking-tight sm:text-3xl">Trusted Parts For Everyday Riding</h2>
+      <p class="mt-2 max-w-xl text-sm text-slate-100/90">Explore helmets, oils, tyres, and bike essentials with clear pricing and real stock updates.</p>
     </div>
 
     <% if (carouselImages.length > 1) { %>
@@ -41,7 +148,7 @@
       type="button"
       data-carousel-prev
       aria-label="Previous slide"
-      class="absolute left-3 top-1/2 inline-flex -translate-y-1/2 items-center justify-center rounded-full bg-white/90 px-2.5 py-2 text-slate-700 shadow-sm hover:bg-white"
+      class="absolute left-3 top-1/2 inline-flex -translate-y-1/2 items-center justify-center rounded-full border border-white/40 bg-white/90 px-3 py-2 text-slate-700 shadow-sm hover:bg-white"
     >
       &#10094;
     </button>
@@ -49,7 +156,7 @@
       type="button"
       data-carousel-next
       aria-label="Next slide"
-      class="absolute right-3 top-1/2 inline-flex -translate-y-1/2 items-center justify-center rounded-full bg-white/90 px-2.5 py-2 text-slate-700 shadow-sm hover:bg-white"
+      class="absolute right-3 top-1/2 inline-flex -translate-y-1/2 items-center justify-center rounded-full border border-white/40 bg-white/90 px-3 py-2 text-slate-700 shadow-sm hover:bg-white"
     >
       &#10095;
     </button>
@@ -68,37 +175,158 @@
   </section>
   <% } %>
 
+  <div class="flex flex-wrap items-center gap-2">
+    <h2 class="pro-section-title !text-2xl sm:!text-[2rem]">Browse Products</h2>
+    <span class="pro-chip-dark"><%= visibleCatalog.length %> available</span>
+  </div>
+
   <% if (visibleCatalog.length === 0) { %>
-  <div class="rounded-2xl border border-slate-300 bg-white p-6 text-center text-sm font-medium text-slate-600">
-    No products available for your current filter.
+  <div class="pro-panel p-8 text-center">
+    <p class="text-sm font-medium text-slate-600">No products available for your current filter.</p>
   </div>
   <% } %>
 
-  <% for (var rowIndex = 0; rowIndex < visibleCatalog.length; rowIndex += 3) { %>
-  <div class="grid gap-4 md:grid-cols-3 md:gap-0">
-    <% visibleCatalog.slice(rowIndex, rowIndex + 3).forEach(function(item) { %>
-    <table class="w-full border border-slate-700 bg-white text-slate-900">
-      <tr>
-        <td colspan="2" class="h-72 border-b border-slate-700 p-3">
-          <div class="flex h-full items-center justify-center bg-white">
-            <img src="<%= item.image %>" alt="<%= item.title %>" onerror="this.onerror=null;this.src='/images/productParts/no-image.webp';" class="h-full max-h-full object-contain" />
+  <div id="products-grid" class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 pro-stagger">
+    <% paginatedCatalog.forEach(function(item) { %>
+    <%
+      var productHref = item.id ? '/products/' + encodeURIComponent(item.id) : '#';
+      var orderPageHref = item.id ? '/order/' + encodeURIComponent(item.id) : '#';
+      var hasDiscountedPrice = item.originalMrp && item.originalMrp !== item.mrp;
+      var normalizedDiscount = Number(item.discountPercent);
+      var hasValidDiscount = Number.isFinite(normalizedDiscount) && normalizedDiscount > 0;
+      var unitPriceValue = extractNumericPrice(item.mrp);
+      var hasUnitPriceValue = unitPriceValue > 0;
+      var whatsappInquiryMessage = 'Hello, I want details about "' + item.title + '" (' + item.type + ').';
+      var whatsappInquiryHref = whatsappBaseUrl + '?text=' + encodeURIComponent(whatsappInquiryMessage);
+    %>
+    <article class="pro-grid-card is-loading group relative flex h-full flex-col overflow-hidden" data-product-card>
+      <div class="pro-card-skeleton" aria-hidden="true">
+        <span class="pro-skeleton-block pro-skeleton-media"></span>
+        <div class="flex items-start justify-between gap-2">
+          <span class="pro-skeleton-block pro-skeleton-title"></span>
+          <span class="pro-skeleton-block pro-skeleton-tag"></span>
+        </div>
+        <span class="pro-skeleton-block pro-skeleton-line"></span>
+        <span class="pro-skeleton-block pro-skeleton-line-sm"></span>
+        <div class="mt-auto flex items-end justify-between gap-2">
+          <span class="pro-skeleton-block pro-skeleton-price"></span>
+          <span class="pro-skeleton-block pro-skeleton-btn"></span>
+        </div>
+      </div>
+      <a href="<%= productHref %>" class="flex flex-1 flex-col">
+        <div class="relative aspect-[4/3] overflow-hidden bg-slate-100 p-3 sm:p-4">
+          <% if (hasValidDiscount) { %>
+          <span class="pro-chip absolute left-3 top-3 z-20"><%= normalizedDiscount %>% OFF</span>
+          <% } %>
+          <div class="h-full w-full overflow-hidden rounded-lg bg-white/70">
+            <img
+              src="<%= item.image %>"
+              alt="<%= item.title %>"
+              onerror="this.onerror=null;this.src='/images/productParts/no-image.webp';"
+              class="relative z-0 h-full w-full object-contain transition duration-300 group-hover:scale-[1.04]"
+              loading="lazy"
+              decoding="async"
+              data-product-image
+            />
           </div>
-        </td>
-      </tr>
-      <tr>
-        <th class="w-1/3 border-r border-b border-slate-700 px-2 py-2 text-left text-lg font-bold">Title:</th>
-        <td class="border-b border-slate-700 px-2 py-2 text-lg"><%= item.title %></td>
-      </tr>
-      <tr>
-        <th class="border-r border-b border-slate-700 px-2 py-2 text-left text-lg font-bold">Description:</th>
-        <td class="border-b border-slate-700 px-2 py-2 text-lg"><%= item.description %></td>
-      </tr>
-      <tr>
-        <th class="border-r border-slate-700 px-2 py-2 text-left text-lg font-bold">MRP:</th>
-        <td class="px-2 py-2 text-lg"><%= item.mrp %></td>
-      </tr>
-    </table>
+        </div>
+
+        <div class="flex flex-1 flex-col gap-2 border-t border-slate-200 p-4">
+          <div class="flex flex-wrap items-start justify-between gap-2">
+            <h3 class="min-w-0 flex-1 text-base font-extrabold text-slate-900 sm:text-lg"><%= item.title %></h3>
+            <span class="pro-chip-dark shrink-0"><%= item.type %></span>
+          </div>
+
+          <p class="text-sm leading-relaxed text-slate-600"><%= item.description %></p>
+
+          <% if (item.quantity) { %>
+          <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Stock: <%= item.quantity %></p>
+          <% } %>
+
+          <div class="mt-auto flex items-end justify-between gap-2 pt-1">
+            <div>
+              <div class="min-h-[1rem]">
+                <% if (hasDiscountedPrice) { %>
+                <p class="text-xs font-semibold text-red-600 line-through"><%= item.originalMrp %></p>
+                <% } %>
+              </div>
+              <p class="text-2xl font-extrabold tracking-tight text-emerald-700"><%= item.mrp %></p>
+            </div>
+          </div>
+        </div>
+      </a>
+
+      <div class="grid grid-cols-2 gap-2 border-t border-slate-200 bg-white px-4 py-3">
+        <a href="<%= productHref %>" class="pro-btn-secondary w-full gap-1.5 px-3 py-2 text-xs sm:py-1.5">
+          <img src="/icons/details.svg" alt="" aria-hidden="true" class="shrink-0" style="width: 14px; height: 14px;" />
+          <span>Details</span>
+        </a>
+        <a href="<%= whatsappInquiryHref %>" target="_blank" rel="noopener noreferrer" class="pro-btn-secondary w-full gap-1.5 px-3 py-2 text-xs sm:py-1.5">
+          <img src="/icons/whatsapp.svg" alt="" aria-hidden="true" class="shrink-0" style="width: 14px; height: 14px;" />
+          <span>WhatsApp</span>
+        </a>
+        <a
+          href="<%= callHref %>"
+          class="pro-btn-secondary w-full gap-1.5 px-3 py-2 text-xs sm:py-1.5 <%= hasStoreContactNumber ? '' : 'pointer-events-none opacity-50' %>"
+          aria-disabled="<%= hasStoreContactNumber ? 'false' : 'true' %>"
+        >
+          <img src="/icons/phone.svg" alt="" aria-hidden="true" class="shrink-0" style="width: 14px; height: 14px;" />
+          <span>Call</span>
+        </a>
+        <% if (canPlaceOrder) { %>
+        <a
+          href="<%= orderPageHref %>"
+          class="pro-btn-primary w-full gap-1.5 px-3 py-2 text-xs sm:py-1.5 <%= item.id ? '' : 'pointer-events-none opacity-50' %>"
+          aria-disabled="<%= item.id ? 'false' : 'true' %>"
+        >
+          <img src="/icons/order.svg" alt="" aria-hidden="true" class="shrink-0" style="width: 14px; height: 14px;" />
+          <span>Order</span>
+        </a>
+        <% } else { %>
+        <a href="<%= loginToOrderHref %>" class="pro-btn-primary w-full gap-1.5 px-3 py-2 text-xs sm:py-1.5">
+          <img src="/icons/login-white.svg" alt="" aria-hidden="true" class="shrink-0" style="width: 14px; height: 14px;" />
+          <span>Login to Order</span>
+        </a>
+        <% } %>
+      </div>
+    </article>
     <% }) %>
   </div>
+
+  <% if (visibleCatalog.length > 0 && totalPages > 1) { %>
+  <div class="flex flex-wrap items-center justify-between gap-2 pt-1" data-products-pagination>
+    <a
+      href="<%= buildStorePageHref(currentPage - 1) %>"
+      class="pro-btn-secondary px-3 py-1.5 text-xs <%= currentPage <= 1 ? 'pointer-events-none opacity-50' : '' %>"
+      aria-disabled="<%= currentPage <= 1 ? 'true' : 'false' %>"
+    >
+      Prev
+    </a>
+
+    <div class="flex flex-wrap items-center justify-center gap-1.5">
+      <% for (var pageNumber = 1; pageNumber <= totalPages; pageNumber += 1) { %>
+      <% if (pageNumber === 1 || pageNumber === totalPages || Math.abs(pageNumber - currentPage) <= 1) { %>
+      <a
+        href="<%= buildStorePageHref(pageNumber) %>"
+        class="inline-flex min-w-[2.15rem] items-center justify-center rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition <%= pageNumber === currentPage ? 'border-cyan-600 bg-cyan-600 text-white' : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-100' %>"
+      >
+        <%= pageNumber %>
+      </a>
+      <% } else if ((pageNumber === 2 && currentPage > 4) || (pageNumber === totalPages - 1 && currentPage < totalPages - 3)) { %>
+      <span class="px-1 text-xs font-semibold text-slate-500">…</span>
+      <% } %>
+      <% } %>
+    </div>
+
+    <a
+      href="<%= buildStorePageHref(currentPage + 1) %>"
+      data-pagination-next
+      class="pro-btn-secondary px-3 py-1.5 text-xs <%= currentPage >= totalPages ? 'pointer-events-none opacity-50' : '' %>"
+      aria-disabled="<%= currentPage >= totalPages ? 'true' : 'false' %>"
+    >
+      Next
+    </a>
+  </div>
   <% } %>
+
 </section>

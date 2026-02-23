@@ -5,41 +5,141 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link
-      href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;700;800&display=swap"
-      rel="stylesheet"
-    />
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;700;800&display=swap" rel="stylesheet" />
     <title><%= title %></title>
     <link rel="stylesheet" href="/stylesheets/style.css" />
   </head>
-  <body class="bg-slate-100 text-slate-900" style="font-family: 'Manrope', sans-serif">
-    <%- include('helpers/nav', { title: 'BhutanDevi Trade and Suppliers', q, activeCategory, hasSidebar: false, topNavCategories, searchSuggestions, basePath }) %>
+  <body class="text-slate-900">
+    <%- include('helpers/nav', { title: 'BhutanDevi Trade and Suppliers', q, activeCategory, hasSidebar: true, topNavCategories, searchSuggestions, basePath, currentPath, currentUser, showUserAuthActions }) %>
 
-    <main class="mx-auto max-w-5xl px-4 py-6 sm:px-6 lg:px-8">
-      <a href="/" class="inline-flex items-center rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm font-semibold text-slate-700 hover:bg-slate-100">
-        Back to products
-      </a>
+    <main class="app-shell py-6">
+      <div id="home-layout-grid" class="grid gap-5 lg:grid-cols-[20rem_minmax(0,1fr)]">
+        <%- include('helpers/sidebar', { categoryGroups, hasQuery, q, activeCategory, openCategoryName, basePath, currentUser, showUserAuthActions, currentPath }) %>
 
-      <section class="mt-4 rounded-2xl border border-slate-300 bg-white p-6 shadow-sm">
-        <div class="grid gap-6 lg:grid-cols-[1fr_1.2fr]">
-          <div class="rounded-xl border border-slate-200 bg-slate-50 p-4">
-            <img
-              src="<%= product.image %>"
-              alt="<%= product.name %>"
-              onerror="this.onerror=null;this.src='/images/productParts/no-image.webp';"
-              class="mx-auto h-80 w-full max-w-md object-contain"
-            />
-          </div>
-
-          <div>
-            <p class="text-xs font-semibold uppercase tracking-[0.2em] text-blue-600"><%= product.type %></p>
-            <h1 class="mt-2 text-3xl font-extrabold tracking-tight text-slate-900"><%= product.name %></h1>
-            <p class="mt-2 text-sm text-slate-600"><%= product.spec %></p>
-            <div class="mt-4 inline-flex rounded-full bg-blue-100 px-3 py-1 text-xs font-semibold text-blue-700">Section: <%= sectionTitle %></div>
-            <p class="mt-6 text-2xl font-extrabold text-slate-900"><%= product.price %></p>
-          </div>
+        <section class="min-w-0 pro-page-enter">
+          <div class="pro-panel p-4 sm:p-6 pro-stagger">
+        <div class="flex flex-wrap items-center gap-2">
+          <a href="/" class="pro-btn-secondary">
+            Back to products
+          </a>
+          <span class="pro-chip ml-auto">Product Details</span>
         </div>
-      </section>
+
+        <section class="mt-5">
+          <div class="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)] pro-stagger">
+            <div class="pro-panel-muted ">
+              <div class="rounded-xl p-3">
+                <img
+                  src="<%= product.image %>"
+                  alt="<%= product.name %>"
+                  onerror="this.onerror=null;this.src='/images/productParts/no-image.webp';"
+                  class="mx-auto h-56 w-full max-w-md object-contain sm:h-72 lg:h-80"
+                />
+              </div>
+            </div>
+
+            <div class="space-y-4">
+              <%
+                function extractNumericPrice(value) {
+                  var normalizedValue = String(value || '').replace(/,/g, '').replace(/[^0-9.]/g, '');
+                  var parsedValue = Number(normalizedValue);
+
+                  if (!Number.isFinite(parsedValue) || parsedValue <= 0) {
+                    return 0;
+                  }
+
+                  return parsedValue;
+                }
+
+                function formatNprAmount(value) {
+                  var parsedValue = Number(value);
+
+                  if (!Number.isFinite(parsedValue) || parsedValue < 0) {
+                    return '';
+                  }
+
+                  return parsedValue.toLocaleString('en-IN', {
+                    maximumFractionDigits: 2,
+                    minimumFractionDigits: 0
+                  });
+                }
+
+                var hasDiscountedPrice = product.originalPrice && product.originalPrice !== product.price;
+                var normalizedWhatsappNumber = String(storeWhatsappNumber || '').replace(/[^0-9]/g, '');
+                var whatsappBaseUrl = normalizedWhatsappNumber ? ('https://wa.me/' + normalizedWhatsappNumber) : 'https://wa.me/';
+                var hasStoreContactNumber = Boolean(normalizedWhatsappNumber);
+                var callHref = hasStoreContactNumber ? ('tel:+' + normalizedWhatsappNumber) : '#';
+                var unitPriceValue = extractNumericPrice(product.price);
+                var hasUnitPriceValue = unitPriceValue > 0;
+                var whatsappInquiryMessage = 'Hello, I want details about "' + product.name + '" (' + product.type + ').';
+                var whatsappInquiryHref = whatsappBaseUrl + '?text=' + encodeURIComponent(whatsappInquiryMessage);
+                var authenticatedUser = currentUser && currentUser.email ? currentUser : null;
+                var canPlaceOrder = Boolean(authenticatedUser);
+                var loginToOrderHref = '/login?error=login-required';
+                var orderPageHref = product.id ? ('/order/' + encodeURIComponent(product.id)) : '#';
+              %>
+              <span class="pro-chip"><%= product.type %></span>
+              <h1 class="text-3xl font-extrabold tracking-tight text-slate-900 sm:text-4xl"><%= product.name %></h1>
+              <p class="text-sm leading-relaxed text-slate-600"><%= product.spec %></p>
+
+              <div class="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                <p class="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Pricing</p>
+                <div class="mt-2">
+                  <% if (hasDiscountedPrice) { %>
+                  <p class="text-sm font-semibold text-red-600 line-through"><%= product.originalPrice %></p>
+                  <% } %>
+                  <p class="text-3xl font-extrabold tracking-tight text-emerald-700"><%= product.price %></p>
+                </div>
+              </div>
+
+              <div class="grid gap-3 sm:grid-cols-2">
+                <div class="rounded-xl border border-slate-200 bg-white p-3">
+                  <p class="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Section</p>
+                  <p class="mt-1 text-sm font-bold text-slate-800"><%= sectionTitle %></p>
+                </div>
+                <div class="rounded-xl border border-slate-200 bg-white p-3">
+                  <p class="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Stock</p>
+                  <p class="mt-1 text-sm font-bold text-slate-800"><%= product.quantity ? ('Qty: ' + product.quantity) : 'On request' %></p>
+                </div>
+              </div>
+
+              <div class="grid grid-cols-1 gap-2 pt-1 sm:flex sm:flex-wrap sm:items-center">
+                <a href="<%= whatsappInquiryHref %>" target="_blank" rel="noopener noreferrer" class="pro-btn-secondary w-full gap-1.5 px-3 py-2 text-xs sm:w-auto sm:py-1.5">
+                  <img src="/icons/whatsapp.svg" alt="" aria-hidden="true" class="shrink-0" style="width: 14px; height: 14px;" />
+                  <span>WhatsApp</span>
+                </a>
+                <a
+                  href="<%= callHref %>"
+                  class="pro-btn-secondary w-full gap-1.5 px-3 py-2 text-xs sm:w-auto sm:py-1.5 <%= hasStoreContactNumber ? '' : 'pointer-events-none opacity-50' %>"
+                  aria-disabled="<%= hasStoreContactNumber ? 'false' : 'true' %>"
+                >
+                  <img src="/icons/phone.svg" alt="" aria-hidden="true" class="shrink-0" style="width: 14px; height: 14px;" />
+                  <span>Call</span>
+                </a>
+                <% if (canPlaceOrder) { %>
+                <a
+                  href="<%= orderPageHref %>"
+                  class="pro-btn-primary w-full gap-1.5 px-3 py-2 text-xs sm:w-auto sm:py-1.5 <%= product.id ? '' : 'pointer-events-none opacity-50' %>"
+                  aria-disabled="<%= product.id ? 'false' : 'true' %>"
+                >
+                  <img src="/icons/order.svg" alt="" aria-hidden="true" class="shrink-0" style="width: 14px; height: 14px;" />
+                  <span>Order</span>
+                </a>
+                <% } else { %>
+                <a href="<%= loginToOrderHref %>" class="pro-btn-primary w-full gap-1.5 px-3 py-2 text-xs sm:w-auto sm:py-1.5">
+                  <img src="/icons/login-white.svg" alt="" aria-hidden="true" class="shrink-0" style="width: 14px; height: 14px;" />
+                  <span>Login to Order</span>
+                </a>
+                <% } %>
+              </div>
+            </div>
+          </div>
+        </section>
+          </div>
+        </section>
+      </div>
     </main>
+    <%- include('helpers/footer', { basePath, currentPath, categoryGroups, currentUser }) %>
+    <script src="/javascripts/home.js"></script>
   </body>
 </html>
