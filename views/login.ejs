@@ -49,6 +49,8 @@
                       name="email"
                       type="email"
                       value="<%= authEmail || '' %>"
+                      maxlength="<%= maxEmailLength %>"
+                      autocomplete="email"
                       required
                       class="pro-input"
                       placeholder="you@gmail.com"
@@ -62,10 +64,17 @@
                       name="password"
                       type="password"
                       autocomplete="current-password"
+                      minlength="<%= minPasswordLength %>"
+                      maxlength="<%= maxPasswordLength %>"
                       required
-                      class="pro-input"
+                      class="pro-input <%= errorMessage ? 'border-red-300 focus:border-red-300' : '' %>"
+                      aria-invalid="<%= errorMessage ? 'true' : 'false' %>"
+                      <%= errorMessage ? 'aria-describedby=\"login-inline-error\"' : '' %>
                       placeholder="Enter your password"
                     />
+                    <% if (errorMessage) { %>
+                    <p id="login-inline-error" class="mt-1.5 text-sm font-semibold text-red-700"><%= errorMessage %></p>
+                    <% } %>
                   </div>
 
                   <div class="flex flex-wrap items-center justify-between gap-2 pt-1">

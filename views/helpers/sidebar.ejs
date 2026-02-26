@@ -80,14 +80,14 @@
         <div class="mt-1 flex flex-wrap gap-1.5 pl-11 pr-1 pb-1">
           <a
             href="<%= buildCategoryHref(group.name) %>"
-            class="inline-flex items-center rounded-full border px-2.5 py-1 text-[11px] font-semibold transition-all duration-200 <%= group.isActive ? 'border-cyan-400 bg-cyan-50 text-cyan-700' : 'border-slate-300 bg-white text-slate-600 hover:-translate-y-0.5 hover:border-slate-400 hover:bg-slate-100' %>"
+            class="inline-flex items-center rounded-full border px-2.5 py-1 text-[11px] font-semibold transition-all duration-200 <%= group.isActive ? 'border-cyan-400 bg-white text-cyan-700' : 'border-slate-300 text-slate-600 hover:-translate-y-0.5 hover:border-slate-400 hover:bg-slate-100' %>"
           >
             All <%= group.name %>
           </a>
           <% group.items.forEach(function(item) { %>
           <a
             href="<%= buildSubcategoryHref(group.name, item.label) %>"
-            class="inline-flex items-center rounded-full border px-2.5 py-1 text-[11px] font-medium transition-all duration-200 <%= item.isMatch ? 'border-cyan-400 bg-cyan-50 text-cyan-700' : 'border-slate-300 bg-white text-slate-600 hover:-translate-y-0.5 hover:border-slate-400 hover:bg-slate-100' %>"
+            class="inline-flex items-center rounded-full border px-2.5 py-1 text-[11px] font-medium transition-all duration-200 <%= item.isMatch ? 'border-cyan-400  text-cyan-700' : 'border-slate-300 bg-white text-slate-600 hover:-translate-y-0.5 hover:border-slate-400 hover:bg-slate-100' %>"
           >
             <%= item.label %>
           </a>

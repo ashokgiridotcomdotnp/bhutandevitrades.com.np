@@ -61,7 +61,9 @@
                       id="profile-name"
                       name="name"
                       type="text"
-                      maxlength="120"
+                      minlength="<%= minUserNameLength %>"
+                      maxlength="<%= maxUserNameLength %>"
+                      autocomplete="name"
                       required
                       class="pro-input"
                       value="<%= profileName || '' %>"
@@ -77,7 +79,7 @@
 
               <section class="rounded-xl border border-slate-200 bg-slate-50 p-4">
                 <h2 class="text-lg font-extrabold text-slate-900">Change Password</h2>
-                <p class="mt-1 text-sm text-slate-600">Use a strong password with at least <%= minPasswordLength %> characters.</p>
+                <p class="mt-1 text-sm text-slate-600">Use a strong password between <%= minPasswordLength %> and <%= maxPasswordLength %> characters.</p>
 
                 <form action="/profile/password" method="post" class="mt-4 space-y-3">
                   <div>
@@ -87,6 +89,7 @@
                       name="currentPassword"
                       type="password"
                       autocomplete="current-password"
+                      maxlength="<%= maxPasswordLength %>"
                       required
                       class="pro-input"
                       placeholder="Enter current password"
@@ -102,6 +105,7 @@
                       autocomplete="new-password"
                       required
                       minlength="<%= minPasswordLength %>"
+                      maxlength="<%= maxPasswordLength %>"
                       class="pro-input"
                       placeholder="Enter new password"
                     />
@@ -116,13 +120,14 @@
                       autocomplete="new-password"
                       required
                       minlength="<%= minPasswordLength %>"
+                      maxlength="<%= maxPasswordLength %>"
                       class="pro-input"
                       placeholder="Re-enter new password"
                     />
                   </div>
 
                   <div class="pt-0.5">
-                    <a href="/forgot-password?email=<%= encodeURIComponent(profileEmail || '') %>" class="text-sm font-semibold text-cyan-700 hover:text-cyan-800">Forgot current password?</a>
+                    <a href="/forgot-password" class="text-sm font-semibold text-cyan-700 hover:text-cyan-800">Forgot current password?</a>
                   </div>
 
                   <div class="pt-1">

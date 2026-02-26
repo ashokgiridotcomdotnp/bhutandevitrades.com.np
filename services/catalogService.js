@@ -570,6 +570,8 @@ function cloneProductSections(sections, adminProductOrderLookup) {
           var effectiveType = toTrimmedString(productOverride.type) || toTrimmedString(item.type);
           var overridePrice = toTrimmedString(productOverride.price);
           var hasOverridePrice = Boolean(overridePrice);
+          var overrideQuantity = toTrimmedString(productOverride.quantity);
+          var hasOverrideQuantity = Boolean(overrideQuantity);
           var hasPriceOverride =
             itemId &&
             adminData &&
@@ -589,8 +591,8 @@ function cloneProductSections(sections, adminProductOrderLookup) {
           var effectiveDiscountPercent = hasOverridePrice
             ? toTrimmedString(productOverride.discountPercent)
             : toTrimmedString(item.discountPercent);
-          var effectiveQuantity = hasOverridePrice
-            ? toTrimmedString(productOverride.quantity)
+          var effectiveQuantity = hasOverrideQuantity
+            ? overrideQuantity
             : toTrimmedString(item.quantity);
 
           if (hasPriceOverride) {
@@ -738,6 +740,9 @@ function normalizeAdminDataShape(rawData) {
       var cleanName = toTrimmedString(rawOverride.name);
       var cleanSpec = toTrimmedString(rawOverride.spec);
       var cleanPrice = toTrimmedString(rawOverride.price);
+      var cleanOriginalPrice = toTrimmedString(rawOverride.originalPrice);
+      var cleanDiscountPercent = toTrimmedString(rawOverride.discountPercent);
+      var cleanQuantity = toTrimmedString(rawOverride.quantity);
       var cleanImage = normalizeAssetPath(rawOverride.image);
 
       if (cleanType) {
@@ -754,6 +759,18 @@ function normalizeAdminDataShape(rawData) {
 
       if (cleanPrice) {
         normalizedOverride.price = cleanPrice;
+      }
+
+      if (cleanOriginalPrice) {
+        normalizedOverride.originalPrice = cleanOriginalPrice;
+      }
+
+      if (cleanDiscountPercent) {
+        normalizedOverride.discountPercent = cleanDiscountPercent;
+      }
+
+      if (cleanQuantity) {
+        normalizedOverride.quantity = cleanQuantity;
       }
 
       if (cleanImage) {
@@ -815,10 +832,24 @@ async function refreshAdminData() {
 
 async function saveAdminData() {
   var normalizedData = normalizeAdminDataShape(adminData);
+  var mongoEnabled = isMongoStorageEnabled();
+  var didSaveToDatabase = false;
+
   adminData = normalizedData;
   clearCatalogContextCache();
 
-  if (await adminDataStore.saveToDatabase(normalizedData, normalizeAdminDataShape, createDefaultAdminData)) {
+  if (mongoEnabled) {
+    didSaveToDatabase = await adminDataStore.saveToDatabase(
+      normalizedData,
+      normalizeAdminDataShape,
+      createDefaultAdminData
+    );
+
+    if (!didSaveToDatabase) {
+      return false;
+    }
+
+    // Keep file in sync as a local backup after primary DB write succeeds.
     saveAdminDataToFile();
     return true;
   }
@@ -914,6 +945,8 @@ function getMergedProductSections() {
     var effectiveCategoryName = toTrimmedString(productOverride.type) || toTrimmedString(product.type) || 'Other';
     var overridePrice = toTrimmedString(productOverride.price);
     var hasOverridePrice = Boolean(overridePrice);
+    var overrideQuantity = toTrimmedString(productOverride.quantity);
+    var hasOverrideQuantity = Boolean(overrideQuantity);
     var hasPriceOverride =
       product.id &&
       adminData &&
@@ -933,8 +966,8 @@ function getMergedProductSections() {
     var effectiveDiscountPercent = hasOverridePrice
       ? toTrimmedString(productOverride.discountPercent)
       : toTrimmedString(product.discountPercent);
-    var effectiveQuantity = hasOverridePrice
-      ? toTrimmedString(productOverride.quantity)
+    var effectiveQuantity = hasOverrideQuantity
+      ? overrideQuantity
       : toTrimmedString(product.quantity);
     var sectionKey = normalizeForSearch(effectiveCategoryName) || 'other';
 
@@ -1523,7 +1556,11 @@ function getAdminStatusMessage(statusCode) {
   }
 
   if (statusCode === 'order-accepted') {
-    return 'Order accepted and customer notification sent.';
+    return 'Order accepted. Customer notification is being sent.';
+  }
+
+  if (statusCode === 'order-deleted') {
+    return 'Order request deleted successfully.';
   }
 
   return '';
@@ -1556,6 +1593,14 @@ function getAdminErrorMessage(errorCode) {
 
   if (errorCode === 'product-price-required') {
     return 'Price is required.';
+  }
+
+  if (errorCode === 'out-of-stock') {
+    return 'This product is out of stock and cannot be accepted.';
+  }
+
+  if (errorCode === 'insufficient-stock') {
+    return 'Not enough stock to accept this order.';
   }
 
   if (errorCode === 'product-not-found') {

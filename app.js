@@ -39,7 +39,10 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 app.use(cookieParser());
 app.use(userAuth.attachUserContext);
-app.use(express.static(path.join(__dirname, 'public')));
+app.use(express.static(path.join(__dirname, 'public'), {
+  etag: true,
+  maxAge: '1d',
+}));
 
 app.use('/', indexRouter);
 
@@ -50,12 +53,33 @@ app.use(function(req, res, next) {
 
 // error handler
 app.use(function(err, req, res, next) {
+  var statusCode = err.status || 500;
+  var safeRequestedPath = '/';
+  var isDevelopmentEnv = req.app.get('env') === 'development';
+
+  if (req && typeof req.path === 'string' && req.path.trim()) {
+    safeRequestedPath = req.path.trim();
+  }
+
+  if (safeRequestedPath.length > 180) {
+    safeRequestedPath = safeRequestedPath.slice(0, 180) + '...';
+  }
+
+  res.set('Cache-Control', 'private, no-store');
+  res.status(statusCode);
+
+  if (statusCode === 404) {
+    return res.render('404', { requestedPath: safeRequestedPath });
+  }
+
   // set locals, only providing error in development
-  res.locals.message = err.message;
-  res.locals.error = req.app.get('env') === 'development' ? err : {};
+  res.locals.message = isDevelopmentEnv
+    ? err.message
+    : (statusCode >= 500 ? 'Something went wrong. Please try again later.' : err.message);
+  res.locals.error = isDevelopmentEnv ? err : {};
+  res.locals.statusCode = statusCode;
 
   // render the error page
-  res.status(err.status || 500);
   res.render('error');
 });
 

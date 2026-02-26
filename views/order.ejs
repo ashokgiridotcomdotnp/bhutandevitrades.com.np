@@ -47,11 +47,11 @@
               var parsedValue = Number(cleanValue);
 
               if (!cleanValue) {
-                return null;
+                return 0;
               }
 
               if (!Number.isFinite(parsedValue) || parsedValue < 0) {
-                return null;
+                return 0;
               }
 
               return Math.floor(parsedValue);
@@ -244,16 +244,6 @@
         </section>
       </div>
     </main>
-    <div
-      class="pointer-events-none fixed inset-0 z-[120] hidden items-center justify-center bg-slate-900/40 backdrop-blur-[2px]"
-      data-order-loading-overlay
-      aria-hidden="true"
-    >
-      <div class="flex flex-col items-center gap-2 rounded-2xl border border-slate-200 bg-white px-6 py-5 shadow-2xl">
-        <img src="/icons/loading.svg" alt="" aria-hidden="true" class="h-10 w-10 animate-spin" />
-        <p class="text-sm font-semibold text-slate-700">Submitting order...</p>
-      </div>
-    </div>
     <%- include('helpers/footer', { basePath, currentPath, categoryGroups, currentUser }) %>
     <script src="/javascripts/flash-alert.js"></script>
     <script src="/javascripts/order-page.js"></script>

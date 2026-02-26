@@ -18,7 +18,6 @@
   var submitButtons = Array.prototype.slice.call(form.querySelectorAll('[data-order-submit]'));
   var successMessageElement = form.querySelector('[data-order-success]');
   var errorMessageElement = form.querySelector('[data-order-error]');
-  var loadingOverlay = document.querySelector('[data-order-loading-overlay]');
   var whatsappBaseUrl = String(form.getAttribute('data-whatsapp-base-url') || '').trim();
   var unitPriceValue = parsePositiveNumber(form.getAttribute('data-order-unit-price-value'));
   var unitPriceLabel = String(form.getAttribute('data-order-unit-price-label') || 'Contact for price').trim() || 'Contact for price';
@@ -40,11 +39,11 @@
     var parsedValue = Number(cleanValue);
 
     if (!cleanValue) {
-      return null;
+      return 0;
     }
 
     if (!Number.isFinite(parsedValue) || parsedValue < 0) {
-      return null;
+      return 0;
     }
 
     return Math.floor(parsedValue);
@@ -231,16 +230,22 @@
   }
 
   function setLoadingOverlay(isVisible) {
-    if (!loadingOverlay) {
+    var globalLoading = window.bdLoading || null;
+
+    if (!globalLoading || typeof globalLoading !== 'object') {
       return;
     }
 
-    loadingOverlay.classList.toggle('hidden', !isVisible);
-    loadingOverlay.classList.toggle('flex', isVisible);
-    loadingOverlay.classList.toggle('pointer-events-none', !isVisible);
-    loadingOverlay.classList.toggle('pointer-events-auto', isVisible);
-    loadingOverlay.setAttribute('aria-hidden', isVisible ? 'false' : 'true');
-    document.body.classList.toggle('overflow-hidden', isVisible);
+    if (isVisible) {
+      if (typeof globalLoading.show === 'function') {
+        globalLoading.show();
+      }
+      return;
+    }
+
+    if (typeof globalLoading.hide === 'function') {
+      globalLoading.hide();
+    }
   }
 
   function clearMessages() {
@@ -287,6 +292,30 @@
 
     errorMessageElement.textContent = message;
     errorMessageElement.classList.remove('hidden');
+  }
+
+  function clearOrderFormAfterSuccess() {
+    if (quantityInput) {
+      quantityInput.value = '1';
+      quantityInput.setCustomValidity('');
+    }
+
+    if (customerNameInput) {
+      customerNameInput.value = '';
+      customerNameInput.setCustomValidity('');
+    }
+
+    if (phoneInput) {
+      phoneInput.value = '';
+      phoneInput.setCustomValidity('');
+    }
+
+    if (noteInput) {
+      noteInput.value = '';
+      noteInput.setCustomValidity('');
+    }
+
+    refreshOrderTotal();
   }
 
   form.addEventListener('submit', async function (event) {
@@ -336,7 +365,7 @@
       });
 
       if (response.status === 401) {
-        window.location.href = '/login?error=login-required';
+        window.location.href = '/login';
         return;
       }
 
@@ -355,10 +384,12 @@
       }
 
       if (shouldOpenWhatsapp) {
+        clearOrderFormAfterSuccess();
         showSuccess(result.message || 'Order submitted. Opening WhatsApp...');
         return;
       }
 
+      clearOrderFormAfterSuccess();
       showSuccess(result.message || 'Order submitted. Email sent successfully.');
     } catch (error) {
       showError('Could not submit order right now. Please try again.');

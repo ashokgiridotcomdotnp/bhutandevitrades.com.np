@@ -75,8 +75,12 @@
                 var whatsappInquiryHref = whatsappBaseUrl + '?text=' + encodeURIComponent(whatsappInquiryMessage);
                 var authenticatedUser = currentUser && currentUser.email ? currentUser : null;
                 var canPlaceOrder = Boolean(authenticatedUser);
-                var loginToOrderHref = '/login?error=login-required';
+                var loginToOrderHref = '/login';
                 var orderPageHref = product.id ? ('/order/' + encodeURIComponent(product.id)) : '#';
+                var parsedStockQuantity = Number(String(product && typeof product.quantity !== 'undefined' ? product.quantity : '').trim());
+                var hasStockQuantity = Number.isFinite(parsedStockQuantity) && parsedStockQuantity > 0;
+                var canOrderItem = Boolean(product.id) && hasStockQuantity;
+                var orderActionHref = canOrderItem ? orderPageHref : '#';
               %>
               <span class="pro-chip"><%= product.type %></span>
               <h1 class="text-3xl font-extrabold tracking-tight text-slate-900 sm:text-4xl"><%= product.name %></h1>
@@ -99,7 +103,7 @@
                 </div>
                 <div class="rounded-xl border border-slate-200 bg-white p-3">
                   <p class="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Stock</p>
-                  <p class="mt-1 text-sm font-bold text-slate-800"><%= product.quantity ? ('Qty: ' + product.quantity) : 'On request' %></p>
+                  <p class="mt-1 text-sm font-bold text-slate-800"><%= hasStockQuantity ? ('Qty: ' + Math.floor(parsedStockQuantity)) : 'Out of stock' %></p>
                 </div>
               </div>
 
@@ -118,12 +122,12 @@
                 </a>
                 <% if (canPlaceOrder) { %>
                 <a
-                  href="<%= orderPageHref %>"
-                  class="pro-btn-primary w-full gap-1.5 px-3 py-2 text-xs sm:w-auto sm:py-1.5 <%= product.id ? '' : 'pointer-events-none opacity-50' %>"
-                  aria-disabled="<%= product.id ? 'false' : 'true' %>"
+                  href="<%= orderActionHref %>"
+                  class="pro-btn-primary w-full gap-1.5 px-3 py-2 text-xs sm:w-auto sm:py-1.5 <%= canOrderItem ? '' : 'pointer-events-none opacity-50' %>"
+                  aria-disabled="<%= canOrderItem ? 'false' : 'true' %>"
                 >
                   <img src="/icons/order.svg" alt="" aria-hidden="true" class="shrink-0" style="width: 14px; height: 14px;" />
-                  <span>Order</span>
+                  <span><%= hasStockQuantity ? 'Order' : 'Out of stock' %></span>
                 </a>
                 <% } else { %>
                 <a href="<%= loginToOrderHref %>" class="pro-btn-primary w-full gap-1.5 px-3 py-2 text-xs sm:w-auto sm:py-1.5">

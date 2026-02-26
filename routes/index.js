@@ -38,7 +38,14 @@ router.post('/admin/products/delete', adminController.deleteProduct);
 router.post('/admin/categories/delete', adminController.deleteCategory);
 router.post('/admin/categories', adminController.saveCategory);
 router.post('/admin/products', adminController.saveProduct);
+router.get('/admin/orders/accept', function (req, res) {
+  return res.redirect('/admin/orders');
+});
 router.post('/admin/orders/accept', adminController.acceptOrderRequest);
+router.get('/admin/orders/delete', function (req, res) {
+  return res.redirect('/admin/orders');
+});
+router.post('/admin/orders/delete', adminController.deleteOrderRequest);
 
 router.get('/products/:productId', publicController.renderProductDetail);
 

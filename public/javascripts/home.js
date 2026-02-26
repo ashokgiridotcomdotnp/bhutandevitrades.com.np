@@ -60,6 +60,7 @@
   var pagination = productsSection ? productsSection.querySelector('[data-products-pagination]') : null;
   var sentinel = null;
   var observer = null;
+  var loadingSkeletonGrid = null;
   var isLoading = false;
   var nextPageHref = productsSection ? String(productsSection.getAttribute('data-next-page-href') || '').trim() : '';
 
@@ -83,6 +84,50 @@
     }
   }
 
+  function buildLoadingSkeletonCard() {
+    var card = document.createElement('article');
+
+    card.className = 'pro-grid-card pointer-events-none relative overflow-hidden p-4';
+    card.innerHTML = ''
+      + '<div class="flex flex-col gap-3" aria-hidden="true">'
+      + '  <span class="pro-skeleton-block h-52 w-full rounded-xl"></span>'
+      + '  <div class="flex items-start justify-between gap-2">'
+      + '    <span class="pro-skeleton-block h-5 w-3/5"></span>'
+      + '    <span class="pro-skeleton-block h-5 w-20"></span>'
+      + '  </div>'
+      + '  <span class="pro-skeleton-block h-3.5 w-full"></span>'
+      + '  <span class="pro-skeleton-block h-3.5 w-3/4"></span>'
+      + '  <div class="mt-2 flex items-center justify-between gap-2">'
+      + '    <span class="pro-skeleton-block h-6 w-28"></span>'
+      + '    <span class="pro-skeleton-block h-8 w-20"></span>'
+      + '  </div>'
+      + '</div>';
+
+    return card;
+  }
+
+  function ensureLoadingSkeletonGrid() {
+    if (loadingSkeletonGrid) {
+      return loadingSkeletonGrid;
+    }
+
+    loadingSkeletonGrid = document.createElement('div');
+    loadingSkeletonGrid.className = 'hidden grid gap-4 sm:grid-cols-2 lg:grid-cols-3';
+    loadingSkeletonGrid.setAttribute('data-products-loading', 'true');
+
+    for (var index = 0; index < 3; index += 1) {
+      loadingSkeletonGrid.appendChild(buildLoadingSkeletonCard());
+    }
+
+    productsGrid.insertAdjacentElement('afterend', loadingSkeletonGrid);
+    return loadingSkeletonGrid;
+  }
+
+  function setLoadingSkeletonVisible(shouldShow) {
+    var skeletonGrid = ensureLoadingSkeletonGrid();
+    skeletonGrid.classList.toggle('hidden', !shouldShow);
+  }
+
   function appendProductsFromHtml(htmlText) {
     var parser = new window.DOMParser();
     var doc = parser.parseFromString(htmlText, 'text/html');
@@ -103,6 +148,10 @@
 
     productsGrid.appendChild(fragment);
 
+    if (typeof window.bdOptimizeImages === 'function') {
+      window.bdOptimizeImages(productsGrid);
+    }
+
     if (typeof window.bdInitProductCards === 'function') {
       window.bdInitProductCards(productsGrid);
     }
@@ -120,6 +169,7 @@
     }
 
     isLoading = true;
+    setLoadingSkeletonVisible(true);
 
     window.fetch(nextPageHref, {
       headers: {
@@ -137,6 +187,7 @@
       stopObserver();
     }).finally(function () {
       isLoading = false;
+      setLoadingSkeletonVisible(false);
     });
   }
 
@@ -363,6 +414,17 @@
     submitButton.textContent = isSubmitting ? 'Submitting...' : 'Submit Order';
   }
 
+  function showToast(type, message) {
+    if (typeof window.bdShowToast !== 'function') {
+      return;
+    }
+
+    window.bdShowToast({
+      type: type === 'error' ? 'error' : 'success',
+      message: String(message || '').trim(),
+    });
+  }
+
   function clearModalCloseTimer() {
     if (modalCloseTimer) {
       clearTimeout(modalCloseTimer);
@@ -518,11 +580,11 @@
 
       if (!response.ok || !result || !result.ok) {
         if (response.status === 401 || (result && (result.errorCode === 'auth-required' || result.errorCode === 'invalid-auth-session'))) {
-          window.location.href = '/login?error=login-required';
+          window.location.href = '/login';
           return;
         }
 
-        alert(result && result.message ? result.message : 'Could not submit order. Please try again.');
+        showToast('error', result && result.message ? result.message : 'Could not submit order. Please try again.');
         return;
       }
 
@@ -544,9 +606,9 @@
       }
 
       closeModal();
-      alert('Order submitted. Email sent successfully.');
+      showToast('success', result && result.message ? result.message : 'Order submitted. Email sent successfully.');
     } catch (error) {
-      alert('Could not submit order right now. Please try again.');
+      showToast('error', 'Could not submit order right now. Please try again.');
     } finally {
       setSubmitting(false);
     }

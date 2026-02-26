@@ -23,6 +23,16 @@ var userAuthCodeSchema = new mongoose.Schema(
       trim: true,
       default: '',
     },
+    passwordHash: {
+      type: String,
+      trim: true,
+      default: '',
+    },
+    passwordSalt: {
+      type: String,
+      trim: true,
+      default: '',
+    },
     expiresAt: {
       type: Date,
       required: true,

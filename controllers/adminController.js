@@ -14,6 +14,7 @@ var adminProductOverviewPageSize = 20;
 var adminCategoryItemsPageSize = 12;
 var maxAdminOrderMessageLength = 1000;
 var adminOrderRequestsLimit = 150;
+var adminOrderRequestsPageSize = 10;
 var defaultAdminOrdersPath = '/admin/orders';
 
 function toCategorySlug(value) {
@@ -129,6 +130,17 @@ function hasValidPriceValue(value) {
 function hasValidQuantityValue(value) {
   var parsedValue = parseNonNegativeNumber(value);
   return Number.isFinite(parsedValue) && parsedValue <= maxQuantityValue;
+}
+
+function parseStoredStockQuantity(value) {
+  var quantityText = catalogService.toTrimmedString(value);
+  var parsedValue = parseNonNegativeNumber(quantityText);
+
+  if (!quantityText || !Number.isFinite(parsedValue)) {
+    return 0;
+  }
+
+  return Math.floor(parsedValue);
 }
 
 function sanitizeCategoryItems(rawItems) {
@@ -436,21 +448,63 @@ function buildAdminOrderAcceptedEmailHtml(orderRecord, adminMessage) {
   ].join('');
 }
 
-async function loadAdminOrdersForDashboard() {
+async function loadAdminOrdersForDashboard(options) {
+  var config = options && typeof options === 'object' ? options : {};
+  var requestedView = catalogService.normalizeForSearch(config.view);
+  var requestedPage = parsePositiveInteger(config.page, 1);
+  var requestedPageSize = parsePositiveInteger(config.pageSize, adminOrderRequestsPageSize);
+  var safePageSize = Math.max(1, Math.min(requestedPageSize, adminOrderRequestsLimit));
+  var resolvedView = 'pending';
+  var page = 1;
+  var totalPages = 1;
+  var counts = {
+    total: 0,
+    pending: 0,
+    accepted: 0,
+  };
   var orders = [];
   var loadError = '';
+  var selectedFilter = {
+    adminStatus: { $ne: 'accepted' },
+  };
+  var selectedCount = 0;
+  var skipCount = 0;
 
   try {
     if (!await ensureDatabaseConnection()) {
       return {
         orders: [],
         loadError: 'Order database is unavailable right now.',
+        view: resolvedView,
+        page: page,
+        totalPages: totalPages,
+        pageSize: safePageSize,
+        counts: counts,
       };
     }
 
-    orders = await Order.find({})
+    counts.pending = await Order.countDocuments({ adminStatus: { $ne: 'accepted' } });
+    counts.accepted = await Order.countDocuments({ adminStatus: 'accepted' });
+    counts.total = counts.pending + counts.accepted;
+
+    if (requestedView === 'pending' || requestedView === 'accepted') {
+      resolvedView = requestedView;
+    } else if (!counts.pending && counts.accepted) {
+      resolvedView = 'accepted';
+    }
+
+    selectedFilter = resolvedView === 'accepted'
+      ? { adminStatus: 'accepted' }
+      : { adminStatus: { $ne: 'accepted' } };
+    selectedCount = resolvedView === 'accepted' ? counts.accepted : counts.pending;
+    totalPages = Math.max(1, Math.ceil(selectedCount / safePageSize));
+    page = Math.min(requestedPage, totalPages);
+    skipCount = Math.max(0, (page - 1) * safePageSize);
+
+    orders = await Order.find(selectedFilter)
       .sort({ createdAt: -1 })
-      .limit(adminOrderRequestsLimit)
+      .skip(skipCount)
+      .limit(safePageSize)
       .lean();
   } catch (error) {
     console.error('Admin order requests load failed:', error.message);
@@ -460,6 +514,11 @@ async function loadAdminOrdersForDashboard() {
   return {
     orders: orders,
     loadError: loadError,
+    view: resolvedView,
+    page: page,
+    totalPages: totalPages,
+    pageSize: safePageSize,
+    counts: counts,
   };
 }
 
@@ -514,9 +573,15 @@ async function renderAdminOrdersPage(req, res) {
   var catalog = catalogService.getCatalogContext();
   var status = catalogService.toTrimmedString(req.query.status);
   var error = catalogService.toTrimmedString(req.query.error);
-  var adminOrdersData = await loadAdminOrdersForDashboard();
+  var orderView = catalogService.normalizeForSearch(req.query.view);
+  var orderPage = parsePositiveInteger(req.query.page, 1);
+  var adminOrdersData = await loadAdminOrdersForDashboard({
+    view: orderView,
+    page: orderPage,
+    pageSize: adminOrderRequestsPageSize,
+  });
   var adminOrderRequests = Array.isArray(adminOrdersData.orders) ? adminOrdersData.orders : [];
-  var orderCounts = buildAdminOrderCounts(adminOrderRequests);
+  var orderCounts = adminOrdersData && adminOrdersData.counts ? adminOrdersData.counts : { total: 0, pending: 0, accepted: 0 };
 
   return res.render('admin-orders', {
     title: 'Order Requests | Admin Panel | BhutanDevi Trade and Suppliers',
@@ -526,8 +591,12 @@ async function renderAdminOrdersPage(req, res) {
     errorMessage: catalogService.getAdminErrorMessage(error),
     adminOrderRequests: adminOrderRequests,
     adminOrderRequestsError: adminOrdersData.loadError || '',
+    totalOrderRequestsCount: orderCounts.total,
     pendingOrderRequestsCount: orderCounts.pending,
     acceptedOrderRequestsCount: orderCounts.accepted,
+    adminOrdersView: adminOrdersData.view || 'pending',
+    adminOrdersPage: adminOrdersData.page || 1,
+    adminOrdersTotalPages: adminOrdersData.totalPages || 1,
     topNavCategories: catalog.categoryGroups,
     searchSuggestions: catalogService.buildSearchSuggestions(catalog.categoryGroups, catalog.productSections),
     basePath: '/',
@@ -967,14 +1036,26 @@ async function saveCategory(req, res) {
 }
 
 async function acceptOrderRequest(req, res) {
-  var orderId = catalogService.toTrimmedString(req.body.orderId);
-  var adminMessage = normalizeMultilineText(req.body.adminMessage);
+  var requestBody = req && req.body && typeof req.body === 'object' ? req.body : {};
+  var orderId = catalogService.toTrimmedString(requestBody.orderId);
+  var adminMessage = normalizeMultilineText(requestBody.adminMessage);
   var redirectPath = getSafeRedirectPath(req, defaultAdminOrdersPath);
+  var hasMongoConfiguration = Boolean(String(process.env.MONGODB_URI || '').trim());
   var orderRecord = null;
+  var orderStatus = '';
+  var orderProductId = '';
+  var orderQuantity = 1;
+  var catalog = null;
+  var productMatch = null;
+  var availableStockQuantity = null;
+  var nextStockQuantity = '';
+  var adminData = null;
+  var hasAdminProduct = false;
+  var stockUpdated = false;
   var customerEmail = '';
-  var sendResult = null;
   var emailSubject = '';
   var productName = '';
+  var orderRecordId = '';
 
   if (!orderId) {
     return res.redirect(buildErrorRedirect(redirectPath, 'order-id-required'));
@@ -999,31 +1080,114 @@ async function acceptOrderRequest(req, res) {
       return res.redirect(buildErrorRedirect(redirectPath, 'order-not-found'));
     }
 
+    orderStatus = catalogService.toTrimmedString(orderRecord.adminStatus).toLowerCase();
+    if (orderStatus === 'accepted') {
+      return res.redirect(buildStatusRedirect(redirectPath, 'order-accepted'));
+    }
+
+    orderProductId = catalogService.toTrimmedString(orderRecord.productId);
+    orderQuantity = parsePositiveInteger(orderRecord.quantity, 1);
+
+    if (orderProductId) {
+      catalog = catalogService.getCatalogContext();
+      productMatch = catalog && Array.isArray(catalog.productSections)
+        ? catalogService.findProductById(orderProductId, catalog.productSections)
+        : null;
+
+      if (productMatch && productMatch.item) {
+        availableStockQuantity = parseStoredStockQuantity(productMatch.item.quantity);
+
+        if (availableStockQuantity !== null) {
+          if (availableStockQuantity < 1) {
+            return res.redirect(buildErrorRedirect(redirectPath, 'out-of-stock'));
+          }
+
+          if (orderQuantity > availableStockQuantity) {
+            return res.redirect(buildErrorRedirect(redirectPath, 'insufficient-stock'));
+          }
+
+          nextStockQuantity = String(Math.max(availableStockQuantity - orderQuantity, 0));
+          adminData = catalogService.getAdminData() || {};
+
+          if (!Array.isArray(adminData.products)) {
+            adminData.products = [];
+          }
+
+          adminData.products.forEach(function (product) {
+            if (catalogService.toTrimmedString(product && product.id) !== orderProductId) {
+              return;
+            }
+
+            product.quantity = nextStockQuantity;
+            hasAdminProduct = true;
+          });
+
+          if (!adminData.productOverrides || typeof adminData.productOverrides !== 'object') {
+            adminData.productOverrides = {};
+          }
+
+          if (
+            adminData.productOverrides[orderProductId] &&
+            typeof adminData.productOverrides[orderProductId] === 'object'
+          ) {
+            adminData.productOverrides[orderProductId].quantity = nextStockQuantity;
+          } else if (!hasAdminProduct) {
+            adminData.productOverrides[orderProductId] = { quantity: nextStockQuantity };
+          }
+
+          stockUpdated = true;
+        }
+      }
+    }
+
+    if (stockUpdated && !await catalogService.saveAdminData()) {
+      if (hasMongoConfiguration && !await ensureDatabaseConnection()) {
+        return res.redirect(buildErrorRedirect(redirectPath, 'db-unavailable'));
+      }
+
+      return res.redirect(buildErrorRedirect(redirectPath, 'save-failed'));
+    }
+
     orderRecord.adminStatus = 'accepted';
     orderRecord.adminMessage = adminMessage;
     orderRecord.adminAcceptedAt = new Date();
     orderRecord.adminEmailNotificationSent = false;
     await orderRecord.save();
 
+    orderRecordId = orderRecord && orderRecord._id ? String(orderRecord._id) : '';
     customerEmail = normalizeEmail(orderRecord.customerEmail);
     productName = catalogService.toTrimmedString(orderRecord.productName) || 'Product';
     emailSubject = 'Order accepted: ' + productName;
 
-    if (customerEmail && isLikelyEmailAddress(customerEmail)) {
-      sendResult = await resendService.sendEmail({
-        to: customerEmail,
-        subject: emailSubject,
-        text: buildAdminOrderAcceptedEmailText(orderRecord, adminMessage),
-        html: buildAdminOrderAcceptedEmailHtml(orderRecord, adminMessage),
-      });
+    if (customerEmail && isLikelyEmailAddress(customerEmail) && orderRecordId) {
+      Promise.resolve().then(async function () {
+        var sendResult = null;
+        var acceptedOrderRecord = null;
 
-      if (sendResult.ok) {
-        orderRecord.adminEmailNotificationSent = true;
-        await orderRecord.save();
-      } else {
-        console.error('Order accepted email failed:', sendResult.errorCode || 'unknown');
-        return res.redirect(buildErrorRedirect(redirectPath, 'order-accepted-email-failed'));
-      }
+        try {
+          sendResult = await resendService.sendEmail({
+            to: customerEmail,
+            subject: emailSubject,
+            text: buildAdminOrderAcceptedEmailText(orderRecord, adminMessage),
+            html: buildAdminOrderAcceptedEmailHtml(orderRecord, adminMessage),
+          });
+
+          if (!sendResult.ok) {
+            console.error('Order accepted email failed:', sendResult.errorCode || 'unknown');
+            return;
+          }
+
+          acceptedOrderRecord = await Order.findById(orderRecordId);
+          if (!acceptedOrderRecord) {
+            return;
+          }
+
+          acceptedOrderRecord.adminEmailNotificationSent = true;
+          await acceptedOrderRecord.save();
+        } catch (emailError) {
+          console.error('Order accepted email async failed:', emailError.message);
+        }
+      });
     }
 
     return res.redirect(buildStatusRedirect(redirectPath, 'order-accepted'));
@@ -1033,9 +1197,43 @@ async function acceptOrderRequest(req, res) {
   }
 }
 
+async function deleteOrderRequest(req, res) {
+  var requestBody = req && req.body && typeof req.body === 'object' ? req.body : {};
+  var orderId = catalogService.toTrimmedString(requestBody.orderId);
+  var redirectPath = getSafeRedirectPath(req, defaultAdminOrdersPath);
+  var deletedOrder = null;
+
+  if (!orderId) {
+    return res.redirect(buildErrorRedirect(redirectPath, 'order-id-required'));
+  }
+
+  if (!/^[a-f0-9]{24}$/i.test(orderId)) {
+    return res.redirect(buildErrorRedirect(redirectPath, 'order-not-found'));
+  }
+
+  try {
+    if (!await ensureDatabaseConnection()) {
+      return res.redirect(buildErrorRedirect(redirectPath, 'db-unavailable'));
+    }
+
+    deletedOrder = await Order.findByIdAndDelete(orderId);
+
+    if (!deletedOrder) {
+      return res.redirect(buildErrorRedirect(redirectPath, 'order-not-found'));
+    }
+
+    return res.redirect(buildStatusRedirect(redirectPath, 'order-deleted'));
+  } catch (error) {
+    console.error('Order delete action failed:', error.message);
+    return res.redirect(buildErrorRedirect(redirectPath, 'save-failed'));
+  }
+}
+
 function saveProduct(req, res) {
   catalogService.imageUpload.single('productImageFile')(req, res, async function (uploadError) {
     var redirectPath = getSafeRedirectPath(req, defaultAdminPath);
+    var hasMongoConfiguration = Boolean(String(process.env.MONGODB_URI || '').trim());
+    var hasDatabaseConnection = true;
 
     if (uploadError) {
       if (uploadError.code === 'LIMIT_FILE_SIZE') {
@@ -1047,6 +1245,13 @@ function saveProduct(req, res) {
       }
 
       return res.redirect(buildErrorRedirect(redirectPath, 'save-failed'));
+    }
+
+    if (hasMongoConfiguration) {
+      hasDatabaseConnection = await ensureDatabaseConnection();
+      if (!hasDatabaseConnection) {
+        return res.redirect(buildErrorRedirect(redirectPath, 'db-unavailable'));
+      }
     }
 
     var categoryName = normalizeSingleLineText(req.body.productCategory);
@@ -1116,6 +1321,12 @@ function saveProduct(req, res) {
     });
 
     if (!await catalogService.saveAdminData()) {
+      if (hasMongoConfiguration) {
+        hasDatabaseConnection = await ensureDatabaseConnection();
+        if (!hasDatabaseConnection) {
+          return res.redirect(buildErrorRedirect(redirectPath, 'db-unavailable'));
+        }
+      }
       return res.redirect(buildErrorRedirect(redirectPath, 'save-failed'));
     }
 
@@ -1125,6 +1336,7 @@ function saveProduct(req, res) {
 
 module.exports = {
   acceptOrderRequest: acceptOrderRequest,
+  deleteOrderRequest: deleteOrderRequest,
   deleteCategory: deleteCategory,
   deleteProduct: deleteProduct,
   editProduct: editProduct,

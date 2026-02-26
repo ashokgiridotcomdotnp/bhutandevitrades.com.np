@@ -10,11 +10,28 @@ var UserAuthCode = require('../models/UserAuthCode');
 var storefrontPageSize = 10;
 var authCodeTtlMinutes = 10;
 var authCodeTtlMs = authCodeTtlMinutes * 60 * 1000;
+var minUserNameLength = 2;
 var maxUserNameLength = 120;
+var maxEmailLength = 254;
 var minPasswordLength = 6;
+var maxPasswordLength = 128;
+var verificationCodeLength = 6;
+var signupPrefillCookieName = 'bd_signup_prefill';
+var signupStateCookieName = 'bd_signup_state';
+var signupPrefillCookieTtlMs = 30 * 60 * 1000;
+var loginPrefillCookieName = 'bd_login_prefill';
+var loginStateCookieName = 'bd_login_state';
+var forgotPrefillCookieName = 'bd_forgot_prefill';
+var forgotStateCookieName = 'bd_forgot_state';
+var profileStateCookieName = 'bd_profile_state';
+var homeStateCookieName = 'bd_home_state';
 
 function toTrimmedString(value) {
   return String(value || '').trim();
+}
+
+function normalizeBooleanEnv(value) {
+  return /^(1|true|yes|on)$/i.test(String(value || '').trim());
 }
 
 function normalizeEmail(value) {
@@ -22,7 +39,26 @@ function normalizeEmail(value) {
 }
 
 function isValidEmailAddress(email) {
-  return isLikelyEmailAddress(normalizeEmail(email));
+  var normalizedEmail = normalizeEmail(email);
+  return normalizedEmail.length <= maxEmailLength && isLikelyEmailAddress(normalizedEmail);
+}
+
+function isPasswordLengthValid(password) {
+  var passwordLength = toTrimmedString(password).length;
+  return passwordLength >= minPasswordLength && passwordLength <= maxPasswordLength;
+}
+
+function isPasswordLengthWithinLimit(password) {
+  return toTrimmedString(password).length <= maxPasswordLength;
+}
+
+function isValidVerificationCode(value) {
+  var trimmedValue = toTrimmedString(value);
+  return new RegExp('^[0-9]{' + verificationCodeLength + '}$').test(trimmedValue);
+}
+
+function shouldRequireEmailVerificationOnLogin() {
+  return normalizeBooleanEnv(process.env.REQUIRE_EMAIL_VERIFICATION);
 }
 
 function getStoreWhatsappNumber() {
@@ -51,6 +87,220 @@ function sanitizeText(value, maxLength) {
   }
 
   return cleanValue;
+}
+
+function getSignupPrefillCookieOptions(req) {
+  return {
+    httpOnly: true,
+    maxAge: signupPrefillCookieTtlMs,
+    path: '/signup',
+    sameSite: 'lax',
+    secure: Boolean(req && req.secure),
+  };
+}
+
+function getSignupPrefillFromCookie(req) {
+  var rawValue = req && req.cookies ? req.cookies[signupPrefillCookieName] : '';
+  var parsedValue = null;
+  var normalizedEmail = '';
+
+  if (!rawValue) {
+    return {
+      email: '',
+      name: '',
+    };
+  }
+
+  try {
+    parsedValue = JSON.parse(String(rawValue));
+  } catch (error) {
+    return {
+      email: '',
+      name: '',
+    };
+  }
+
+  normalizedEmail = normalizeEmail(parsedValue && parsedValue.email);
+  if (normalizedEmail.length > maxEmailLength) {
+    normalizedEmail = '';
+  }
+
+  return {
+    email: normalizedEmail,
+    name: sanitizeText(parsedValue && parsedValue.name, maxUserNameLength),
+  };
+}
+
+function setSignupPrefillCookie(res, req, email, name) {
+  var normalizedEmail = normalizeEmail(email);
+  var cleanName = sanitizeText(name, maxUserNameLength);
+
+  if (normalizedEmail.length > maxEmailLength) {
+    normalizedEmail = '';
+  }
+
+  if (!normalizedEmail && !cleanName) {
+    res.clearCookie(signupPrefillCookieName, { path: '/signup' });
+    return;
+  }
+
+  res.cookie(
+    signupPrefillCookieName,
+    JSON.stringify({
+      email: normalizedEmail,
+      name: cleanName,
+    }),
+    getSignupPrefillCookieOptions(req)
+  );
+}
+
+function clearSignupPrefillCookie(res) {
+  res.clearCookie(signupPrefillCookieName, { path: '/signup' });
+}
+
+function getSignupStateCookieOptions(req) {
+  return {
+    httpOnly: true,
+    maxAge: signupPrefillCookieTtlMs,
+    path: '/signup',
+    sameSite: 'lax',
+    secure: Boolean(req && req.secure),
+  };
+}
+
+function getSignupStateFromCookie(req) {
+  var rawValue = req && req.cookies ? req.cookies[signupStateCookieName] : '';
+  var parsedValue = null;
+
+  if (!rawValue) {
+    return {
+      statusCode: '',
+      errorCode: '',
+    };
+  }
+
+  try {
+    parsedValue = JSON.parse(String(rawValue));
+  } catch (error) {
+    return {
+      statusCode: '',
+      errorCode: '',
+    };
+  }
+
+  return {
+    statusCode: toTrimmedString(parsedValue && parsedValue.statusCode),
+    errorCode: toTrimmedString(parsedValue && parsedValue.errorCode),
+  };
+}
+
+function setSignupStateCookie(res, req, statusCode, errorCode) {
+  var cleanStatusCode = toTrimmedString(statusCode);
+  var cleanErrorCode = toTrimmedString(errorCode);
+
+  if (!cleanStatusCode && !cleanErrorCode) {
+    res.clearCookie(signupStateCookieName, { path: '/signup' });
+    return;
+  }
+
+  res.cookie(
+    signupStateCookieName,
+    JSON.stringify({
+      statusCode: cleanStatusCode,
+      errorCode: cleanErrorCode,
+    }),
+    getSignupStateCookieOptions(req)
+  );
+}
+
+function clearSignupStateCookie(res) {
+  res.clearCookie(signupStateCookieName, { path: '/signup' });
+}
+
+function getScopedCookieOptions(req, path) {
+  return {
+    httpOnly: true,
+    maxAge: signupPrefillCookieTtlMs,
+    path: path,
+    sameSite: 'lax',
+    secure: Boolean(req && req.secure),
+  };
+}
+
+function getScopedStateFromCookie(req, cookieName) {
+  var rawValue = req && req.cookies ? req.cookies[cookieName] : '';
+  var parsedValue = null;
+
+  if (!rawValue) {
+    return {
+      statusCode: '',
+      errorCode: '',
+    };
+  }
+
+  try {
+    parsedValue = JSON.parse(String(rawValue));
+  } catch (error) {
+    return {
+      statusCode: '',
+      errorCode: '',
+    };
+  }
+
+  return {
+    statusCode: toTrimmedString(parsedValue && parsedValue.statusCode),
+    errorCode: toTrimmedString(parsedValue && parsedValue.errorCode),
+  };
+}
+
+function setScopedStateCookie(res, req, cookieName, path, statusCode, errorCode) {
+  var cleanStatusCode = toTrimmedString(statusCode);
+  var cleanErrorCode = toTrimmedString(errorCode);
+
+  if (!cleanStatusCode && !cleanErrorCode) {
+    res.clearCookie(cookieName, { path: path });
+    return;
+  }
+
+  res.cookie(
+    cookieName,
+    JSON.stringify({
+      statusCode: cleanStatusCode,
+      errorCode: cleanErrorCode,
+    }),
+    getScopedCookieOptions(req, path)
+  );
+}
+
+function clearScopedStateCookie(res, cookieName, path) {
+  res.clearCookie(cookieName, { path: path });
+}
+
+function getScopedEmailFromCookie(req, cookieName) {
+  var normalizedEmail = normalizeEmail(req && req.cookies ? req.cookies[cookieName] : '');
+  if (normalizedEmail.length > maxEmailLength) {
+    return '';
+  }
+  return normalizedEmail;
+}
+
+function setScopedEmailCookie(res, req, cookieName, path, email) {
+  var normalizedEmail = normalizeEmail(email);
+
+  if (normalizedEmail.length > maxEmailLength) {
+    normalizedEmail = '';
+  }
+
+  if (!normalizedEmail) {
+    res.clearCookie(cookieName, { path: path });
+    return;
+  }
+
+  res.cookie(cookieName, normalizedEmail, getScopedCookieOptions(req, path));
+}
+
+function clearScopedEmailCookie(res, cookieName, path) {
+  res.clearCookie(cookieName, { path: path });
 }
 
 function normalizeOrderPhone(value) {
@@ -191,96 +441,61 @@ function parseAvailableStockQuantity(value) {
   var parsedValue = Number(cleanValue);
 
   if (!cleanValue) {
-    return null;
+    return 0;
   }
 
   if (!Number.isFinite(parsedValue) || parsedValue < 0) {
-    return null;
+    return 0;
   }
 
   return Math.floor(parsedValue);
 }
 
-function buildLoginRedirectPath(statusCode, errorCode, email) {
-  var params = [];
-
-  if (statusCode) {
-    params.push('status=' + encodeURIComponent(statusCode));
-  }
-
-  if (errorCode) {
-    params.push('error=' + encodeURIComponent(errorCode));
-  }
-
-  if (email) {
-    params.push('email=' + encodeURIComponent(email));
-  }
-
-  return '/login' + (params.length ? '?' + params.join('&') : '');
+function buildLoginRedirectPath() {
+  return '/login';
 }
 
-function buildSignupRedirectPath(statusCode, errorCode, email, name) {
-  var params = [];
-
-  if (statusCode) {
-    params.push('status=' + encodeURIComponent(statusCode));
-  }
-
-  if (errorCode) {
-    params.push('error=' + encodeURIComponent(errorCode));
-  }
-
-  if (email) {
-    params.push('email=' + encodeURIComponent(email));
-  }
-
-  if (name) {
-    params.push('name=' + encodeURIComponent(name));
-  }
-
-  return '/signup' + (params.length ? '?' + params.join('&') : '');
+function redirectToLogin(res, req, statusCode, errorCode, email) {
+  setScopedStateCookie(res, req, loginStateCookieName, '/login', statusCode, errorCode);
+  setScopedEmailCookie(res, req, loginPrefillCookieName, '/login', email);
+  return res.redirect(buildLoginRedirectPath());
 }
 
-function buildForgotPasswordRedirectPath(statusCode, errorCode, email) {
-  var params = [];
-
-  if (statusCode) {
-    params.push('status=' + encodeURIComponent(statusCode));
-  }
-
-  if (errorCode) {
-    params.push('error=' + encodeURIComponent(errorCode));
-  }
-
-  if (email) {
-    params.push('email=' + encodeURIComponent(email));
-  }
-
-  return '/forgot-password' + (params.length ? '?' + params.join('&') : '');
+function buildSignupRedirectPath() {
+  return '/signup';
 }
 
-function buildProfileRedirectPath(statusCode, errorCode) {
-  var params = [];
-
-  if (statusCode) {
-    params.push('status=' + encodeURIComponent(statusCode));
-  }
-
-  if (errorCode) {
-    params.push('error=' + encodeURIComponent(errorCode));
-  }
-
-  return '/profile' + (params.length ? '?' + params.join('&') : '');
+function redirectToSignup(res, req, statusCode, errorCode) {
+  setSignupStateCookie(res, req, statusCode, errorCode);
+  return res.redirect(buildSignupRedirectPath());
 }
 
-function buildHomeRedirectPath(statusCode) {
-  var params = [];
+function buildForgotPasswordRedirectPath() {
+  return '/forgot-password';
+}
 
-  if (statusCode) {
-    params.push('status=' + encodeURIComponent(statusCode));
-  }
+function redirectToForgotPassword(res, req, statusCode, errorCode, email) {
+  setScopedStateCookie(res, req, forgotStateCookieName, '/forgot-password', statusCode, errorCode);
+  setScopedEmailCookie(res, req, forgotPrefillCookieName, '/forgot-password', email);
+  return res.redirect(buildForgotPasswordRedirectPath());
+}
 
-  return '/' + (params.length ? '?' + params.join('&') : '');
+function buildProfileRedirectPath() {
+  return '/profile';
+}
+
+function redirectToProfile(res, req, statusCode, errorCode) {
+  setScopedStateCookie(res, req, profileStateCookieName, '/profile', statusCode, errorCode);
+  return res.redirect(buildProfileRedirectPath());
+}
+
+function buildHomeRedirectPath() {
+  return '/';
+}
+
+function redirectToHome(res, req, statusCode) {
+  setScopedStateCookie(res, req, homeStateCookieName, '/', statusCode, '');
+  return res.redirect(buildHomeRedirectPath());
 }
 
 function getAuthCodeHashSecret() {
@@ -393,7 +608,7 @@ async function ensureDatabaseConnection() {
   return database.connectToDatabase();
 }
 
-async function issueAuthCode(email, purpose, name) {
+async function issueAuthCode(email, purpose, name, passwordPayload) {
   var code = generateAuthCode();
 
   await UserAuthCode.deleteMany({
@@ -407,6 +622,8 @@ async function issueAuthCode(email, purpose, name) {
     purpose: purpose,
     name: toTrimmedString(name),
     codeHash: hashAuthCode(code),
+    passwordHash: passwordPayload && passwordPayload.hash ? passwordPayload.hash : '',
+    passwordSalt: passwordPayload && passwordPayload.salt ? passwordPayload.salt : '',
     expiresAt: new Date(Date.now() + authCodeTtlMs),
   });
 
@@ -465,11 +682,15 @@ function getLoginErrorMessage(errorCode) {
   }
 
   if (errorCode === 'invalid-password') {
-    return 'Password must be at least ' + minPasswordLength + ' characters.';
+    return 'Password must be between ' + minPasswordLength + ' and ' + maxPasswordLength + ' characters.';
+  }
+
+  if (errorCode === 'password-failed') {
+    return 'Email or password is incorrect.';
   }
 
   if (errorCode === 'invalid-credentials') {
-    return 'Invalid email or password.';
+    return 'Email or password is incorrect.';
   }
 
   if (errorCode === 'db-unavailable') {
@@ -477,7 +698,7 @@ function getLoginErrorMessage(errorCode) {
   }
 
   if (errorCode === 'no-account') {
-    return 'No account found. Please sign up first.';
+    return 'Email or password is incorrect.';
   }
 
   if (errorCode === 'email-send-failed') {
@@ -513,7 +734,7 @@ function getSignupErrorMessage(errorCode) {
   }
 
   if (errorCode === 'invalid-password') {
-    return 'Password must be at least ' + minPasswordLength + ' characters.';
+    return 'Password must be between ' + minPasswordLength + ' and ' + maxPasswordLength + ' characters.';
   }
 
   if (errorCode === 'db-unavailable') {
@@ -561,7 +782,7 @@ function getForgotPasswordErrorMessage(errorCode) {
   }
 
   if (errorCode === 'invalid-password') {
-    return 'Password must be at least ' + minPasswordLength + ' characters.';
+    return 'Password must be between ' + minPasswordLength + ' and ' + maxPasswordLength + ' characters.';
   }
 
   if (errorCode === 'db-unavailable') {
@@ -621,7 +842,7 @@ function getProfileErrorMessage(errorCode) {
   }
 
   if (errorCode === 'invalid-new-password') {
-    return 'New password must be at least ' + minPasswordLength + ' characters.';
+    return 'New password must be between ' + minPasswordLength + ' and ' + maxPasswordLength + ' characters.';
   }
 
   if (errorCode === 'password-mismatch') {
@@ -658,14 +879,14 @@ function isDuplicateKeyError(error) {
   );
 }
 
-function setUserSessionAndRedirectHome(res, user, statusCode) {
+function setUserSessionAndRedirectHome(res, req, user, statusCode) {
   userAuth.setUserAuthCookie(res, {
     _id: user._id,
     email: user.email,
     name: user.name,
   });
 
-  return res.redirect(buildHomeRedirectPath(statusCode));
+  return redirectToHome(res, req, statusCode);
 }
 
 async function findAuthenticatedUserRecord(authenticatedUser) {
@@ -691,7 +912,9 @@ async function findAuthenticatedUserRecord(authenticatedUser) {
 
 function renderHomePage(req, res, next) {
   var catalog = catalogService.getCatalogContext();
-  var statusCode = toTrimmedString(req.query.status);
+  var statusCodeFromQuery = toTrimmedString(req.query.status);
+  var homeState = null;
+  var statusCode = '';
   var q = typeof req.query.q === 'string' ? req.query.q.trim() : '';
   var rawCategory = typeof req.query.category === 'string' ? req.query.category.trim() : '';
   var query = q;
@@ -701,6 +924,7 @@ function renderHomePage(req, res, next) {
   var hasActiveFilters = q.length > 0 || Boolean(selectedCategory);
   var showCarousel = isRootRoute && !hasActiveFilters;
   var basePath = isHomeRoute ? '/home' : '/';
+  var redirectParams = [];
   var categoryGroupsForView = catalogService.buildCategoryViewData(query, selectedCategory, catalog.categoryGroups);
   var filteredProductSections = catalogService.filterProductData(
     query,
@@ -715,6 +939,31 @@ function renderHomePage(req, res, next) {
 
   if (currentPage > totalPages) {
     currentPage = totalPages;
+  }
+
+  if (statusCodeFromQuery) {
+    setScopedStateCookie(res, req, homeStateCookieName, '/', statusCodeFromQuery, '');
+
+    if (q) {
+      redirectParams.push('q=' + encodeURIComponent(q));
+    }
+
+    if (selectedCategory) {
+      redirectParams.push('category=' + encodeURIComponent(selectedCategory));
+    }
+
+    if (currentPage > 1) {
+      redirectParams.push('page=' + encodeURIComponent(String(currentPage)));
+    }
+
+    return res.redirect(basePath + (redirectParams.length ? ('?' + redirectParams.join('&')) : ''));
+  }
+
+  homeState = getScopedStateFromCookie(req, homeStateCookieName);
+  statusCode = homeState.statusCode;
+
+  if (statusCode) {
+    clearScopedStateCookie(res, homeStateCookieName, '/');
   }
 
   res.render('index', {
@@ -787,7 +1036,7 @@ function renderOrderPage(req, res, next) {
   var productMatch = null;
 
   if (!authenticatedUser) {
-    return res.redirect(buildLoginRedirectPath('', 'login-required', ''));
+    return redirectToLogin(res, req, '', 'login-required', '');
   }
 
   if (!productId) {
@@ -821,14 +1070,42 @@ function renderOrderPage(req, res, next) {
 
 function renderLoginPage(req, res) {
   var catalog = catalogService.getCatalogContext();
-  var statusCode = toTrimmedString(req.query.status);
-  var errorCode = toTrimmedString(req.query.error);
-  var email = normalizeEmail(req.query.email);
+  var statusCodeFromQuery = toTrimmedString(req.query.status);
+  var errorCodeFromQuery = toTrimmedString(req.query.error);
+  var emailFromQuery = normalizeEmail(req.query.email);
+  var hasLegacyStateQuery = Boolean(statusCodeFromQuery || errorCodeFromQuery);
+  var hasLegacyPrefillQuery = Boolean(emailFromQuery);
+  var loginState = null;
+  var statusCode = '';
+  var errorCode = '';
+  var email = '';
   var categoryGroupsForView = catalogService.buildCategoryViewData('', '', catalog.categoryGroups);
   var openCategoryName = catalogService.getOpenCategoryName(categoryGroupsForView, '', '');
 
   if (req.userAuth) {
     return res.redirect('/');
+  }
+
+  loginState = getScopedStateFromCookie(req, loginStateCookieName);
+
+  if (hasLegacyStateQuery || hasLegacyPrefillQuery) {
+    if (hasLegacyStateQuery) {
+      setScopedStateCookie(res, req, loginStateCookieName, '/login', statusCodeFromQuery, errorCodeFromQuery);
+    }
+
+    if (hasLegacyPrefillQuery) {
+      setScopedEmailCookie(res, req, loginPrefillCookieName, '/login', emailFromQuery);
+    }
+
+    return res.redirect(buildLoginRedirectPath());
+  }
+
+  statusCode = loginState.statusCode;
+  errorCode = loginState.errorCode;
+  email = getScopedEmailFromCookie(req, loginPrefillCookieName);
+
+  if (statusCode || errorCode) {
+    clearScopedStateCookie(res, loginStateCookieName, '/login');
   }
 
   return res.render('login', {
@@ -842,6 +1119,36 @@ function renderLoginPage(req, res) {
     openCategoryName: openCategoryName,
     categoryGroups: categoryGroupsForView,
     authEmail: email,
+    minPasswordLength: minPasswordLength,
+    maxPasswordLength: maxPasswordLength,
+    maxEmailLength: maxEmailLength,
+    statusMessage: getLoginStatusMessage(statusCode),
+    errorMessage: getLoginErrorMessage(errorCode),
+    topNavCategories: catalog.categoryGroups,
+    searchSuggestions: catalogService.buildSearchSuggestions(catalog.categoryGroups, catalog.productSections),
+    basePath: '/',
+  });
+}
+
+function renderLoginPageWithMessage(req, res, statusCode, errorCode, email) {
+  var catalog = catalogService.getCatalogContext();
+  var categoryGroupsForView = catalogService.buildCategoryViewData('', '', catalog.categoryGroups);
+  var openCategoryName = catalogService.getOpenCategoryName(categoryGroupsForView, '', '');
+
+  return res.status(errorCode ? 400 : 200).render('login', {
+    title: 'Login | BhutanDevi Trade and Suppliers',
+    q: '',
+    activeCategory: '',
+    currentPath: '/login',
+    currentUser: null,
+    showUserAuthActions: true,
+    hasQuery: false,
+    openCategoryName: openCategoryName,
+    categoryGroups: categoryGroupsForView,
+    authEmail: normalizeEmail(email),
+    minPasswordLength: minPasswordLength,
+    maxPasswordLength: maxPasswordLength,
+    maxEmailLength: maxEmailLength,
     statusMessage: getLoginStatusMessage(statusCode),
     errorMessage: getLoginErrorMessage(errorCode),
     topNavCategories: catalog.categoryGroups,
@@ -852,10 +1159,18 @@ function renderLoginPage(req, res) {
 
 function renderSignupPage(req, res) {
   var catalog = catalogService.getCatalogContext();
-  var statusCode = toTrimmedString(req.query.status);
-  var errorCode = toTrimmedString(req.query.error);
-  var email = normalizeEmail(req.query.email);
-  var name = toTrimmedString(req.query.name);
+  var statusCodeFromQuery = toTrimmedString(req.query.status);
+  var errorCodeFromQuery = toTrimmedString(req.query.error);
+  var emailFromQuery = normalizeEmail(req.query.email);
+  var nameFromQuery = sanitizeText(req.query.name, maxUserNameLength);
+  var hasLegacyStatusQuery = Boolean(statusCodeFromQuery || errorCodeFromQuery);
+  var hasLegacyPrefillQuery = Boolean(emailFromQuery || nameFromQuery);
+  var signupPrefill = null;
+  var signupState = null;
+  var statusCode = '';
+  var errorCode = '';
+  var email = '';
+  var name = '';
   var requireCode = statusCode === 'code-sent' && Boolean(email);
   var categoryGroupsForView = catalogService.buildCategoryViewData('', '', catalog.categoryGroups);
   var openCategoryName = catalogService.getOpenCategoryName(categoryGroupsForView, '', '');
@@ -863,6 +1178,38 @@ function renderSignupPage(req, res) {
   if (req.userAuth) {
     return res.redirect('/');
   }
+
+  signupPrefill = getSignupPrefillFromCookie(req);
+  signupState = getSignupStateFromCookie(req);
+
+  if (hasLegacyPrefillQuery || hasLegacyStatusQuery) {
+    if (hasLegacyPrefillQuery) {
+      setSignupPrefillCookie(
+        res,
+        req,
+        emailFromQuery || signupPrefill.email,
+        nameFromQuery || signupPrefill.name
+      );
+    }
+
+    if (hasLegacyStatusQuery) {
+      setSignupStateCookie(res, req, statusCodeFromQuery, errorCodeFromQuery);
+    }
+
+    return res.redirect(buildSignupRedirectPath());
+  }
+
+  email = signupPrefill.email;
+  name = signupPrefill.name;
+  statusCode = signupState.statusCode;
+  errorCode = signupState.errorCode;
+
+  if (!email && statusCode === 'code-sent') {
+    statusCode = '';
+    setSignupStateCookie(res, req, statusCode, errorCode);
+  }
+
+  requireCode = statusCode === 'code-sent' && Boolean(email);
 
   return res.render('signup', {
     title: 'Sign Up | BhutanDevi Trade and Suppliers',
@@ -876,6 +1223,12 @@ function renderSignupPage(req, res) {
     categoryGroups: categoryGroupsForView,
     authEmail: email,
     authName: name,
+    minUserNameLength: minUserNameLength,
+    maxUserNameLength: maxUserNameLength,
+    minPasswordLength: minPasswordLength,
+    maxPasswordLength: maxPasswordLength,
+    maxEmailLength: maxEmailLength,
+    verificationCodeLength: verificationCodeLength,
     requireCode: requireCode,
     statusMessage: getSignupStatusMessage(statusCode, email),
     errorMessage: getSignupErrorMessage(errorCode),
@@ -887,14 +1240,46 @@ function renderSignupPage(req, res) {
 
 function renderForgotPasswordPage(req, res) {
   var catalog = catalogService.getCatalogContext();
-  var statusCode = toTrimmedString(req.query.status);
-  var errorCode = toTrimmedString(req.query.error);
-  var email = normalizeEmail(req.query.email);
+  var statusCodeFromQuery = toTrimmedString(req.query.status);
+  var errorCodeFromQuery = toTrimmedString(req.query.error);
+  var emailFromQuery = normalizeEmail(req.query.email);
+  var hasLegacyStateQuery = Boolean(statusCodeFromQuery || errorCodeFromQuery);
+  var hasLegacyPrefillQuery = Boolean(emailFromQuery);
+  var forgotState = null;
+  var statusCode = '';
+  var errorCode = '';
+  var email = '';
   var authenticatedUser = req.userAuth && req.userAuth.email ? req.userAuth : null;
-  var requireCode = statusCode === 'code-sent' && Boolean(email);
+  var requireCode = false;
   var categoryGroupsForView = catalogService.buildCategoryViewData('', '', catalog.categoryGroups);
   var openCategoryName = catalogService.getOpenCategoryName(categoryGroupsForView, '', '');
-  var effectiveEmail = email || normalizeEmail(authenticatedUser ? authenticatedUser.email : '');
+  var effectiveEmail = '';
+
+  forgotState = getScopedStateFromCookie(req, forgotStateCookieName);
+
+  if (hasLegacyStateQuery || hasLegacyPrefillQuery) {
+    if (hasLegacyStateQuery) {
+      setScopedStateCookie(res, req, forgotStateCookieName, '/forgot-password', statusCodeFromQuery, errorCodeFromQuery);
+    }
+
+    if (hasLegacyPrefillQuery) {
+      setScopedEmailCookie(res, req, forgotPrefillCookieName, '/forgot-password', emailFromQuery);
+    }
+
+    return res.redirect(buildForgotPasswordRedirectPath());
+  }
+
+  statusCode = forgotState.statusCode;
+  errorCode = forgotState.errorCode;
+  email = getScopedEmailFromCookie(req, forgotPrefillCookieName);
+  effectiveEmail = email || normalizeEmail(authenticatedUser ? authenticatedUser.email : '');
+  requireCode = statusCode === 'code-sent' && Boolean(effectiveEmail);
+
+  if (!effectiveEmail && statusCode === 'code-sent') {
+    statusCode = '';
+    setScopedStateCookie(res, req, forgotStateCookieName, '/forgot-password', statusCode, errorCode);
+    requireCode = false;
+  }
 
   return res.render('forgot-password', {
     title: 'Forgot Password | BhutanDevi Trade and Suppliers',
@@ -907,6 +1292,10 @@ function renderForgotPasswordPage(req, res) {
     openCategoryName: openCategoryName,
     categoryGroups: categoryGroupsForView,
     authEmail: effectiveEmail,
+    minPasswordLength: minPasswordLength,
+    maxPasswordLength: maxPasswordLength,
+    maxEmailLength: maxEmailLength,
+    verificationCodeLength: verificationCodeLength,
     requireCode: requireCode,
     statusMessage: getForgotPasswordStatusMessage(statusCode, effectiveEmail),
     errorMessage: getForgotPasswordErrorMessage(errorCode),
@@ -928,7 +1317,7 @@ async function renderMyOrdersPage(req, res) {
   var orderQuery = {};
 
   if (!authenticatedUser) {
-    return res.redirect(buildLoginRedirectPath('', 'login-required', ''));
+    return redirectToLogin(res, req, '', 'login-required', '');
   }
 
   if (authenticatedUserId && authenticatedEmail) {
@@ -979,19 +1368,38 @@ async function renderMyOrdersPage(req, res) {
 async function renderProfilePage(req, res) {
   var authenticatedUser = req.userAuth && req.userAuth.email ? req.userAuth : null;
   var catalog = catalogService.getCatalogContext();
-  var statusCode = toTrimmedString(req.query.status);
-  var errorCode = toTrimmedString(req.query.error);
+  var statusCodeFromQuery = toTrimmedString(req.query.status);
+  var errorCodeFromQuery = toTrimmedString(req.query.error);
+  var hasLegacyStateQuery = Boolean(statusCodeFromQuery || errorCodeFromQuery);
+  var profileState = null;
+  var statusCode = '';
+  var errorCode = '';
   var categoryGroupsForView = catalogService.buildCategoryViewData('', '', catalog.categoryGroups);
   var openCategoryName = catalogService.getOpenCategoryName(categoryGroupsForView, '', '');
-  var statusMessage = getProfileStatusMessage(statusCode);
-  var errorMessage = getProfileErrorMessage(errorCode);
+  var statusMessage = '';
+  var errorMessage = '';
   var userRecord = null;
   var profileName = sanitizeText(authenticatedUser ? authenticatedUser.name : '', maxUserNameLength);
   var profileEmail = normalizeEmail(authenticatedUser ? authenticatedUser.email : '');
   var hasConnectedDb = false;
 
   if (!authenticatedUser) {
-    return res.redirect(buildLoginRedirectPath('', 'login-required', ''));
+    return redirectToLogin(res, req, '', 'login-required', '');
+  }
+
+  if (hasLegacyStateQuery) {
+    setScopedStateCookie(res, req, profileStateCookieName, '/profile', statusCodeFromQuery, errorCodeFromQuery);
+    return res.redirect(buildProfileRedirectPath());
+  }
+
+  profileState = getScopedStateFromCookie(req, profileStateCookieName);
+  statusCode = profileState.statusCode;
+  errorCode = profileState.errorCode;
+  statusMessage = getProfileStatusMessage(statusCode);
+  errorMessage = getProfileErrorMessage(errorCode);
+
+  if (statusCode || errorCode) {
+    clearScopedStateCookie(res, profileStateCookieName, '/profile');
   }
 
   try {
@@ -1030,7 +1438,10 @@ async function renderProfilePage(req, res) {
     errorMessage: errorMessage,
     profileName: profileName,
     profileEmail: profileEmail,
+    minUserNameLength: minUserNameLength,
+    maxUserNameLength: maxUserNameLength,
     minPasswordLength: minPasswordLength,
+    maxPasswordLength: maxPasswordLength,
     topNavCategories: catalog.categoryGroups,
     searchSuggestions: catalogService.buildSearchSuggestions(catalog.categoryGroups, catalog.productSections),
     basePath: '/',
@@ -1039,26 +1450,27 @@ async function renderProfilePage(req, res) {
 
 async function handleProfileNameUpdate(req, res) {
   var authenticatedUser = req.userAuth && req.userAuth.email ? req.userAuth : null;
-  var name = sanitizeText(req.body.name, maxUserNameLength);
+  var rawName = toTrimmedString(req.body.name);
+  var name = sanitizeText(rawName, maxUserNameLength);
   var userRecord = null;
 
   if (!authenticatedUser) {
-    return res.redirect(buildLoginRedirectPath('', 'login-required', ''));
+    return redirectToLogin(res, req, '', 'login-required', '');
   }
 
-  if (!name) {
-    return res.redirect(buildProfileRedirectPath('', 'invalid-name'));
+  if (!name || rawName.length < minUserNameLength || rawName.length > maxUserNameLength) {
+    return redirectToProfile(res, req, '', 'invalid-name');
   }
 
   try {
     if (!await ensureDatabaseConnection()) {
-      return res.redirect(buildProfileRedirectPath('', 'db-unavailable'));
+      return redirectToProfile(res, req, '', 'db-unavailable');
     }
 
     userRecord = await findAuthenticatedUserRecord(authenticatedUser);
 
     if (!userRecord) {
-      return res.redirect(buildProfileRedirectPath('', 'user-not-found'));
+      return redirectToProfile(res, req, '', 'user-not-found');
     }
 
     userRecord.name = name;
@@ -1069,10 +1481,10 @@ async function handleProfileNameUpdate(req, res) {
       name: userRecord.name,
     });
 
-    return res.redirect(buildProfileRedirectPath('name-updated', ''));
+    return redirectToProfile(res, req, 'name-updated', '');
   } catch (error) {
     console.error('Profile name update failed:', error.message);
-    return res.redirect(buildProfileRedirectPath('', 'save-failed'));
+    return redirectToProfile(res, req, '', 'save-failed');
   }
 }
 
@@ -1085,38 +1497,46 @@ async function handleProfilePasswordUpdate(req, res) {
   var passwordPayload = null;
 
   if (!authenticatedUser) {
-    return res.redirect(buildLoginRedirectPath('', 'login-required', ''));
+    return redirectToLogin(res, req, '', 'login-required', '');
   }
 
   if (!currentPassword) {
-    return res.redirect(buildProfileRedirectPath('', 'invalid-current-password'));
+    return redirectToProfile(res, req, '', 'invalid-current-password');
   }
 
-  if (!newPassword || newPassword.length < minPasswordLength) {
-    return res.redirect(buildProfileRedirectPath('', 'invalid-new-password'));
+  if (!isPasswordLengthWithinLimit(currentPassword)) {
+    return redirectToProfile(res, req, '', 'invalid-current-password');
+  }
+
+  if (!isPasswordLengthValid(newPassword)) {
+    return redirectToProfile(res, req, '', 'invalid-new-password');
+  }
+
+  if (!isPasswordLengthWithinLimit(confirmPassword)) {
+    return redirectToProfile(res, req, '', 'password-mismatch');
   }
 
   if (newPassword !== confirmPassword) {
-    return res.redirect(buildProfileRedirectPath('', 'password-mismatch'));
+    return redirectToProfile(res, req, '', 'password-mismatch');
   }
 
   try {
     if (!await ensureDatabaseConnection()) {
-      return res.redirect(buildProfileRedirectPath('', 'db-unavailable'));
+      return redirectToProfile(res, req, '', 'db-unavailable');
     }
 
     userRecord = await findAuthenticatedUserRecord(authenticatedUser);
 
     if (!userRecord) {
-      return res.redirect(buildProfileRedirectPath('', 'user-not-found'));
+      return redirectToProfile(res, req, '', 'user-not-found');
     }
 
     if (!doesPasswordMatch(currentPassword, userRecord.passwordSalt, userRecord.passwordHash)) {
-      return res.redirect(buildProfileRedirectPath('', 'invalid-current-password'));
+      return redirectToProfile(res, req, '', 'invalid-current-password');
     }
 
     if (doesPasswordMatch(newPassword, userRecord.passwordSalt, userRecord.passwordHash)) {
-      return res.redirect(buildProfileRedirectPath('', 'same-password'));
+      return redirectToProfile(res, req, '', 'same-password');
     }
 
     passwordPayload = hashUserPassword(newPassword);
@@ -1130,10 +1550,10 @@ async function handleProfilePasswordUpdate(req, res) {
       name: userRecord.name,
     });
 
-    return res.redirect(buildProfileRedirectPath('password-updated', ''));
+    return redirectToProfile(res, req, 'password-updated', '');
   } catch (error) {
     console.error('Profile password update failed:', error.message);
-    return res.redirect(buildProfileRedirectPath('', 'save-failed'));
+    return redirectToProfile(res, req, '', 'save-failed');
   }
 }
 
@@ -1143,30 +1563,31 @@ async function handleLoginSubmit(req, res) {
   var user = null;
   var code = '';
   var sendResult = null;
+  var requireEmailVerificationOnLogin = shouldRequireEmailVerificationOnLogin();
 
-  if (!email || !isValidEmailAddress(email)) {
-    return res.redirect(buildLoginRedirectPath('', 'invalid-email', email));
+  if (!email || email.length > maxEmailLength || !isValidEmailAddress(email)) {
+    return renderLoginPageWithMessage(req, res, '', 'invalid-email', email);
   }
 
-  if (!password || password.length < minPasswordLength) {
-    return res.redirect(buildLoginRedirectPath('', 'invalid-password', email));
+  if (!isPasswordLengthValid(password)) {
+    return renderLoginPageWithMessage(req, res, '', 'invalid-password', email);
   }
 
   if (!await ensureDatabaseConnection()) {
-    return res.redirect(buildLoginRedirectPath('', 'db-unavailable', email));
+    return renderLoginPageWithMessage(req, res, '', 'db-unavailable', email);
   }
 
   user = await User.findOne({ email: email });
 
   if (!user) {
-    return res.redirect(buildLoginRedirectPath('', 'no-account', email));
+    return renderLoginPageWithMessage(req, res, '', 'invalid-credentials', email);
   }
 
   if (!doesPasswordMatch(password, user.passwordSalt, user.passwordHash)) {
-    return res.redirect(buildLoginRedirectPath('', 'invalid-credentials', email));
+    return renderLoginPageWithMessage(req, res, '', 'invalid-credentials', email);
   }
 
-  if (!user.isEmailVerified) {
+  if (!user.isEmailVerified && requireEmailVerificationOnLogin) {
     try {
       code = await issueAuthCode(email, 'signup', user.name);
       sendResult = await resendService.sendEmail({
@@ -1178,23 +1599,30 @@ async function handleLoginSubmit(req, res) {
 
       if (!sendResult.ok) {
         console.error('Resend login verification email failed:', sendResult.errorCode || 'unknown');
-        return res.redirect(buildLoginRedirectPath('', 'email-send-failed', email));
+        return renderLoginPageWithMessage(req, res, '', 'email-send-failed', email);
       }
 
-      return res.redirect(buildSignupRedirectPath('code-sent', '', email, user.name));
+      setSignupPrefillCookie(res, req, email, user.name);
+      return redirectToSignup(res, req, 'code-sent', '');
     } catch (error) {
       console.error('Login verification email issue failed:', error.message);
-      return res.redirect(buildLoginRedirectPath('', 'save-failed', email));
+      return renderLoginPageWithMessage(req, res, '', 'save-failed', email);
     }
+  }
+
+  if (!user.isEmailVerified && !requireEmailVerificationOnLogin) {
+    user.isEmailVerified = true;
   }
 
   try {
     user.lastLoginAt = new Date();
     await user.save();
-    return setUserSessionAndRedirectHome(res, user, 'login-success');
+    clearScopedStateCookie(res, loginStateCookieName, '/login');
+    clearScopedEmailCookie(res, loginPrefillCookieName, '/login');
+    return setUserSessionAndRedirectHome(res, req, user, 'login-success');
   } catch (error) {
     console.error('Login save failed:', error.message);
-    return res.redirect(buildLoginRedirectPath('', 'save-failed', email));
+    return renderLoginPageWithMessage(req, res, '', 'save-failed', email);
   }
 }
 
@@ -1208,70 +1636,36 @@ async function handleSignupSubmit(req, res) {
   var sendResult = null;
   var verificationResult = null;
   var passwordPayload = null;
+  var newUser = null;
 
-  if (!name || name.length > maxUserNameLength) {
-    return res.redirect(buildSignupRedirectPath('', 'invalid-name', email, name));
+  setSignupPrefillCookie(res, req, email, name);
+
+  if (!name || name.length < minUserNameLength || name.length > maxUserNameLength) {
+    return redirectToSignup(res, req, '', 'invalid-name');
   }
 
-  if (!email || !isValidEmailAddress(email)) {
-    return res.redirect(buildSignupRedirectPath('', 'invalid-email', email, name));
+  if (!email || email.length > maxEmailLength || !isValidEmailAddress(email)) {
+    return redirectToSignup(res, req, '', 'invalid-email');
   }
 
   if (!await ensureDatabaseConnection()) {
-    return res.redirect(buildSignupRedirectPath('', 'db-unavailable', email, name));
+    return redirectToSignup(res, req, '', 'db-unavailable');
   }
 
   existingUser = await User.findOne({ email: email });
 
+  if (existingUser && existingUser.isEmailVerified) {
+    return redirectToSignup(res, req, '', 'email-exists');
+  }
+
   if (!verificationCode) {
-    if (!password || password.length < minPasswordLength) {
-      return res.redirect(buildSignupRedirectPath('', 'invalid-password', email, name));
-    }
-
     try {
+      if (!isPasswordLengthValid(password)) {
+        return redirectToSignup(res, req, '', 'invalid-password');
+      }
+
       passwordPayload = hashUserPassword(password);
-
-      if (existingUser && existingUser.isEmailVerified) {
-        return res.redirect(buildSignupRedirectPath('', 'email-exists', email, name));
-      }
-
-      if (!existingUser) {
-        try {
-          existingUser = await User.create({
-            email: email,
-            name: name,
-            authProvider: 'email-password',
-            passwordHash: passwordPayload.hash,
-            passwordSalt: passwordPayload.salt,
-            isEmailVerified: false,
-            lastLoginAt: null,
-          });
-        } catch (saveError) {
-          if (isDuplicateKeyError(saveError)) {
-            existingUser = await User.findOne({ email: email });
-          } else {
-            throw saveError;
-          }
-        }
-      }
-
-      if (!existingUser) {
-        throw new Error('signup-user-upsert-failed');
-      }
-
-      if (existingUser.isEmailVerified) {
-        return res.redirect(buildSignupRedirectPath('', 'email-exists', email, name));
-      }
-
-      existingUser.name = name;
-      existingUser.authProvider = 'email-password';
-      existingUser.passwordHash = passwordPayload.hash;
-      existingUser.passwordSalt = passwordPayload.salt;
-      existingUser.isEmailVerified = false;
-      existingUser.lastLoginAt = null;
-      await existingUser.save();
-
-      code = await issueAuthCode(email, 'signup', name);
+      code = await issueAuthCode(email, 'signup', name, passwordPayload);
       sendResult = await resendService.sendEmail({
         to: email,
         subject: buildOtpEmailSubject('signup', code),
@@ -1281,53 +1675,65 @@ async function handleSignupSubmit(req, res) {
 
       if (!sendResult.ok) {
         console.error('Resend signup email failed:', sendResult.errorCode || 'unknown');
-        return res.redirect(buildSignupRedirectPath('', 'email-send-failed', email, name));
+        return redirectToSignup(res, req, '', 'email-send-failed');
       }
 
-      return res.redirect(buildSignupRedirectPath('code-sent', '', email, name));
+      return redirectToSignup(res, req, 'code-sent', '');
     } catch (error) {
       console.error('Signup code issue failed:', error.message);
-      return res.redirect(buildSignupRedirectPath('', 'save-failed', email, name));
+      return redirectToSignup(res, req, '', 'save-failed');
     }
   }
 
-  if (password && password.length < minPasswordLength) {
-    return res.redirect(buildSignupRedirectPath('code-sent', 'invalid-password', email, name));
+  if (!isValidVerificationCode(verificationCode)) {
+    return redirectToSignup(res, req, 'code-sent', 'invalid-code');
   }
 
+  // A verification code was provided.
   try {
     verificationResult = await verifyAuthCode(email, 'signup', verificationCode);
 
     if (!verificationResult.ok) {
-      return res.redirect(buildSignupRedirectPath('code-sent', verificationResult.errorCode, email, name));
+      return redirectToSignup(res, req, 'code-sent', verificationResult.errorCode);
     }
 
-    existingUser = await User.findOne({ email: email });
-
-    if (!existingUser) {
-      return res.redirect(buildSignupRedirectPath('', 'no-account', email, name));
+    var authRecord = verificationResult.record;
+    if (!authRecord || !authRecord.passwordHash) {
+      return redirectToSignup(res, req, '', 'save-failed');
     }
 
-    if (password) {
-      passwordPayload = hashUserPassword(password);
-      existingUser.passwordHash = passwordPayload.hash;
-      existingUser.passwordSalt = passwordPayload.salt;
+    if (existingUser) {
+      // This case is unlikely if the initial check passed, but handle it.
+      // An unverified user record exists, so we'll verify it now.
+      existingUser.name = authRecord.name || name;
+      existingUser.passwordHash = authRecord.passwordHash;
+      existingUser.passwordSalt = authRecord.passwordSalt;
+      existingUser.isEmailVerified = true;
+      existingUser.lastLoginAt = new Date();
+      await existingUser.save();
+      newUser = existingUser;
+    } else {
+      // Create the new user *after* OTP verification.
+      newUser = await User.create({
+        email: email,
+        name: authRecord.name || name,
+        authProvider: 'email-password',
+        passwordHash: authRecord.passwordHash,
+        passwordSalt: authRecord.passwordSalt,
+        isEmailVerified: true,
+        lastLoginAt: new Date(),
+      });
     }
 
-    if (!toTrimmedString(existingUser.passwordHash) || !toTrimmedString(existingUser.passwordSalt)) {
-      return res.redirect(buildSignupRedirectPath('code-sent', 'invalid-password', email, name));
-    }
-
-    existingUser.name = name;
-    existingUser.authProvider = 'email-password';
-    existingUser.lastLoginAt = new Date();
-    existingUser.isEmailVerified = true;
-    await existingUser.save();
-
-    return setUserSessionAndRedirectHome(res, existingUser);
+    clearSignupPrefillCookie(res);
+    clearSignupStateCookie(res);
+    return setUserSessionAndRedirectHome(res, req, newUser);
   } catch (error) {
     console.error('Signup verification failed:', error.message);
-    return res.redirect(buildSignupRedirectPath('', 'save-failed', email, name));
+    if (isDuplicateKeyError(error)) {
+      return redirectToSignup(res, req, '', 'email-exists');
+    }
+    return redirectToSignup(res, req, '', 'save-failed');
   }
 }
 
@@ -1341,19 +1747,21 @@ async function handleForgotPasswordSubmit(req, res) {
   var verificationResult = null;
   var passwordPayload = null;
 
-  if (!email || !isValidEmailAddress(email)) {
-    return res.redirect(buildForgotPasswordRedirectPath('', 'invalid-email', email));
+  setScopedEmailCookie(res, req, forgotPrefillCookieName, '/forgot-password', email);
+
+  if (!email || email.length > maxEmailLength || !isValidEmailAddress(email)) {
+    return redirectToForgotPassword(res, req, '', 'invalid-email', email);
   }
 
   if (!await ensureDatabaseConnection()) {
-    return res.redirect(buildForgotPasswordRedirectPath('', 'db-unavailable', email));
+    return redirectToForgotPassword(res, req, '', 'db-unavailable', email);
   }
 
   if (!verificationCode) {
     existingUser = await User.findOne({ email: email });
 
     if (!existingUser) {
-      return res.redirect(buildForgotPasswordRedirectPath('', 'no-account', email));
+      return redirectToForgotPassword(res, req, '', 'no-account', email);
     }
 
     try {
@@ -1367,31 +1775,35 @@ async function handleForgotPasswordSubmit(req, res) {
 
       if (!sendResult.ok) {
         console.error('Resend forgot password email failed:', sendResult.errorCode || 'unknown');
-        return res.redirect(buildForgotPasswordRedirectPath('', 'email-send-failed', email));
+        return redirectToForgotPassword(res, req, '', 'email-send-failed', email);
       }
 
-      return res.redirect(buildForgotPasswordRedirectPath('code-sent', '', email));
+      return redirectToForgotPassword(res, req, 'code-sent', '', email);
     } catch (error) {
       console.error('Forgot password code issue failed:', error.message);
-      return res.redirect(buildForgotPasswordRedirectPath('', 'save-failed', email));
+      return redirectToForgotPassword(res, req, '', 'save-failed', email);
     }
   }
 
-  if (!password || password.length < minPasswordLength) {
-    return res.redirect(buildForgotPasswordRedirectPath('code-sent', 'invalid-password', email));
+  if (!isValidVerificationCode(verificationCode)) {
+    return redirectToForgotPassword(res, req, 'code-sent', 'invalid-code', email);
+  }
+
+  if (!isPasswordLengthValid(password)) {
+    return redirectToForgotPassword(res, req, 'code-sent', 'invalid-password', email);
   }
 
   try {
     verificationResult = await verifyAuthCode(email, 'password-reset', verificationCode);
 
     if (!verificationResult.ok) {
-      return res.redirect(buildForgotPasswordRedirectPath('code-sent', verificationResult.errorCode, email));
+      return redirectToForgotPassword(res, req, 'code-sent', verificationResult.errorCode, email);
     }
 
     existingUser = await User.findOne({ email: email });
 
     if (!existingUser) {
-      return res.redirect(buildForgotPasswordRedirectPath('', 'no-account', email));
+      return redirectToForgotPassword(res, req, '', 'no-account', email);
     }
 
     passwordPayload = hashUserPassword(password);
@@ -1400,11 +1812,109 @@ async function handleForgotPasswordSubmit(req, res) {
     existingUser.authProvider = 'email-password';
     await existingUser.save();
 
-    return res.redirect(buildLoginRedirectPath('password-reset-success', '', email));
+    clearScopedEmailCookie(res, forgotPrefillCookieName, '/forgot-password');
+    clearScopedStateCookie(res, forgotStateCookieName, '/forgot-password');
+    return redirectToLogin(res, req, 'password-reset-success', '', email);
   } catch (error) {
     console.error('Forgot password verification failed:', error.message);
-    return res.redirect(buildForgotPasswordRedirectPath('', 'save-failed', email));
+    return redirectToForgotPassword(res, req, '', 'save-failed', email);
   }
+}
+
+function queueOrderNotificationEmails(orderRecord, orderData, options) {
+  var notificationEmail = normalizeEmail(options && options.notificationEmail);
+  var emailSubject = sanitizeText(options && options.emailSubject, 220);
+  var customerEmail = normalizeEmail(options && options.customerEmail);
+  var shouldSendCustomerConfirmation = Boolean(options && options.shouldSendCustomerConfirmation);
+  var productName = sanitizeText(options && options.productName, 180);
+  var quantity = parsePositiveInteger(options && options.quantity, 1);
+  var totalLabel = sanitizeText(options && options.totalLabel, 120);
+
+  if (!orderRecord || typeof orderRecord.save !== 'function') {
+    return;
+  }
+
+  Promise.resolve().then(async function () {
+    var notificationResult = null;
+    var confirmationResult = null;
+
+    if (!notificationEmail || !isValidEmailAddress(notificationEmail) || !emailSubject) {
+      console.error('Order email skipped: ORDER_NOTIFICATION_EMAIL is not configured.');
+      orderRecord.status = 'email-failed';
+      orderRecord.emailNotificationSent = false;
+      orderRecord.customerConfirmationSent = false;
+      await orderRecord.save();
+      return;
+    }
+
+    notificationResult = await resendService.sendEmail({
+      to: notificationEmail,
+      subject: emailSubject,
+      text: buildOrderNotificationText(orderData),
+      html: buildOrderNotificationHtml(orderData),
+    });
+
+    if (!notificationResult.ok) {
+      console.error('Order email send failed:', notificationResult.errorCode || 'unknown');
+      orderRecord.status = 'email-failed';
+      orderRecord.emailNotificationSent = false;
+      orderRecord.customerConfirmationSent = false;
+      await orderRecord.save();
+      return;
+    }
+
+    orderRecord.status = 'submitted';
+    orderRecord.emailNotificationSent = true;
+    orderRecord.customerConfirmationSent = false;
+    await orderRecord.save();
+
+    if (!shouldSendCustomerConfirmation || !customerEmail || !isLikelyEmailAddress(customerEmail)) {
+      return;
+    }
+
+    confirmationResult = await resendService.sendEmail({
+      to: customerEmail,
+      subject: 'Order request received: ' + productName,
+      text: [
+        'Thank you for your order request.',
+        '',
+        'Product: ' + productName,
+        'Quantity: ' + quantity,
+        'Total: ' + totalLabel,
+        '',
+        'Our team will contact you soon.',
+      ].join('\n'),
+      html: [
+        '<div style="font-family:Arial,sans-serif;line-height:1.5;color:#0f172a;">',
+        '<h2 style="margin:0 0 10px;">Order request received</h2>',
+        '<p style="margin:0 0 8px;">Thank you for your order request.</p>',
+        '<p style="margin:0 0 8px;"><strong>Product:</strong> ' + escapeHtml(productName) + '</p>',
+        '<p style="margin:0 0 8px;"><strong>Quantity:</strong> ' + escapeHtml(quantity) + '</p>',
+        '<p style="margin:0 0 8px;"><strong>Total:</strong> ' + escapeHtml(totalLabel) + '</p>',
+        '<p style="margin:0;">Our team will contact you soon.</p>',
+        '</div>',
+      ].join(''),
+    });
+
+    if (!confirmationResult.ok) {
+      console.error('Order customer confirmation failed:', confirmationResult.errorCode || 'unknown');
+      return;
+    }
+
+    orderRecord.customerConfirmationSent = true;
+    await orderRecord.save();
+  }).catch(async function (error) {
+    console.error('Order notification queue failed:', error && error.message ? error.message : 'unknown');
+
+    try {
+      orderRecord.status = 'email-failed';
+      orderRecord.emailNotificationSent = false;
+      orderRecord.customerConfirmationSent = false;
+      await orderRecord.save();
+    } catch (orderSaveError) {
+      console.error('Order failure status update failed:', orderSaveError.message);
+    }
+  });
 }
 
 async function handleOrderSubmit(req, res) {
@@ -1434,8 +1944,7 @@ async function handleOrderSubmit(req, res) {
   var emailSubject = '';
   var orderData = null;
   var orderRecord = null;
-  var sendResult = null;
-  var confirmationResult = null;
+  var shouldSendCustomerConfirmation = false;
 
   if (!authenticatedUser) {
     return res.status(401).json({
@@ -1477,19 +1986,11 @@ async function handleOrderSubmit(req, res) {
     });
   }
 
-  if (!customerEmail || !isLikelyEmailAddress(customerEmail)) {
+  if (!customerEmail || !isValidEmailAddress(customerEmail)) {
     return res.status(401).json({
       ok: false,
       errorCode: 'invalid-auth-session',
       message: 'Please login again to place an order.',
-    });
-  }
-
-  if (!notificationEmail || !isLikelyEmailAddress(notificationEmail)) {
-    return res.status(503).json({
-      ok: false,
-      errorCode: 'order-email-not-configured',
-      message: 'Order email is not configured. Please contact the store.',
     });
   }
 
@@ -1588,99 +2089,29 @@ async function handleOrderSubmit(req, res) {
     });
   }
 
-  try {
-    sendResult = await resendService.sendEmail({
-      to: notificationEmail,
-      subject: emailSubject,
-      text: buildOrderNotificationText(orderData),
-      html: buildOrderNotificationHtml(orderData),
-    });
+  shouldSendCustomerConfirmation = customerEmail && isLikelyEmailAddress(customerEmail);
 
-    if (!sendResult.ok) {
-      console.error('Order email send failed:', sendResult.errorCode || 'unknown');
+  queueOrderNotificationEmails(orderRecord, orderData, {
+    notificationEmail: notificationEmail,
+    emailSubject: emailSubject,
+    customerEmail: customerEmail,
+    shouldSendCustomerConfirmation: shouldSendCustomerConfirmation,
+    productName: productName,
+    quantity: quantity,
+    totalLabel: totalLabel,
+  });
 
-      if (orderRecord) {
-        orderRecord.status = 'email-failed';
-        orderRecord.emailNotificationSent = false;
-        orderRecord.customerConfirmationSent = false;
-        await orderRecord.save();
-      }
-
-      return res.status(502).json({
-        ok: false,
-        errorCode: 'email-send-failed',
-        message: 'Could not send order email. Please try again.',
-      });
-    }
-
-    if (customerEmail && isLikelyEmailAddress(customerEmail)) {
-      confirmationResult = await resendService.sendEmail({
-        to: customerEmail,
-        subject: 'Order request received: ' + productName,
-        text: [
-          'Thank you for your order request.',
-          '',
-          'Product: ' + productName,
-          'Quantity: ' + quantity,
-          'Total: ' + totalLabel,
-          '',
-          'Our team will contact you soon.',
-        ].join('\n'),
-        html: [
-          '<div style="font-family:Arial,sans-serif;line-height:1.5;color:#0f172a;">',
-          '<h2 style="margin:0 0 10px;">Order request received</h2>',
-          '<p style="margin:0 0 8px;">Thank you for your order request.</p>',
-          '<p style="margin:0 0 8px;"><strong>Product:</strong> ' + escapeHtml(productName) + '</p>',
-          '<p style="margin:0 0 8px;"><strong>Quantity:</strong> ' + escapeHtml(quantity) + '</p>',
-          '<p style="margin:0 0 8px;"><strong>Total:</strong> ' + escapeHtml(totalLabel) + '</p>',
-          '<p style="margin:0;">Our team will contact you soon.</p>',
-          '</div>',
-        ].join(''),
-      });
-
-      if (!confirmationResult.ok) {
-        console.error('Order customer confirmation failed:', confirmationResult.errorCode || 'unknown');
-      }
-    }
-
-    if (orderRecord) {
-      orderRecord.status = 'submitted';
-      orderRecord.emailNotificationSent = true;
-      orderRecord.customerConfirmationSent = Boolean(confirmationResult && confirmationResult.ok);
-      await orderRecord.save();
-    }
-
-    return res.json({
-      ok: true,
-      message: 'Order received. Email sent successfully.',
-      orderId: orderRecord && orderRecord._id ? String(orderRecord._id) : '',
-      whatsappMessage: buildOrderWhatsappMessage(orderData),
-    });
-  } catch (error) {
-    console.error('Order submit failed:', error.message);
-
-    if (orderRecord) {
-      try {
-        orderRecord.status = 'email-failed';
-        orderRecord.emailNotificationSent = false;
-        orderRecord.customerConfirmationSent = false;
-        await orderRecord.save();
-      } catch (orderSaveError) {
-        console.error('Order failure status update failed:', orderSaveError.message);
-      }
-    }
-
-    return res.status(500).json({
-      ok: false,
-      errorCode: 'order-submit-failed',
-      message: 'Could not process order right now. Please try again.',
-    });
-  }
+  return res.json({
+    ok: true,
+    message: 'Order received successfully.',
+    orderId: orderRecord && orderRecord._id ? String(orderRecord._id) : '',
+    whatsappMessage: buildOrderWhatsappMessage(orderData),
+  });
 }
 
 function handleUserLogout(req, res) {
   userAuth.clearUserAuthCookie(res);
-  return res.redirect('/login?status=logged-out');
+  return redirectToLogin(res, req, 'logged-out', '', '');
 }
 
 module.exports = {

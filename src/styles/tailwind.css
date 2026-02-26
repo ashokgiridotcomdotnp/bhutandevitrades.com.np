@@ -148,6 +148,27 @@
     animation: pro-shimmer 1.25s linear infinite;
   }
 
+  .bd-image-skeleton {
+    background-color: rgba(226, 232, 240, 0.85);
+    background-image: linear-gradient(90deg, rgba(226, 232, 240, 0.95) 25%, rgba(248, 250, 252, 1) 40%, rgba(226, 232, 240, 0.95) 55%);
+    background-size: 220% 100%;
+  }
+
+  .js-enabled .bd-image-skeleton.is-loading {
+    animation: pro-shimmer 1.15s linear infinite;
+    filter: saturate(0.88) contrast(0.9);
+    opacity: 0.35;
+  }
+
+  .js-enabled .bd-image-skeleton.is-loaded {
+    animation: none;
+    background-image: none;
+    background-color: transparent;
+    filter: none;
+    opacity: 1;
+    transition: opacity 0.24s var(--pro-ease-soft), filter 0.24s var(--pro-ease-soft), background-color 0.24s var(--pro-ease-soft);
+  }
+
   .pro-skeleton-media {
     @apply h-64 w-full rounded-xl;
   }
@@ -195,8 +216,114 @@
   }
 
   .pro-scrollbar {
-    scrollbar-width: thin;
-    scrollbar-color: rgba(100, 116, 139, 0.55) transparent;
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+
+  .pro-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+
+  .bd-toast-root {
+    position: fixed;
+    top: 1rem;
+    right: 1rem;
+    z-index: 9999;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    width: min(24rem, calc(100vw - 1.5rem));
+    pointer-events: none;
+  }
+
+  .bd-toast-item {
+    pointer-events: auto;
+    opacity: 0;
+    transform: translateY(-6px);
+    transition: opacity 0.18s ease, transform 0.18s ease;
+  }
+
+  .bd-toast-item.is-visible {
+    opacity: 1;
+    transform: translateY(0);
+  }
+
+  .bd-toast-item.is-leaving {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+
+  .rounded-base {
+    border-radius: 0.75rem;
+  }
+
+  .shadow-xs {
+    box-shadow: 0 12px 24px rgba(15, 23, 42, 0.12);
+  }
+
+  .border-default {
+    border-color: rgba(203, 213, 225, 0.9);
+  }
+
+  .text-body {
+    color: rgb(51 65 85);
+  }
+
+  .text-heading {
+    color: rgb(15 23 42);
+  }
+
+  .bg-neutral-primary-soft {
+    background-color: rgba(255, 255, 255, 0.95);
+  }
+
+  .bg-neutral-secondary-medium {
+    background-color: rgb(241 245 249);
+  }
+
+  .text-fg-success {
+    color: rgb(5 150 105);
+  }
+
+  .bg-success-soft {
+    background-color: rgb(209 250 229);
+  }
+
+  .text-fg-danger {
+    color: rgb(220 38 38);
+  }
+
+  .bg-danger-soft {
+    background-color: rgb(254 226 226);
+  }
+
+  .text-fg-warning {
+    color: rgb(217 119 6);
+  }
+
+  .bg-warning-soft {
+    background-color: rgb(254 243 199);
+  }
+
+  .ms-3 {
+    margin-inline-start: 0.75rem;
+  }
+
+  .ms-auto {
+    margin-inline-start: auto;
+  }
+
+  .hover\:text-heading:hover {
+    color: rgb(15 23 42);
+  }
+
+  .hover\:bg-neutral-secondary-medium:hover {
+    background-color: rgb(241 245 249);
+  }
+
+  .focus\:ring-neutral-tertiary:focus {
+    --tw-ring-opacity: 1;
+    --tw-ring-color: rgb(148 163 184 / var(--tw-ring-opacity));
   }
 
   .pro-page-enter {

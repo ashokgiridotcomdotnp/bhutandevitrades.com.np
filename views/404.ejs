@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="robots" content="noindex,follow" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;700;800&display=swap" rel="stylesheet" />
+    <title>Page Not Found</title>
+    <link rel="stylesheet" href="/stylesheets/style.css" />
+  </head>
+  <%
+    var authenticatedUser = currentUser && currentUser.email ? currentUser : null;
+    var accountActionHref = authenticatedUser ? '/my-orders' : '/login';
+    var accountActionLabel = authenticatedUser ? 'My orders' : 'Login';
+  %>
+  <body class="text-slate-900">
+    <main class="app-shell flex min-h-screen items-center py-8 pro-page-enter">
+      <section class="pro-panel mx-auto w-full max-w-2xl p-6 sm:p-8 pro-stagger">
+        <p class="text-xs font-bold uppercase tracking-[0.18em] text-cyan-700">404 Error</p>
+        <h1 class="mt-2 text-3xl font-extrabold tracking-tight text-slate-900 sm:text-4xl">We couldn't find that page</h1>
+        <p class="mt-3 text-sm leading-relaxed text-slate-600">
+          The link may be broken, outdated, or typed incorrectly. Please continue from the options below.
+        </p>
+
+        <% if (requestedPath) { %>
+        <p class="mt-4 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-700">
+          Requested URL:
+          <span class="font-mono break-all"><%= requestedPath %></span>
+        </p>
+        <% } %>
+
+        <div class="mt-6 flex flex-wrap gap-3">
+          <a href="/" class="pro-btn-primary">Go to homepage</a>
+          <a href="/#products" class="pro-btn-secondary">Browse products</a>
+          <a href="<%= accountActionHref %>" class="pro-btn-secondary"><%= accountActionLabel %></a>
+          <% if (authenticatedUser) { %>
+          <a href="/profile" class="pro-btn-secondary">Profile</a>
+          <% } %>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>

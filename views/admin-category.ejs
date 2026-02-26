@@ -166,19 +166,11 @@
             </div>
 
             <% if (statusMessage) { %>
-            <div
-              data-success-alert
-              role="status"
-              class="rounded-xl border border-emerald-300 bg-emerald-50/95 px-4 py-2.5 text-sm font-semibold text-emerald-700 shadow-lg backdrop-blur"
-            >
-              <%= statusMessage %>
-            </div>
+            <div class="hidden" data-success-alert><%= statusMessage %></div>
             <% } %>
 
             <% if (errorMessage) { %>
-            <div class="mx-4 mt-4 rounded-xl border border-red-300 bg-red-50 px-4 py-3 text-sm font-medium text-red-700 sm:mx-6" data-error-alert>
-              <%= errorMessage %>
-            </div>
+            <div class="hidden" data-error-alert><%= errorMessage %></div>
             <% } %>
 
             <div class="space-y-5 p-5 sm:p-7 pro-stagger">
@@ -656,7 +648,9 @@
       </div>
     </div>
 
+    <%- include('helpers/loading') %>
     <script id="admin-category-page-data" type="application/json"><%- JSON.stringify({ addProductSubcategoryOptions: addProductSubcategoryOptions }).replace(/</g, '\\u003c') %></script>
+    <script src="/javascripts/loading.js"></script>
     <script src="/javascripts/flash-alert.js"></script>
     <script src="/javascripts/admin-category.js"></script>
   </body>

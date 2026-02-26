@@ -40,13 +40,34 @@
         var acceptedOrdersCount = Number.isFinite(Number(acceptedOrderRequestsCount))
           ? Number(acceptedOrderRequestsCount)
           : 0;
-        var ordersPagePath = '/admin/orders';
-        var pendingOrderRows = orderRequests.filter(function (item) {
-          return String(item && item.adminStatus ? item.adminStatus : '').toLowerCase() !== 'accepted';
-        });
-        var acceptedOrderRows = orderRequests.filter(function (item) {
-          return String(item && item.adminStatus ? item.adminStatus : '').toLowerCase() === 'accepted';
-        });
+        var totalOrdersCount = Number.isFinite(Number(totalOrderRequestsCount))
+          ? Number(totalOrderRequestsCount)
+          : (pendingOrdersCount + acceptedOrdersCount);
+        var requestedOrderView = String(adminOrdersView || '').toLowerCase();
+        var selectedOrderView = 'pending';
+        var selectedOrdersCurrentPage = Number.isFinite(Number(adminOrdersPage)) ? Math.max(1, Number(adminOrdersPage)) : 1;
+        var selectedOrdersTotalPages = Number.isFinite(Number(adminOrdersTotalPages)) ? Math.max(1, Number(adminOrdersTotalPages)) : 1;
+        var pendingOrderRows = selectedOrderView === 'pending' ? orderRequests : [];
+        var acceptedOrderRows = selectedOrderView === 'accepted' ? orderRequests : [];
+
+        if (requestedOrderView === 'pending' || requestedOrderView === 'accepted') {
+          selectedOrderView = requestedOrderView;
+        } else if (!pendingOrdersCount && acceptedOrdersCount) {
+          selectedOrderView = 'accepted';
+        }
+
+        pendingOrderRows = selectedOrderView === 'pending' ? orderRequests : [];
+        acceptedOrderRows = selectedOrderView === 'accepted' ? orderRequests : [];
+
+        function buildOrdersPageHref(targetPage, targetView) {
+          var normalizedView = String(targetView || selectedOrderView).toLowerCase();
+          var safeView = normalizedView === 'accepted' ? 'accepted' : 'pending';
+          var parsedPage = Number(targetPage);
+          var safePage = Number.isFinite(parsedPage) && parsedPage > 0 ? Math.floor(parsedPage) : 1;
+          return '/admin/orders?view=' + encodeURIComponent(safeView) + '&page=' + safePage;
+        }
+
+        var ordersPagePath = buildOrdersPageHref(selectedOrdersCurrentPage, selectedOrderView);
       %>
 
       <header class="mb-4 pro-panel px-5 py-4 pro-stagger">
@@ -70,25 +91,17 @@
       </header>
 
       <% if (statusMessage) { %>
-      <div
-        data-success-alert
-        role="status"
-        class="mb-3 rounded-xl border border-emerald-300 bg-emerald-50/95 px-4 py-2.5 text-sm font-semibold text-emerald-700 shadow-lg backdrop-blur"
-      >
-        <%= statusMessage %>
-      </div>
+      <div class="hidden" data-success-alert><%= statusMessage %></div>
       <% } %>
 
       <% if (errorMessage) { %>
-      <div class="mb-3 rounded-xl border border-red-300 bg-red-50 px-4 py-3 text-sm font-medium text-red-700" data-error-alert>
-        <%= errorMessage %>
-      </div>
+      <div class="hidden" data-error-alert><%= errorMessage %></div>
       <% } %>
 
       <section class="mb-4 grid gap-3 sm:grid-cols-3">
         <article class="pro-panel p-4">
           <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Total Requests</p>
-          <p class="mt-1 text-2xl font-extrabold tracking-tight text-slate-900"><%= orderRequests.length %></p>
+          <p class="mt-1 text-2xl font-extrabold tracking-tight text-slate-900"><%= totalOrdersCount %></p>
           <p class="mt-1 text-xs text-slate-500">All incoming and processed</p>
         </article>
         <article class="pro-panel p-4">
@@ -109,18 +122,72 @@
       </section>
       <% } %>
 
-      <% if (!orderRequestsError && !orderRequests.length) { %>
+      <% if (!orderRequestsError && !totalOrdersCount) { %>
       <section class="pro-panel p-5 text-sm text-slate-600">
         No order requests found yet.
       </section>
       <% } %>
 
-      <% if (!orderRequestsError && orderRequests.length) { %>
-      <section class="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
-        <article class="pro-panel p-4">
+      <% if (!orderRequestsError && totalOrdersCount) { %>
+      <section class="space-y-4">
+        <article class="pro-panel p-3">
+          <div class="flex flex-wrap items-center gap-2" role="tablist" aria-label="Order request status tabs">
+            <a
+              href="<%= buildOrdersPageHref(1, 'pending') %>"
+              class="<%= selectedOrderView === 'pending' ? 'pro-btn-primary' : 'pro-btn-secondary' %> px-3 py-1.5 text-sm"
+              data-orders-nav-link
+              aria-pressed="<%= selectedOrderView === 'pending' ? 'true' : 'false' %>"
+            >
+              Pending Requests
+              <span class="ml-1.5 rounded-full border border-current/30 px-2 py-0.5 text-[10px] font-bold leading-none"><%= pendingOrdersCount %></span>
+            </a>
+            <a
+              href="<%= buildOrdersPageHref(1, 'accepted') %>"
+              class="<%= selectedOrderView === 'accepted' ? 'pro-btn-primary' : 'pro-btn-secondary' %> px-3 py-1.5 text-sm"
+              data-orders-nav-link
+              aria-pressed="<%= selectedOrderView === 'accepted' ? 'true' : 'false' %>"
+            >
+              Accepted Requests
+              <span class="ml-1.5 rounded-full border border-current/30 px-2 py-0.5 text-[10px] font-bold leading-none"><%= acceptedOrdersCount %></span>
+            </a>
+          </div>
+        </article>
+
+        <article class="pro-panel hidden p-4" data-orders-skeleton>
+          <div class="animate-pulse space-y-3">
+            <div class="h-4 w-48 rounded bg-slate-200"></div>
+            <div class="overflow-x-auto">
+              <table class="w-full min-w-[64rem] border-collapse">
+                <thead>
+                  <tr>
+                    <th class="border border-slate-200 px-3 py-2"><div class="h-3 rounded bg-slate-200"></div></th>
+                    <th class="border border-slate-200 px-3 py-2"><div class="h-3 rounded bg-slate-200"></div></th>
+                    <th class="border border-slate-200 px-3 py-2"><div class="h-3 rounded bg-slate-200"></div></th>
+                    <th class="border border-slate-200 px-3 py-2"><div class="h-3 rounded bg-slate-200"></div></th>
+                    <th class="border border-slate-200 px-3 py-2"><div class="h-3 rounded bg-slate-200"></div></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <% for (var skeletonIndex = 0; skeletonIndex < 4; skeletonIndex += 1) { %>
+                  <tr>
+                    <td class="border border-slate-200 px-3 py-3"><div class="h-10 rounded bg-slate-200"></div></td>
+                    <td class="border border-slate-200 px-3 py-3"><div class="h-4 rounded bg-slate-200"></div></td>
+                    <td class="border border-slate-200 px-3 py-3"><div class="h-4 rounded bg-slate-200"></div></td>
+                    <td class="border border-slate-200 px-3 py-3"><div class="h-4 rounded bg-slate-200"></div></td>
+                    <td class="border border-slate-200 px-3 py-3"><div class="h-6 rounded bg-slate-200"></div></td>
+                  </tr>
+                  <% } %>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </article>
+
+        <div class="space-y-4" data-orders-content>
+        <article class="pro-panel p-4 <%= selectedOrderView === 'pending' ? '' : 'hidden' %>" data-order-section-panel="pending">
           <div class="mb-3 flex items-center gap-2">
             <h2 class="text-lg font-extrabold tracking-tight text-slate-900">Pending Requests</h2>
-            <span class="rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-xs font-semibold text-amber-700"><%= pendingOrderRows.length %></span>
+            <span class="rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-xs font-semibold text-amber-700"><%= pendingOrdersCount %></span>
           </div>
 
           <% if (!pendingOrderRows.length) { %>
@@ -128,71 +195,118 @@
           <% } %>
 
           <% if (pendingOrderRows.length) { %>
-          <div class="space-y-3">
-            <% pendingOrderRows.forEach(function (orderItem) { %>
-            <%
-              var orderId = String(orderItem && orderItem._id ? orderItem._id : '');
-              var productName = String(orderItem && orderItem.productName ? orderItem.productName : 'Product');
-              var productType = String(orderItem && orderItem.productType ? orderItem.productType : 'Category');
-              var quantity = Number(orderItem && orderItem.quantity);
-              var safeQuantity = Number.isFinite(quantity) && quantity > 0 ? Math.floor(quantity) : 1;
-              var totalLabel = String(orderItem && orderItem.totalLabel ? orderItem.totalLabel : 'Contact for price');
-              var customerName = String(orderItem && orderItem.customerName ? orderItem.customerName : '-');
-              var customerEmail = String(orderItem && orderItem.customerEmail ? orderItem.customerEmail : '-');
-              var phoneNumber = String(orderItem && orderItem.phoneNumber ? orderItem.phoneNumber : '-');
-              var note = String(orderItem && orderItem.note ? orderItem.note : '-');
-              var createdAtLabel = formatDateTime(orderItem && orderItem.createdAt);
-            %>
-            <article class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-              <div class="flex flex-wrap items-start justify-between gap-2">
-                <div>
-                  <h3 class="text-lg font-extrabold tracking-tight text-slate-900"><%= productName %></h3>
-                  <p class="text-xs font-semibold uppercase tracking-wide text-slate-500"><%= productType %></p>
-                </div>
-                <span class="inline-flex items-center rounded-full border border-amber-300 bg-amber-50 px-2.5 py-1 text-xs font-bold text-amber-700">Pending</span>
-              </div>
+          <div class="overflow-x-auto">
+            <table class="w-full min-w-[64rem] border-collapse">
+              <thead>
+                <tr class="bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-600">
+                  <th class="rounded-l-md border border-slate-200 px-3 py-2">Product</th>
+                  <th class="border border-slate-200 px-3 py-2">Category</th>
+                  <th class="border border-slate-200 px-3 py-2">Price</th>
+                  <th class="border border-slate-200 px-3 py-2">Spec</th>
+                  <th class="rounded-r-md border border-slate-200 px-3 py-2">Actions</th>
+                </tr>
+              </thead>
+              <tbody class="text-sm text-slate-700">
+                <% pendingOrderRows.forEach(function (orderItem) { %>
+                <%
+                  var orderId = String(orderItem && orderItem._id ? orderItem._id : '');
+                  var productId = String(orderItem && orderItem.productId ? orderItem.productId : '');
+                  var productName = String(orderItem && orderItem.productName ? orderItem.productName : 'Product');
+                  var productType = String(orderItem && orderItem.productType ? orderItem.productType : 'Category');
+                  var quantity = Number(orderItem && orderItem.quantity);
+                  var safeQuantity = Number.isFinite(quantity) && quantity > 0 ? Math.floor(quantity) : 1;
+                  var totalLabel = String(orderItem && orderItem.totalLabel ? orderItem.totalLabel : 'Contact for price');
+                  var customerName = String(orderItem && orderItem.customerName ? orderItem.customerName : '-');
+                  var customerEmail = String(orderItem && orderItem.customerEmail ? orderItem.customerEmail : '-');
+                  var phoneNumber = String(orderItem && orderItem.phoneNumber ? orderItem.phoneNumber : '-');
+                  var note = String(orderItem && orderItem.note ? orderItem.note : '-');
+                  var createdAtLabel = formatDateTime(orderItem && orderItem.createdAt);
+                %>
+                <tr class="align-top transition-colors hover:bg-slate-50">
+                  <td class="border border-slate-200 px-3 py-2">
+                    <div class="flex items-center gap-2">
+                      <img
+                        src="/images/productParts/no-image.webp"
+                        alt="<%= productName %>"
+                        class="h-10 w-10 rounded-md border border-slate-200 bg-white object-cover"
+                        loading="lazy"
+                      />
+                      <div>
+                        <p class="font-semibold text-slate-800"><%= productName %></p>
+                        <span class="mt-0.5 inline-flex items-center rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-700">Pending</span>
+                      </div>
+                    </div>
+                  </td>
+                  <td class="border border-slate-200 px-3 py-2 font-medium"><%= productType %></td>
+                  <td class="border border-slate-200 px-3 py-2">
+                    <p><%= totalLabel %></p>
+                    <p class="text-xs text-slate-500">Qty: <%= safeQuantity %></p>
+                  </td>
+                  <td class="max-w-[24rem] border border-slate-200 px-3 py-2">
+                    <p><span class="font-semibold text-slate-800">Customer:</span> <%= customerName %></p>
+                    <p class="break-all"><span class="font-semibold text-slate-800">Email:</span> <%= customerEmail %></p>
+                    <p><span class="font-semibold text-slate-800">Phone:</span> <%= phoneNumber %></p>
+                    <p><span class="font-semibold text-slate-800">Requested:</span> <%= createdAtLabel %></p>
+                    <p><span class="font-semibold text-slate-800">Note:</span> <%= note %></p>
+                  </td>
+                  <td class="border border-slate-200 px-3 py-2">
+                    <div class="flex flex-wrap items-center gap-2">
+                      <% if (productId) { %>
+                      <a href="/products/<%= encodeURIComponent(productId) %>" class="pro-btn-secondary px-2.5 py-1 text-xs">Open</a>
+                      <% } else { %>
+                      <span class="pro-btn-secondary pointer-events-none px-2.5 py-1 text-xs opacity-50" aria-disabled="true">Open</span>
+                      <% } %>
+                      <form action="/admin/orders/accept" method="post" data-orders-nav-form>
+                        <input type="hidden" name="orderId" value="<%= orderId %>" />
+                        <input type="hidden" name="redirectTo" value="<%= ordersPagePath %>" data-order-redirect-input />
+                        <input type="hidden" name="adminMessage" value="" />
+                        <button type="submit" class="pro-btn-primary px-2.5 py-1 text-xs">Accept</button>
+                      </form>
+                      <form action="/admin/orders/delete" method="post" data-orders-nav-form onsubmit="return window.confirm('Delete this order request?');">
+                        <input type="hidden" name="orderId" value="<%= orderId %>" />
+                        <input type="hidden" name="redirectTo" value="<%= ordersPagePath %>" data-order-redirect-input />
+                        <button type="submit" class="pro-btn-danger-muted px-2.5 py-1 text-xs">Delete</button>
+                      </form>
+                    </div>
+                  </td>
+                </tr>
+                <% }) %>
+              </tbody>
+            </table>
+          </div>
+          <% } %>
 
-              <dl class="mt-3 grid gap-x-3 gap-y-1.5 text-sm sm:grid-cols-2">
-                <div><dt class="font-semibold text-slate-900">Quantity</dt><dd class="text-slate-700"><%= safeQuantity %></dd></div>
-                <div><dt class="font-semibold text-slate-900">Total</dt><dd class="text-slate-700"><%= totalLabel %></dd></div>
-                <div><dt class="font-semibold text-slate-900">Customer</dt><dd class="text-slate-700"><%= customerName %></dd></div>
-                <div><dt class="font-semibold text-slate-900">Email</dt><dd class="break-all text-slate-700"><%= customerEmail %></dd></div>
-                <div><dt class="font-semibold text-slate-900">Phone</dt><dd class="text-slate-700"><%= phoneNumber %></dd></div>
-                <div><dt class="font-semibold text-slate-900">Requested At</dt><dd class="text-slate-700"><%= createdAtLabel %></dd></div>
-              </dl>
+          <% if (selectedOrderView === 'pending' && selectedOrdersTotalPages > 1) { %>
+          <div class="mt-3 flex flex-wrap items-center justify-between gap-2">
+            <a
+              href="<%= buildOrdersPageHref(selectedOrdersCurrentPage - 1, 'pending') %>"
+              class="pro-btn-secondary px-3 py-1.5 text-xs <%= selectedOrdersCurrentPage <= 1 ? 'pointer-events-none opacity-50' : '' %>"
+              aria-disabled="<%= selectedOrdersCurrentPage <= 1 ? 'true' : 'false' %>"
+              data-orders-nav-link
+            >
+              Prev
+            </a>
 
-              <div class="mt-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
-                <span class="font-semibold text-slate-900">Customer Note:</span> <%= note %>
-              </div>
+            <p class="text-xs font-semibold text-slate-500">
+              Page <%= selectedOrdersCurrentPage %> of <%= selectedOrdersTotalPages %>
+            </p>
 
-              <form action="/admin/orders/accept" method="post" class="mt-4 border-t border-slate-200 pt-4">
-                <input type="hidden" name="orderId" value="<%= orderId %>" />
-                <input type="hidden" name="redirectTo" value="<%= ordersPagePath %>" />
-                <div class="space-y-1.5">
-                  <label class="block text-sm font-semibold text-slate-800" for="admin-order-message-<%= orderId %>">Admin message (optional)</label>
-                  <textarea
-                    id="admin-order-message-<%= orderId %>"
-                    name="adminMessage"
-                    rows="2"
-                    maxlength="1000"
-                    placeholder="Message to customer"
-                    class="pro-input"
-                  ></textarea>
-                </div>
-                <div class="mt-3 flex items-center justify-end">
-                  <button type="submit" class="pro-btn-primary px-3 py-1.5 text-xs">Accept and Send Message</button>
-                </div>
-              </form>
-            </article>
-            <% }) %>
+            <a
+              href="<%= buildOrdersPageHref(selectedOrdersCurrentPage + 1, 'pending') %>"
+              class="pro-btn-secondary px-3 py-1.5 text-xs <%= selectedOrdersCurrentPage >= selectedOrdersTotalPages ? 'pointer-events-none opacity-50' : '' %>"
+              aria-disabled="<%= selectedOrdersCurrentPage >= selectedOrdersTotalPages ? 'true' : 'false' %>"
+              data-orders-nav-link
+            >
+              Next
+            </a>
           </div>
           <% } %>
         </article>
 
-        <article class="pro-panel p-4">
+        <article class="pro-panel p-4 <%= selectedOrderView === 'accepted' ? '' : 'hidden' %>" data-order-section-panel="accepted">
           <div class="mb-3 flex items-center gap-2">
             <h2 class="text-lg font-extrabold tracking-tight text-slate-900">Accepted Requests</h2>
-            <span class="rounded-full border border-emerald-300 bg-emerald-50 px-2 py-0.5 text-xs font-semibold text-emerald-700"><%= acceptedOrderRows.length %></span>
+            <span class="rounded-full border border-emerald-300 bg-emerald-50 px-2 py-0.5 text-xs font-semibold text-emerald-700"><%= acceptedOrdersCount %></span>
           </div>
 
           <% if (!acceptedOrderRows.length) { %>
@@ -200,68 +314,122 @@
           <% } %>
 
           <% if (acceptedOrderRows.length) { %>
-          <div class="space-y-3">
-            <% acceptedOrderRows.forEach(function (orderItem) { %>
-            <%
-              var productNameAccepted = String(orderItem && orderItem.productName ? orderItem.productName : 'Product');
-              var productTypeAccepted = String(orderItem && orderItem.productType ? orderItem.productType : 'Category');
-              var quantityAccepted = Number(orderItem && orderItem.quantity);
-              var safeQuantityAccepted = Number.isFinite(quantityAccepted) && quantityAccepted > 0 ? Math.floor(quantityAccepted) : 1;
-              var totalLabelAccepted = String(orderItem && orderItem.totalLabel ? orderItem.totalLabel : 'Contact for price');
-              var customerNameAccepted = String(orderItem && orderItem.customerName ? orderItem.customerName : '-');
-              var customerEmailAccepted = String(orderItem && orderItem.customerEmail ? orderItem.customerEmail : '-');
-              var phoneNumberAccepted = String(orderItem && orderItem.phoneNumber ? orderItem.phoneNumber : '-');
-              var noteAccepted = String(orderItem && orderItem.note ? orderItem.note : '-');
-              var createdAtLabelAccepted = formatDateTime(orderItem && orderItem.createdAt);
-              var adminMessageAccepted = String(orderItem && orderItem.adminMessage ? orderItem.adminMessage : '');
-              var acceptedAtLabel = formatDateTime(orderItem && orderItem.adminAcceptedAt);
-              var isAdminEmailSent = Boolean(orderItem && orderItem.adminEmailNotificationSent);
-            %>
-            <article class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-              <div class="flex flex-wrap items-start justify-between gap-2">
-                <div>
-                  <h3 class="text-lg font-extrabold tracking-tight text-slate-900"><%= productNameAccepted %></h3>
-                  <p class="text-xs font-semibold uppercase tracking-wide text-slate-500"><%= productTypeAccepted %></p>
-                </div>
-                <span class="inline-flex items-center rounded-full border border-emerald-300 bg-emerald-50 px-2.5 py-1 text-xs font-bold text-emerald-700">Accepted</span>
-              </div>
+          <div class="overflow-x-auto">
+            <table class="w-full min-w-[64rem] border-collapse">
+              <thead>
+                <tr class="bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-600">
+                  <th class="rounded-l-md border border-slate-200 px-3 py-2">Product</th>
+                  <th class="border border-slate-200 px-3 py-2">Category</th>
+                  <th class="border border-slate-200 px-3 py-2">Price</th>
+                  <th class="border border-slate-200 px-3 py-2">Spec</th>
+                  <th class="rounded-r-md border border-slate-200 px-3 py-2">Actions</th>
+                </tr>
+              </thead>
+              <tbody class="text-sm text-slate-700">
+                <% acceptedOrderRows.forEach(function (orderItem) { %>
+                <%
+                  var orderIdAccepted = String(orderItem && orderItem._id ? orderItem._id : '');
+                  var productIdAccepted = String(orderItem && orderItem.productId ? orderItem.productId : '');
+                  var productNameAccepted = String(orderItem && orderItem.productName ? orderItem.productName : 'Product');
+                  var productTypeAccepted = String(orderItem && orderItem.productType ? orderItem.productType : 'Category');
+                  var quantityAccepted = Number(orderItem && orderItem.quantity);
+                  var safeQuantityAccepted = Number.isFinite(quantityAccepted) && quantityAccepted > 0 ? Math.floor(quantityAccepted) : 1;
+                  var totalLabelAccepted = String(orderItem && orderItem.totalLabel ? orderItem.totalLabel : 'Contact for price');
+                  var customerNameAccepted = String(orderItem && orderItem.customerName ? orderItem.customerName : '-');
+                  var customerEmailAccepted = String(orderItem && orderItem.customerEmail ? orderItem.customerEmail : '-');
+                  var phoneNumberAccepted = String(orderItem && orderItem.phoneNumber ? orderItem.phoneNumber : '-');
+                  var noteAccepted = String(orderItem && orderItem.note ? orderItem.note : '-');
+                  var createdAtLabelAccepted = formatDateTime(orderItem && orderItem.createdAt);
+                  var adminMessageAccepted = String(orderItem && orderItem.adminMessage ? orderItem.adminMessage : '-');
+                  var acceptedAtLabel = formatDateTime(orderItem && orderItem.adminAcceptedAt);
+                  var isAdminEmailSent = Boolean(orderItem && orderItem.adminEmailNotificationSent);
+                %>
+                <tr class="align-top transition-colors hover:bg-slate-50">
+                  <td class="border border-slate-200 px-3 py-2">
+                    <div class="flex items-center gap-2">
+                      <img
+                        src="/images/productParts/no-image.webp"
+                        alt="<%= productNameAccepted %>"
+                        class="h-10 w-10 rounded-md border border-slate-200 bg-white object-cover"
+                        loading="lazy"
+                      />
+                      <div>
+                        <p class="font-semibold text-slate-800"><%= productNameAccepted %></p>
+                        <span class="mt-0.5 inline-flex items-center rounded-full border border-emerald-300 bg-emerald-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-emerald-700">Accepted</span>
+                      </div>
+                    </div>
+                  </td>
+                  <td class="border border-slate-200 px-3 py-2 font-medium"><%= productTypeAccepted %></td>
+                  <td class="border border-slate-200 px-3 py-2">
+                    <p><%= totalLabelAccepted %></p>
+                    <p class="text-xs text-slate-500">Qty: <%= safeQuantityAccepted %></p>
+                  </td>
+                  <td class="max-w-[24rem] border border-slate-200 px-3 py-2">
+                    <p><span class="font-semibold text-slate-800">Customer:</span> <%= customerNameAccepted %></p>
+                    <p class="break-all"><span class="font-semibold text-slate-800">Email:</span> <%= customerEmailAccepted %></p>
+                    <p><span class="font-semibold text-slate-800">Phone:</span> <%= phoneNumberAccepted %></p>
+                    <p><span class="font-semibold text-slate-800">Requested:</span> <%= createdAtLabelAccepted %></p>
+                    <p><span class="font-semibold text-slate-800">Accepted:</span> <%= acceptedAtLabel %></p>
+                    <p><span class="font-semibold text-slate-800">Note:</span> <%= noteAccepted %></p>
+                    <p><span class="font-semibold text-slate-800">Admin Message:</span> <%= adminMessageAccepted %></p>
+                  </td>
+                  <td class="border border-slate-200 px-3 py-2">
+                    <div class="flex flex-wrap items-center gap-2">
+                      <% if (productIdAccepted) { %>
+                      <a href="/products/<%= encodeURIComponent(productIdAccepted) %>" class="pro-btn-secondary px-2.5 py-1 text-xs">Open</a>
+                      <% } else { %>
+                      <span class="pro-btn-secondary pointer-events-none px-2.5 py-1 text-xs opacity-50" aria-disabled="true">Open</span>
+                      <% } %>
+                      <span class="inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-semibold <%= isAdminEmailSent ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-amber-200 bg-amber-50 text-amber-700' %>">
+                        <%= isAdminEmailSent ? 'Email Sent' : 'Email Not Sent' %>
+                      </span>
+                      <form action="/admin/orders/delete" method="post" data-orders-nav-form onsubmit="return window.confirm('Delete this order request?');">
+                        <input type="hidden" name="orderId" value="<%= orderIdAccepted %>" />
+                        <input type="hidden" name="redirectTo" value="<%= ordersPagePath %>" data-order-redirect-input />
+                        <button type="submit" class="pro-btn-danger-muted px-2.5 py-1 text-xs">Delete</button>
+                      </form>
+                    </div>
+                  </td>
+                </tr>
+                <% }) %>
+              </tbody>
+            </table>
+          </div>
+          <% } %>
 
-              <dl class="mt-3 grid gap-x-3 gap-y-1.5 text-sm sm:grid-cols-2">
-                <div><dt class="font-semibold text-slate-900">Quantity</dt><dd class="text-slate-700"><%= safeQuantityAccepted %></dd></div>
-                <div><dt class="font-semibold text-slate-900">Total</dt><dd class="text-slate-700"><%= totalLabelAccepted %></dd></div>
-                <div><dt class="font-semibold text-slate-900">Customer</dt><dd class="text-slate-700"><%= customerNameAccepted %></dd></div>
-                <div><dt class="font-semibold text-slate-900">Email</dt><dd class="break-all text-slate-700"><%= customerEmailAccepted %></dd></div>
-                <div><dt class="font-semibold text-slate-900">Phone</dt><dd class="text-slate-700"><%= phoneNumberAccepted %></dd></div>
-                <div><dt class="font-semibold text-slate-900">Requested At</dt><dd class="text-slate-700"><%= createdAtLabelAccepted %></dd></div>
-              </dl>
+          <% if (selectedOrderView === 'accepted' && selectedOrdersTotalPages > 1) { %>
+          <div class="mt-3 flex flex-wrap items-center justify-between gap-2">
+            <a
+              href="<%= buildOrdersPageHref(selectedOrdersCurrentPage - 1, 'accepted') %>"
+              class="pro-btn-secondary px-3 py-1.5 text-xs <%= selectedOrdersCurrentPage <= 1 ? 'pointer-events-none opacity-50' : '' %>"
+              aria-disabled="<%= selectedOrdersCurrentPage <= 1 ? 'true' : 'false' %>"
+              data-orders-nav-link
+            >
+              Prev
+            </a>
 
-              <div class="mt-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
-                <span class="font-semibold text-slate-900">Customer Note:</span> <%= noteAccepted %>
-              </div>
+            <p class="text-xs font-semibold text-slate-500">
+              Page <%= selectedOrdersCurrentPage %> of <%= selectedOrdersTotalPages %>
+            </p>
 
-              <% if (adminMessageAccepted) { %>
-              <div class="mt-2 rounded-lg border border-cyan-200 bg-cyan-50 px-3 py-2">
-                <p class="text-xs font-semibold uppercase tracking-wide text-cyan-800">Admin Message</p>
-                <p class="mt-1 text-sm font-medium text-cyan-900"><%= adminMessageAccepted %></p>
-              </div>
-              <% } %>
-
-              <div class="mt-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
-                <p><span class="font-semibold">Accepted At:</span> <%= acceptedAtLabel %></p>
-                <p>
-                  <span class="font-semibold">Email Notification:</span>
-                  <span class="<%= isAdminEmailSent ? 'text-emerald-700' : 'text-amber-700' %>"><%= isAdminEmailSent ? 'Sent' : 'Not Sent' %></span>
-                </p>
-              </div>
-            </article>
-            <% }) %>
+            <a
+              href="<%= buildOrdersPageHref(selectedOrdersCurrentPage + 1, 'accepted') %>"
+              class="pro-btn-secondary px-3 py-1.5 text-xs <%= selectedOrdersCurrentPage >= selectedOrdersTotalPages ? 'pointer-events-none opacity-50' : '' %>"
+              aria-disabled="<%= selectedOrdersCurrentPage >= selectedOrdersTotalPages ? 'true' : 'false' %>"
+              data-orders-nav-link
+            >
+              Next
+            </a>
           </div>
           <% } %>
         </article>
+        </div>
       </section>
       <% } %>
     </main>
 
+    <%- include('helpers/loading') %>
+    <script src="/javascripts/loading.js"></script>
     <script src="/javascripts/admin-orders.js"></script>
     <script src="/javascripts/flash-alert.js"></script>
   </body>

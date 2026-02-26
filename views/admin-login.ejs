@@ -23,6 +23,11 @@
           Admin authentication is currently disabled in environment settings.
         </div>
         <% } %>
+        <% if (hasAuthEnabled && !hasAuthConfigured) { %>
+        <div class="mt-4 rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-800">
+          Admin login is not configured. Set <code class="font-mono">ADMIN_USERNAME</code> and <code class="font-mono">ADMIN_PASSWORD</code>.
+        </div>
+        <% } %>
 
         <% if (statusMessage) { %>
         <div class="mt-4 flex items-start justify-between gap-3 rounded-xl border border-emerald-300 bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-700" data-success-alert>
@@ -44,6 +49,7 @@
         </div>
         <% } %>
 
+        <% if (hasAuthEnabled && hasAuthConfigured) { %>
         <form action="/admin/login" method="post" class="mt-4 space-y-3">
           <input type="hidden" name="next" value="<%= nextPath %>" />
           <div>
@@ -56,8 +62,11 @@
           </div>
           <button type="submit" class="pro-btn-primary w-full">Sign In</button>
         </form>
+        <% } %>
       </section>
     </main>
+    <%- include('helpers/loading') %>
+    <script src="/javascripts/loading.js"></script>
     <script src="/javascripts/flash-alert.js"></script>
   </body>
 </html>

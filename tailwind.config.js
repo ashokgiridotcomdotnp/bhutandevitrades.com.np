@@ -5,6 +5,12 @@ module.exports = {
     './routes/**/*.js',
     './app.js',
   ],
+  safelist: [
+    'bd-toast-root',
+    'bd-toast-item',
+    'is-visible',
+    'is-leaving',
+  ],
   theme: {
     extend: {},
   },
