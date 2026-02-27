@@ -19,8 +19,8 @@
         <section class="min-w-0 pro-page-enter">
           <%
             function extractNumericPrice(value) {
-              var normalizedValue = String(value || '').replace(/,/g, '').replace(/[^0-9.]/g, '');
-              var parsedValue = Number(normalizedValue);
+              var cleanValue = String(value || '').trim();
+              var parsedValue = Number(cleanValue);
 
               if (!Number.isFinite(parsedValue) || parsedValue <= 0) {
                 return 0;
@@ -57,10 +57,10 @@
               return Math.floor(parsedValue);
             }
 
-            var normalizedWhatsappNumber = String(storeWhatsappNumber || '').replace(/[^0-9]/g, '');
-            var whatsappBaseUrl = normalizedWhatsappNumber ? ('https://wa.me/' + normalizedWhatsappNumber) : 'https://wa.me/';
-            var hasStoreContactNumber = Boolean(normalizedWhatsappNumber);
-            var callHref = hasStoreContactNumber ? ('tel:+' + normalizedWhatsappNumber) : '#';
+            var storeWhatsappContactNumber = String(storeWhatsappNumber || '').trim();
+            var whatsappBaseUrl = storeWhatsappContactNumber ? ('https://wa.me/' + storeWhatsappContactNumber) : 'https://wa.me/';
+            var hasStoreContactNumber = Boolean(storeWhatsappContactNumber);
+            var callHref = hasStoreContactNumber ? ('tel:' + storeWhatsappContactNumber) : '#';
             var unitPriceValue = extractNumericPrice(product && product.price ? product.price : '');
             var unitPriceLabel = unitPriceValue > 0 ? ('NPR ' + formatNprAmount(unitPriceValue)) : (product && product.price ? product.price : 'Contact for price');
             var productId = product && product.id ? String(product.id) : '';
@@ -86,9 +86,8 @@
                 <div class="pro-panel-muted p-5">
                   <div class="rounded-xl bg-white p-3">
                     <img
-                      src="<%= product.image || '/images/productParts/no-image.webp' %>"
+                      src="<%= product.image %>"
                       alt="<%= productName %>"
-                      onerror="this.onerror=null;this.src='/images/productParts/no-image.webp';"
                       class="mx-auto h-56 w-full max-w-md object-contain sm:h-72"
                     />
                   </div>

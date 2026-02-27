@@ -59,7 +59,7 @@ function renderAdminLogin(req, res) {
   });
 }
 
-function handleAdminLogin(req, res) {
+async function handleAdminLogin(req, res) {
   var username = String(req.body.username || '').trim();
   var password = String(req.body.password || '');
   var loginState = adminAuth.getLoginState(req);
@@ -85,7 +85,7 @@ function handleAdminLogin(req, res) {
   return res.redirect(nextPath);
 }
 
-function handleAdminLogout(req, res) {
+async function handleAdminLogout(req, res) {
   adminAuth.clearAuthCookie(res);
   adminAuth.setLoginState(res, req, 'logged-out', '', '/admin');
   return res.redirect('/admin/login');

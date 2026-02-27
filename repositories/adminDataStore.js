@@ -36,15 +36,12 @@ function loadFromFile(createDefaultData, normalizeData) {
   }
 }
 
-function saveToFile(data, normalizeData, createDefaultData) {
+async function saveToFile(data, normalizeData, createDefaultData) {
   try {
     var directoryPath = path.dirname(adminDataFilePath);
-    if (!fs.existsSync(directoryPath)) {
-      fs.mkdirSync(directoryPath, { recursive: true });
-    }
-
     var normalizedData = normalizePayload(data, normalizeData, createDefaultData);
-    fs.writeFileSync(adminDataFilePath, JSON.stringify(normalizedData, null, 2) + '\n', 'utf8');
+    await fs.promises.mkdir(directoryPath, { recursive: true });
+    await fs.promises.writeFile(adminDataFilePath, JSON.stringify(normalizedData, null, 2) + '\n', 'utf8');
     return true;
   } catch (error) {
     console.error('Failed to save admin data to file:', error.message);

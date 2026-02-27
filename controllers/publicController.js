@@ -528,10 +528,19 @@ function timingSafeStringEqual(left, right) {
   return crypto.timingSafeEqual(leftBuffer, rightBuffer);
 }
 
-function hashUserPassword(password, salt) {
+async function hashUserPassword(password, salt) {
   var cleanPassword = String(password || '');
   var resolvedSalt = toTrimmedString(salt) || crypto.randomBytes(16).toString('hex');
-  var passwordHash = crypto.scryptSync(cleanPassword, resolvedSalt, 64).toString('hex');
+  var passwordHash = await new Promise(function (resolve, reject) {
+    crypto.scrypt(cleanPassword, resolvedSalt, 64, function (error, derivedKey) {
+      if (error) {
+        reject(error);
+        return;
+      }
+
+      resolve(Buffer.from(derivedKey).toString('hex'));
+    });
+  });
 
   return {
     hash: passwordHash,
@@ -539,7 +548,7 @@ function hashUserPassword(password, salt) {
   };
 }
 
-function doesPasswordMatch(password, salt, expectedHash) {
+async function doesPasswordMatch(password, salt, expectedHash) {
   var cleanSalt = toTrimmedString(salt);
   var cleanExpectedHash = toTrimmedString(expectedHash);
 
@@ -548,7 +557,8 @@ function doesPasswordMatch(password, salt, expectedHash) {
   }
 
   try {
-    var generatedHash = hashUserPassword(password, cleanSalt).hash;
+    var generatedPassword = await hashUserPassword(password, cleanSalt);
+    var generatedHash = generatedPassword.hash;
     return timingSafeStringEqual(generatedHash, cleanExpectedHash);
   } catch (error) {
     return false;
@@ -1531,15 +1541,15 @@ async function handleProfilePasswordUpdate(req, res) {
       return redirectToProfile(res, req, '', 'user-not-found');
     }
 
-    if (!doesPasswordMatch(currentPassword, userRecord.passwordSalt, userRecord.passwordHash)) {
+    if (!await doesPasswordMatch(currentPassword, userRecord.passwordSalt, userRecord.passwordHash)) {
       return redirectToProfile(res, req, '', 'invalid-current-password');
     }
 
-    if (doesPasswordMatch(newPassword, userRecord.passwordSalt, userRecord.passwordHash)) {
+    if (await doesPasswordMatch(newPassword, userRecord.passwordSalt, userRecord.passwordHash)) {
       return redirectToProfile(res, req, '', 'same-password');
     }
 
-    passwordPayload = hashUserPassword(newPassword);
+    passwordPayload = await hashUserPassword(newPassword);
     userRecord.passwordHash = passwordPayload.hash;
     userRecord.passwordSalt = passwordPayload.salt;
     userRecord.authProvider = 'email-password';
@@ -1583,7 +1593,7 @@ async function handleLoginSubmit(req, res) {
     return renderLoginPageWithMessage(req, res, '', 'invalid-credentials', email);
   }
 
-  if (!doesPasswordMatch(password, user.passwordSalt, user.passwordHash)) {
+  if (!await doesPasswordMatch(password, user.passwordSalt, user.passwordHash)) {
     return renderLoginPageWithMessage(req, res, '', 'invalid-credentials', email);
   }
 
@@ -1664,7 +1674,7 @@ async function handleSignupSubmit(req, res) {
         return redirectToSignup(res, req, '', 'invalid-password');
       }
 
-      passwordPayload = hashUserPassword(password);
+      passwordPayload = await hashUserPassword(password);
       code = await issueAuthCode(email, 'signup', name, passwordPayload);
       sendResult = await resendService.sendEmail({
         to: email,
@@ -1806,7 +1816,7 @@ async function handleForgotPasswordSubmit(req, res) {
       return redirectToForgotPassword(res, req, '', 'no-account', email);
     }
 
-    passwordPayload = hashUserPassword(password);
+    passwordPayload = await hashUserPassword(password);
     existingUser.passwordHash = passwordPayload.hash;
     existingUser.passwordSalt = passwordPayload.salt;
     existingUser.authProvider = 'email-password';
@@ -2109,7 +2119,7 @@ async function handleOrderSubmit(req, res) {
   });
 }
 
-function handleUserLogout(req, res) {
+async function handleUserLogout(req, res) {
   userAuth.clearUserAuthCookie(res);
   return redirectToLogin(res, req, 'logged-out', '', '');
 }

@@ -4,6 +4,7 @@ var multer = require('multer');
 var sharp = require('sharp');
 var catalogDefaults = require('../data/catalog-defaults');
 var adminDataStore = require('../repositories/adminDataStore');
+var cloudinaryClient = require('../lib/cloudinary');
 
 var defaultProductImagePath = catalogDefaults.defaultProductImagePath;
 var uploadedProductImagesDirPath = path.join(__dirname, '..', 'public', 'uploads', 'products');
@@ -15,8 +16,15 @@ var homeCarouselImages = catalogDefaults.homeCarouselImages;
 var hasAttemptedDatabaseBootstrap = false;
 var parsedCatalogCacheTtlMs = Number(process.env.CATALOG_CACHE_TTL_MS);
 var catalogCacheTtlMs = Number.isFinite(parsedCatalogCacheTtlMs) && parsedCatalogCacheTtlMs >= 0 ? parsedCatalogCacheTtlMs : 15000;
+var cloudinaryUploadFolder = String(process.env.CLOUDINARY_PRODUCT_UPLOAD_FOLDER || 'bhutandevi/products').trim() || 'bhutandevi/products';
+var parsedCloudinaryMigrationCooldownMs = Number(process.env.CLOUDINARY_IMAGE_MIGRATION_COOLDOWN_MS);
+var cloudinaryImageMigrationCooldownMs = Number.isFinite(parsedCloudinaryMigrationCooldownMs) && parsedCloudinaryMigrationCooldownMs >= 0
+  ? Math.floor(parsedCloudinaryMigrationCooldownMs)
+  : 60000;
 var cachedCatalogContext = null;
 var cachedCatalogContextExpiresAt = 0;
+var isCloudinaryMigrationInProgress = false;
+var lastCloudinaryImageMigrationAt = 0;
 
 function isMongoStorageEnabled() {
   return String(process.env.MONGODB_URI || '').trim().length > 0;
@@ -191,23 +199,59 @@ function parseCommaSeparatedList(value) {
 
 function normalizeAssetPath(value) {
   var trimmed = toTrimmedString(value);
+  var normalizedValue = '';
+
   if (!trimmed) {
     return '';
   }
 
-  if (trimmed.indexOf('/images/helmets/') === 0) {
-    trimmed = trimmed.replace('/images/helmets/', '/images/productParts/');
+  normalizedValue = trimmed
+    .replace(/^['"]+|['"]+$/g, '')
+    .replace(/\\/g, '/');
+
+  if (!normalizedValue) {
+    return '';
   }
 
-  if (/^https?:\/\//i.test(trimmed)) {
-    return trimmed;
+  if (normalizedValue.indexOf('/images/helmets/') === 0) {
+    normalizedValue = normalizedValue.replace('/images/helmets/', '/images/productParts/');
   }
 
-  if (trimmed.charAt(0) === '/') {
-    return trimmed;
+  // Accept malformed schemes like `https:/example.com/...`.
+  if (/^https?:\/[^/]/i.test(normalizedValue)) {
+    normalizedValue = normalizedValue.replace(/^https?:\/(?!\/)/i, function (protocolPrefix) {
+      return /^https:/i.test(protocolPrefix) ? 'https://' : 'http://';
+    });
   }
 
-  return '/' + trimmed.replace(/^\/+/, '');
+  // Handle protocol-relative URLs.
+  if (normalizedValue.indexOf('//') === 0) {
+    return 'https:' + normalizedValue;
+  }
+
+  // Handle bare Cloudinary host paths.
+  if (/^res\.cloudinary\.com\//i.test(normalizedValue)) {
+    return 'https://' + normalizedValue;
+  }
+
+  if (/^https?:\/\//i.test(normalizedValue)) {
+    // Avoid mixed-content issues when Cloudinary URLs are stored as http.
+    if (/^http:\/\/res\.cloudinary\.com\//i.test(normalizedValue)) {
+      return normalizedValue.replace(/^http:\/\//i, 'https://');
+    }
+
+    return normalizedValue;
+  }
+
+  if (normalizedValue.charAt(0) === '.') {
+    normalizedValue = normalizedValue.replace(/^\.+/, '');
+  }
+
+  if (normalizedValue.charAt(0) === '/') {
+    return normalizedValue;
+  }
+
+  return '/' + normalizedValue.replace(/^\/+/, '');
 }
 
 function getPublicFilePathFromAssetPath(assetPath) {
@@ -248,18 +292,24 @@ function doesImageAssetExist(assetPath) {
   return fs.existsSync(publicFilePath);
 }
 
-function ensureRenderableImagePath(assetPath) {
+function isRenderableImagePath(assetPath) {
   var normalizedPath = normalizeAssetPath(assetPath);
 
   if (!normalizedPath) {
-    return defaultProductImagePath;
+    return false;
   }
 
   if (/^https?:\/\//i.test(normalizedPath)) {
-    return normalizedPath;
+    return true;
   }
 
-  return doesImageAssetExist(normalizedPath) ? normalizedPath : defaultProductImagePath;
+  return doesImageAssetExist(normalizedPath);
+}
+
+function ensureRenderableImagePath(assetPath) {
+  var normalizedPath = normalizeAssetPath(assetPath);
+
+  return isRenderableImagePath(normalizedPath) ? normalizedPath : '';
 }
 
 function getUploadedImagePath(file) {
@@ -270,7 +320,19 @@ function getUploadedImagePath(file) {
   return '/uploads/products/' + file.filename;
 }
 
-async function optimizeUploadedImage(file) {
+function deleteFileSafely(filePath) {
+  if (!filePath || !fs.existsSync(filePath)) {
+    return;
+  }
+
+  try {
+    fs.unlinkSync(filePath);
+  } catch (error) {
+    console.error('Failed to remove temporary upload file:', error.message);
+  }
+}
+
+async function optimizeUploadedImageLocally(file) {
   var sourceFilePath = file && file.path ? file.path : '';
   var uploadedImagePath = getUploadedImagePath(file);
 
@@ -297,8 +359,8 @@ async function optimizeUploadedImage(file) {
       })
       .toFile(optimizedFilePath);
 
-    if (optimizedFilePath !== sourceFilePath && fs.existsSync(sourceFilePath)) {
-      fs.unlinkSync(sourceFilePath);
+    if (optimizedFilePath !== sourceFilePath) {
+      deleteFileSafely(sourceFilePath);
     }
 
     return '/uploads/products/' + optimizedBaseName;
@@ -306,6 +368,101 @@ async function optimizeUploadedImage(file) {
     console.error('Failed to optimize uploaded image:', error.message);
     return uploadedImagePath;
   }
+}
+
+async function optimizeUploadedImage(file) {
+  return optimizeUploadedImageLocally(file);
+}
+
+function isCloudinaryUrl(assetPath) {
+  return /^https?:\/\/res\.cloudinary\.com\//i.test(normalizeAssetPath(assetPath));
+}
+
+async function uploadImageSourceToCloudinary(sourcePath, fallbackPath) {
+  var uploadResult = null;
+  var secureUrl = '';
+  var uploadUrl = '';
+
+  try {
+    uploadResult = await cloudinaryClient.cloudinary.uploader.upload(sourcePath, {
+      folder: cloudinaryUploadFolder,
+      resource_type: 'image',
+    });
+    secureUrl = uploadResult && uploadResult.secure_url ? String(uploadResult.secure_url).trim() : '';
+    uploadUrl = uploadResult && uploadResult.url ? String(uploadResult.url).trim() : '';
+
+    if (secureUrl) {
+      return normalizeAssetPath(secureUrl);
+    }
+
+    if (uploadUrl) {
+      return normalizeAssetPath(uploadUrl);
+    }
+
+    return normalizeAssetPath(fallbackPath);
+  } catch (error) {
+    console.error('Failed to upload image to Cloudinary:', error.message);
+    return normalizeAssetPath(fallbackPath);
+  }
+}
+
+async function promoteImageToCloudinary(assetPath) {
+  var normalizedAssetPath = normalizeAssetPath(assetPath);
+  var localFilePath = '';
+
+  if (!normalizedAssetPath || isCloudinaryUrl(normalizedAssetPath)) {
+    return normalizedAssetPath;
+  }
+
+  if (!cloudinaryClient.isCloudinaryConfigured()) {
+    return normalizedAssetPath;
+  }
+
+  if (/^https?:\/\//i.test(normalizedAssetPath)) {
+    return uploadImageSourceToCloudinary(normalizedAssetPath, normalizedAssetPath);
+  }
+
+  localFilePath = getPublicFilePathFromAssetPath(normalizedAssetPath);
+  if (!localFilePath || !fs.existsSync(localFilePath)) {
+    return normalizedAssetPath;
+  }
+
+  return uploadImageSourceToCloudinary(localFilePath, normalizedAssetPath);
+}
+
+async function optimizeAndPromoteUploadedImage(file) {
+  var sourceFilePath = file && file.path ? String(file.path).trim() : '';
+  var cloudImagePath = '';
+
+  if (!sourceFilePath || !fs.existsSync(sourceFilePath)) {
+    return '';
+  }
+
+  if (!cloudinaryClient.isCloudinaryConfigured()) {
+    deleteFileSafely(sourceFilePath);
+    return '';
+  }
+
+  cloudImagePath = normalizeAssetPath(await uploadImageSourceToCloudinary(sourceFilePath, ''));
+  deleteFileSafely(sourceFilePath);
+
+  return isCloudinaryUrl(cloudImagePath) ? cloudImagePath : '';
+}
+
+function cleanupLocalImageAsset(assetPath) {
+  var normalizedAssetPath = normalizeAssetPath(assetPath);
+  var localFilePath = '';
+
+  if (!normalizedAssetPath || /^https?:\/\//i.test(normalizedAssetPath)) {
+    return;
+  }
+
+  localFilePath = getPublicFilePathFromAssetPath(normalizedAssetPath);
+  if (!localFilePath) {
+    return;
+  }
+
+  deleteFileSafely(localFilePath);
 }
 
 function getProductOverrideEntry(productId) {
@@ -512,7 +669,9 @@ function getEffectiveImage(productId, fallbackImage) {
   var productOverrideImage = normalizeAssetPath(getProductOverrideEntry(cleanId).image);
   var defaultImage = normalizeAssetPath(fallbackImage);
   var overrideImage = '';
-  var selectedImage = '';
+  var candidateImages = [];
+  var candidateIndex = 0;
+  var candidatePath = '';
 
   if (
     cleanId &&
@@ -523,8 +682,24 @@ function getEffectiveImage(productId, fallbackImage) {
     overrideImage = normalizeAssetPath(adminData.imageOverrides[cleanId]);
   }
 
-  selectedImage = productOverrideImage || overrideImage || defaultImage || defaultProductImagePath;
-  return ensureRenderableImagePath(selectedImage);
+  candidateImages = [
+    productOverrideImage,
+    overrideImage,
+    defaultImage,
+  ];
+
+  for (candidateIndex = 0; candidateIndex < candidateImages.length; candidateIndex += 1) {
+    candidatePath = normalizeAssetPath(candidateImages[candidateIndex]);
+    if (!candidatePath) {
+      continue;
+    }
+
+    if (isRenderableImagePath(candidatePath)) {
+      return candidatePath;
+    }
+  }
+
+  return '';
 }
 
 function normalizeImageList(images, fallbackImage) {
@@ -538,10 +713,6 @@ function normalizeImageList(images, fallbackImage) {
   }
 
   normalizedImages = normalizeList(normalizedImages);
-  if (normalizedImages.length === 0) {
-    normalizedImages.push(defaultProductImagePath);
-  }
-
   return normalizedImages;
 }
 
@@ -651,7 +822,22 @@ function ensureAdminProductShape(rawProduct) {
     return null;
   }
 
-  var image = ensureRenderableImagePath(rawProduct.image) || defaultProductImagePath;
+  var image = '';
+  var imageCandidates = [normalizeAssetPath(rawProduct.image)];
+  var normalizedProductImages = normalizeList((rawProduct.images || []).map(function (imagePath) {
+    return normalizeAssetPath(imagePath);
+  }));
+
+  imageCandidates = imageCandidates.concat(normalizedProductImages);
+
+  imageCandidates.some(function (candidatePath) {
+    if (!candidatePath || !isRenderableImagePath(candidatePath)) {
+      return false;
+    }
+
+    image = candidatePath;
+    return true;
+  });
 
   return {
     id: buildSlug(rawProduct.id) || buildSlug(type + ' ' + name) || String(Date.now()),
@@ -794,12 +980,429 @@ function normalizeAdminDataShape(rawData) {
   return safeData;
 }
 
+function getAdminProductById(data, productId) {
+  var cleanId = toTrimmedString(productId);
+  var matchedProduct = null;
+
+  if (!cleanId || !data || !Array.isArray(data.products)) {
+    return null;
+  }
+
+  data.products.some(function (product) {
+    if (toTrimmedString(product && product.id) === cleanId) {
+      matchedProduct = product;
+      return true;
+    }
+    return false;
+  });
+
+  return matchedProduct;
+}
+
+function pickRenderableNonDefaultImage(candidateImages) {
+  var imageCandidates = Array.isArray(candidateImages) ? candidateImages : [];
+  var candidateIndex = 0;
+  var normalizedCandidate = '';
+
+  for (candidateIndex = 0; candidateIndex < imageCandidates.length; candidateIndex += 1) {
+    normalizedCandidate = normalizeAssetPath(imageCandidates[candidateIndex]);
+    if (!normalizedCandidate) {
+      continue;
+    }
+
+    if (isRenderableImagePath(normalizedCandidate)) {
+      return normalizedCandidate;
+    }
+  }
+
+  return '';
+}
+
+function getFallbackImageFromAdminData(fallbackData, productId) {
+  var cleanId = toTrimmedString(productId);
+  var fallbackProduct = getAdminProductById(fallbackData, cleanId);
+  var fallbackProductOverride = null;
+  var fallbackImageOverride = '';
+  var fallbackProductImages = [];
+  var candidateImages = [];
+
+  if (!cleanId || !fallbackData || typeof fallbackData !== 'object') {
+    return '';
+  }
+
+  if (
+    fallbackData.productOverrides &&
+    typeof fallbackData.productOverrides === 'object' &&
+    fallbackData.productOverrides[cleanId] &&
+    typeof fallbackData.productOverrides[cleanId] === 'object'
+  ) {
+    fallbackProductOverride = fallbackData.productOverrides[cleanId];
+  }
+
+  if (
+    fallbackData.imageOverrides &&
+    typeof fallbackData.imageOverrides === 'object'
+  ) {
+    fallbackImageOverride = fallbackData.imageOverrides[cleanId];
+  }
+
+  if (fallbackProduct && Array.isArray(fallbackProduct.images)) {
+    fallbackProductImages = fallbackProduct.images;
+  }
+
+  candidateImages = [
+    fallbackProductOverride && fallbackProductOverride.image,
+    fallbackImageOverride,
+    fallbackProduct && fallbackProduct.image,
+  ].concat(fallbackProductImages);
+
+  return pickRenderableNonDefaultImage(candidateImages);
+}
+
+function shouldReplaceWithFallbackImage(currentImage, fallbackImage) {
+  var normalizedCurrentImage = normalizeAssetPath(currentImage);
+  var normalizedFallbackImage = normalizeAssetPath(fallbackImage);
+
+  if (
+    !normalizedFallbackImage ||
+    !isRenderableImagePath(normalizedFallbackImage)
+  ) {
+    return false;
+  }
+
+  if (!normalizedCurrentImage) {
+    return true;
+  }
+
+  return !isRenderableImagePath(normalizedCurrentImage);
+}
+
+function hydrateAdminImagesFromFallback(primaryData, fallbackData) {
+  var didChange = false;
+
+  if (
+    !primaryData ||
+    typeof primaryData !== 'object' ||
+    !fallbackData ||
+    typeof fallbackData !== 'object'
+  ) {
+    return false;
+  }
+
+  if (Array.isArray(primaryData.products)) {
+    primaryData.products.forEach(function (product) {
+      var cleanId = toTrimmedString(product && product.id);
+      var fallbackImage = '';
+
+      if (!cleanId || !product || typeof product !== 'object') {
+        return;
+      }
+
+      fallbackImage = getFallbackImageFromAdminData(fallbackData, cleanId);
+      if (!shouldReplaceWithFallbackImage(product.image, fallbackImage)) {
+        return;
+      }
+
+      product.image = fallbackImage;
+      product.images = normalizeImageList(product.images, fallbackImage);
+      didChange = true;
+    });
+  }
+
+  if (primaryData.imageOverrides && typeof primaryData.imageOverrides === 'object') {
+    Object.keys(primaryData.imageOverrides).forEach(function (productId) {
+      var cleanId = toTrimmedString(productId);
+      var fallbackImage = '';
+
+      if (!cleanId) {
+        return;
+      }
+
+      fallbackImage = getFallbackImageFromAdminData(fallbackData, cleanId);
+      if (!shouldReplaceWithFallbackImage(primaryData.imageOverrides[cleanId], fallbackImage)) {
+        return;
+      }
+
+      primaryData.imageOverrides[cleanId] = fallbackImage;
+      didChange = true;
+    });
+  }
+
+  if (primaryData.productOverrides && typeof primaryData.productOverrides === 'object') {
+    Object.keys(primaryData.productOverrides).forEach(function (productId) {
+      var cleanId = toTrimmedString(productId);
+      var overrideEntry = primaryData.productOverrides[productId];
+      var fallbackImage = '';
+
+      if (!cleanId || !overrideEntry || typeof overrideEntry !== 'object') {
+        return;
+      }
+
+      fallbackImage = getFallbackImageFromAdminData(fallbackData, cleanId);
+      if (!shouldReplaceWithFallbackImage(overrideEntry.image, fallbackImage)) {
+        return;
+      }
+
+      overrideEntry.image = fallbackImage;
+      didChange = true;
+    });
+  }
+
+  return didChange;
+}
+
+function hasCloudinaryMigrationCandidateImage(assetPath) {
+  var normalizedPath = normalizeAssetPath(assetPath);
+
+  if (!normalizedPath) {
+    return false;
+  }
+
+  return !isCloudinaryUrl(normalizedPath);
+}
+
+function hasCloudinaryMigrationCandidates(data) {
+  var productIndex = 0;
+  var imageIndex = 0;
+  var product = null;
+  var productOverrideKeys = [];
+  var imageOverrideKeys = [];
+  var productOverride = null;
+  var key = '';
+
+  if (!data || typeof data !== 'object') {
+    return false;
+  }
+
+  if (Array.isArray(data.products)) {
+    for (productIndex = 0; productIndex < data.products.length; productIndex += 1) {
+      product = data.products[productIndex];
+      if (!product || typeof product !== 'object') {
+        continue;
+      }
+
+      if (hasCloudinaryMigrationCandidateImage(product.image)) {
+        return true;
+      }
+
+      if (!Array.isArray(product.images)) {
+        continue;
+      }
+
+      for (imageIndex = 0; imageIndex < product.images.length; imageIndex += 1) {
+        if (hasCloudinaryMigrationCandidateImage(product.images[imageIndex])) {
+          return true;
+        }
+      }
+    }
+  }
+
+  if (data.imageOverrides && typeof data.imageOverrides === 'object') {
+    imageOverrideKeys = Object.keys(data.imageOverrides);
+    for (productIndex = 0; productIndex < imageOverrideKeys.length; productIndex += 1) {
+      key = imageOverrideKeys[productIndex];
+      if (hasCloudinaryMigrationCandidateImage(data.imageOverrides[key])) {
+        return true;
+      }
+    }
+  }
+
+  if (data.productOverrides && typeof data.productOverrides === 'object') {
+    productOverrideKeys = Object.keys(data.productOverrides);
+    for (productIndex = 0; productIndex < productOverrideKeys.length; productIndex += 1) {
+      key = productOverrideKeys[productIndex];
+      productOverride = data.productOverrides[key];
+      if (!productOverride || typeof productOverride !== 'object') {
+        continue;
+      }
+
+      if (hasCloudinaryMigrationCandidateImage(productOverride.image)) {
+        return true;
+      }
+    }
+  }
+
+  return false;
+}
+
+async function promoteImagePathWithCache(assetPath, cache) {
+  var normalizedPath = normalizeAssetPath(assetPath);
+  var cacheKey = normalizedPath;
+  var promotedPath = '';
+
+  if (!normalizedPath || isCloudinaryUrl(normalizedPath)) {
+    return normalizedPath;
+  }
+
+  if (cache && Object.prototype.hasOwnProperty.call(cache, cacheKey)) {
+    return cache[cacheKey];
+  }
+
+  promotedPath = await promoteImageToCloudinary(normalizedPath);
+  promotedPath = normalizeAssetPath(promotedPath || normalizedPath);
+
+  if (cache) {
+    cache[cacheKey] = promotedPath || normalizedPath;
+    return cache[cacheKey];
+  }
+
+  return promotedPath || normalizedPath;
+}
+
+async function promoteAdminDataImagesToCloudinary(data) {
+  var didChange = false;
+  var promotionCache = Object.create(null);
+  var productIndex = 0;
+  var imageIndex = 0;
+  var product = null;
+  var originalImage = '';
+  var promotedImage = '';
+  var originalListImage = '';
+  var promotedListImage = '';
+  var promotedImages = [];
+  var imageOverrideKeys = [];
+  var productOverrideKeys = [];
+  var key = '';
+  var overrideEntry = null;
+  var originalOverrideImage = '';
+  var promotedOverrideImage = '';
+
+  if (!data || typeof data !== 'object') {
+    return false;
+  }
+
+  if (Array.isArray(data.products)) {
+    for (productIndex = 0; productIndex < data.products.length; productIndex += 1) {
+      product = data.products[productIndex];
+      if (!product || typeof product !== 'object') {
+        continue;
+      }
+
+      originalImage = normalizeAssetPath(product.image);
+      promotedImage = await promoteImagePathWithCache(originalImage, promotionCache);
+      if (promotedImage && promotedImage !== originalImage) {
+        product.image = promotedImage;
+        didChange = true;
+      }
+
+      if (Array.isArray(product.images)) {
+        promotedImages = [];
+
+        for (imageIndex = 0; imageIndex < product.images.length; imageIndex += 1) {
+          originalListImage = normalizeAssetPath(product.images[imageIndex]);
+          promotedListImage = await promoteImagePathWithCache(originalListImage, promotionCache);
+
+          if (promotedListImage) {
+            promotedImages.push(promotedListImage);
+          }
+
+          if (promotedListImage && promotedListImage !== originalListImage) {
+            didChange = true;
+          }
+        }
+
+        product.images = normalizeImageList(promotedImages, product.image);
+      } else {
+        product.images = normalizeImageList([], product.image);
+      }
+    }
+  }
+
+  if (data.imageOverrides && typeof data.imageOverrides === 'object') {
+    imageOverrideKeys = Object.keys(data.imageOverrides);
+
+    for (productIndex = 0; productIndex < imageOverrideKeys.length; productIndex += 1) {
+      key = imageOverrideKeys[productIndex];
+      originalOverrideImage = normalizeAssetPath(data.imageOverrides[key]);
+      promotedOverrideImage = await promoteImagePathWithCache(originalOverrideImage, promotionCache);
+
+      if (promotedOverrideImage && promotedOverrideImage !== originalOverrideImage) {
+        data.imageOverrides[key] = promotedOverrideImage;
+        didChange = true;
+      }
+    }
+  }
+
+  if (data.productOverrides && typeof data.productOverrides === 'object') {
+    productOverrideKeys = Object.keys(data.productOverrides);
+
+    for (productIndex = 0; productIndex < productOverrideKeys.length; productIndex += 1) {
+      key = productOverrideKeys[productIndex];
+      overrideEntry = data.productOverrides[key];
+
+      if (!overrideEntry || typeof overrideEntry !== 'object') {
+        continue;
+      }
+
+      originalOverrideImage = normalizeAssetPath(overrideEntry.image);
+      promotedOverrideImage = await promoteImagePathWithCache(originalOverrideImage, promotionCache);
+
+      if (promotedOverrideImage && promotedOverrideImage !== originalOverrideImage) {
+        overrideEntry.image = promotedOverrideImage;
+        didChange = true;
+      }
+    }
+  }
+
+  return didChange;
+}
+
+async function maybePromoteAdminImagesToCloudinary() {
+  var now = Date.now();
+  var didChange = false;
+  var didSave = false;
+
+  if (!cloudinaryClient.isCloudinaryConfigured()) {
+    return false;
+  }
+
+  if (!hasCloudinaryMigrationCandidates(adminData)) {
+    return false;
+  }
+
+  if (isCloudinaryMigrationInProgress) {
+    return false;
+  }
+
+  if ((now - lastCloudinaryImageMigrationAt) < cloudinaryImageMigrationCooldownMs) {
+    return false;
+  }
+
+  isCloudinaryMigrationInProgress = true;
+  lastCloudinaryImageMigrationAt = now;
+
+  try {
+    didChange = await promoteAdminDataImagesToCloudinary(adminData);
+
+    if (!didChange) {
+      return false;
+    }
+
+    didSave = await saveAdminData();
+    if (!didSave) {
+      console.error('Promoted images to Cloudinary, but failed to persist updated image URLs.');
+    }
+
+    return didSave;
+  } finally {
+    isCloudinaryMigrationInProgress = false;
+    lastCloudinaryImageMigrationAt = Date.now();
+  }
+}
+
+function runCloudinaryMigrationInBackground() {
+  maybePromoteAdminImagesToCloudinary().catch(function (error) {
+    console.error('Background Cloudinary migration failed:', error && error.message ? error.message : error);
+  });
+}
+
 function loadAdminDataFromFile() {
   return adminDataStore.loadFromFile(createDefaultAdminData, normalizeAdminDataShape);
 }
 
-function saveAdminDataToFile() {
-  return adminDataStore.saveToFile(adminData, normalizeAdminDataShape, createDefaultAdminData);
+async function saveAdminDataToFile(data) {
+  var payload = data && typeof data === 'object' ? data : adminData;
+  return adminDataStore.saveToFile(payload, normalizeAdminDataShape, createDefaultAdminData);
 }
 
 async function loadAdminDataFromDatabase() {
@@ -815,7 +1418,17 @@ async function loadAdminDataFromDatabase() {
 
 async function refreshAdminData() {
   var loadedFromDatabase = await loadAdminDataFromDatabase();
+  var fileBackupData = null;
+
   if (loadedFromDatabase) {
+    fileBackupData = loadAdminDataFromFile();
+
+    if (hydrateAdminImagesFromFallback(adminData, fileBackupData)) {
+      clearCatalogContextCache();
+      await saveAdminData();
+    }
+
+    runCloudinaryMigrationInBackground();
     return true;
   }
 
@@ -827,6 +1440,7 @@ async function refreshAdminData() {
     await saveAdminData();
   }
 
+  runCloudinaryMigrationInBackground();
   return true;
 }
 
@@ -834,9 +1448,7 @@ async function saveAdminData() {
   var normalizedData = normalizeAdminDataShape(adminData);
   var mongoEnabled = isMongoStorageEnabled();
   var didSaveToDatabase = false;
-
-  adminData = normalizedData;
-  clearCatalogContextCache();
+  var didSaveToFile = false;
 
   if (mongoEnabled) {
     didSaveToDatabase = await adminDataStore.saveToDatabase(
@@ -850,11 +1462,25 @@ async function saveAdminData() {
     }
 
     // Keep file in sync as a local backup after primary DB write succeeds.
-    saveAdminDataToFile();
+    didSaveToFile = await saveAdminDataToFile(normalizedData);
+    if (!didSaveToFile) {
+      console.error('Saved admin data in database, but failed to sync admin-data.json.');
+      return false;
+    }
+
+    adminData = normalizedData;
+    clearCatalogContextCache();
     return true;
   }
 
-  return saveAdminDataToFile();
+  didSaveToFile = await saveAdminDataToFile(normalizedData);
+  if (!didSaveToFile) {
+    return false;
+  }
+
+  adminData = normalizedData;
+  clearCatalogContextCache();
+  return true;
 }
 
 function getMergedCategoryGroups() {
@@ -979,7 +1605,7 @@ function getMergedProductSections() {
       };
     }
 
-    var effectiveImage = getEffectiveImage(product.id, productOverride.image || product.image || defaultProductImagePath);
+    var effectiveImage = getEffectiveImage(product.id, productOverride.image || product.image || '');
 
     if (hasPriceOverride) {
       effectiveOriginalPrice = '';
@@ -1583,6 +2209,10 @@ function getAdminErrorMessage(errorCode) {
     return 'Image path is required.';
   }
 
+  if (errorCode === 'cloudinary-upload-failed') {
+    return 'Image upload to Cloudinary failed. Please try again.';
+  }
+
   if (errorCode === 'product-id-required') {
     return 'Product ID is required.';
   }
@@ -1668,6 +2298,9 @@ module.exports = {
   getOpenCategoryName: getOpenCategoryName,
   getProductOverrideEntry: getProductOverrideEntry,
   optimizeUploadedImage: optimizeUploadedImage,
+  optimizeAndPromoteUploadedImage: optimizeAndPromoteUploadedImage,
+  promoteImageToCloudinary: promoteImageToCloudinary,
+  cleanupLocalImageAsset: cleanupLocalImageAsset,
   getUploadedImagePath: getUploadedImagePath,
   homeCarouselImages: homeCarouselImages,
   imageUpload: imageUpload,

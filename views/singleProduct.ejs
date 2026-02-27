@@ -17,7 +17,7 @@
             originalMrp: item.originalPrice || '',
             discountPercent: item.discountPercent || '',
             quantity: item.quantity || '',
-            image: item.image || '/images/productParts/no-image.webp',
+            image: item.image || '',
             addedOrder: Number(item.addedOrder) || 0
           });
         });
@@ -226,7 +226,6 @@
             <img
               src="<%= item.image %>"
               alt="<%= item.title %>"
-              onerror="this.onerror=null;this.src='/images/productParts/no-image.webp';"
               class="relative z-0 h-full w-full object-contain transition duration-300 group-hover:scale-[1.04]"
               loading="lazy"
               decoding="async"

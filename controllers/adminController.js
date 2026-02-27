@@ -644,6 +644,11 @@ async function saveProductPrice(req, res) {
   var catalog = catalogService.getCatalogContext();
   var adminData = catalogService.getAdminData();
   var redirectPath = getSafeRedirectPath(req, defaultAdminPath);
+  var hasMongoConfiguration = Boolean(String(process.env.MONGODB_URI || '').trim());
+
+  if (hasMongoConfiguration && !await ensureDatabaseConnection()) {
+    return res.redirect(buildErrorRedirect(redirectPath, 'db-unavailable'));
+  }
 
   if (!productId || !isValidEntityId(productId)) {
     return res.redirect(buildErrorRedirect(redirectPath, 'product-id-required'));
@@ -669,6 +674,7 @@ async function saveProductPrice(req, res) {
 function saveProductImage(req, res) {
   catalogService.imageUpload.single('productImageFile')(req, res, async function (uploadError) {
     var redirectPath = getSafeRedirectPath(req, defaultAdminPath);
+    var hasMongoConfiguration = Boolean(String(process.env.MONGODB_URI || '').trim());
 
     if (uploadError) {
       if (uploadError.code === 'LIMIT_FILE_SIZE') {
@@ -682,8 +688,16 @@ function saveProductImage(req, res) {
       return res.redirect(buildErrorRedirect(redirectPath, 'save-failed'));
     }
 
+    if (!req.file) {
+      return res.redirect(buildErrorRedirect(redirectPath, 'product-image-file-required'));
+    }
+
+    if (hasMongoConfiguration && !await ensureDatabaseConnection()) {
+      return res.redirect(buildErrorRedirect(redirectPath, 'db-unavailable'));
+    }
+
     var productId = catalogService.toTrimmedString(req.body.productId);
-    var uploadedImagePath = await catalogService.optimizeUploadedImage(req.file);
+    var uploadedImagePath = await catalogService.optimizeAndPromoteUploadedImage(req.file);
     var catalog = catalogService.getCatalogContext();
     var adminData = catalogService.getAdminData();
 
@@ -692,7 +706,7 @@ function saveProductImage(req, res) {
     }
 
     if (!uploadedImagePath) {
-      return res.redirect(buildErrorRedirect(redirectPath, 'product-image-file-required'));
+      return res.redirect(buildErrorRedirect(redirectPath, 'cloudinary-upload-failed'));
     }
 
     if (!catalogService.findProductById(productId, catalog.productSections)) {
@@ -712,6 +726,7 @@ function saveProductImage(req, res) {
 function editProduct(req, res) {
   catalogService.imageUpload.single('productImageFile')(req, res, async function (uploadError) {
     var redirectPath = getSafeRedirectPath(req, defaultAdminPath);
+    var hasMongoConfiguration = Boolean(String(process.env.MONGODB_URI || '').trim());
 
     if (uploadError) {
       if (uploadError.code === 'LIMIT_FILE_SIZE') {
@@ -723,6 +738,10 @@ function editProduct(req, res) {
       }
 
       return res.redirect(buildErrorRedirect(redirectPath, 'save-failed'));
+    }
+
+    if (hasMongoConfiguration && !await ensureDatabaseConnection()) {
+      return res.redirect(buildErrorRedirect(redirectPath, 'db-unavailable'));
     }
 
     var productId = catalogService.toTrimmedString(req.body.productId);
@@ -738,11 +757,18 @@ function editProduct(req, res) {
     var productPrice = productPricing.price;
     var productQuantity = normalizeProductQuantity(req.body.productQuantity);
     var currentImagePath = catalogService.normalizeAssetPath(req.body.currentImagePath);
-    var uploadedImagePath = await catalogService.optimizeUploadedImage(req.file);
+    var uploadedImagePath = '';
     var catalog = catalogService.getCatalogContext();
     var productMatch = catalogService.findProductById(productId, catalog.productSections);
     var adminData = catalogService.getAdminData();
     var resolvedImagePath = '';
+
+    if (req.file) {
+      uploadedImagePath = await catalogService.optimizeAndPromoteUploadedImage(req.file);
+      if (!uploadedImagePath) {
+        return res.redirect(buildErrorRedirect(redirectPath, 'cloudinary-upload-failed'));
+      }
+    }
 
     if (!productId || !isValidEntityId(productId)) {
       return res.redirect(buildErrorRedirect(redirectPath, 'product-id-required'));
@@ -779,8 +805,7 @@ function editProduct(req, res) {
     resolvedImagePath =
       uploadedImagePath ||
       currentImagePath ||
-      catalogService.normalizeAssetPath(productMatch.item.image) ||
-      catalogService.defaultProductImagePath;
+      catalogService.normalizeAssetPath(productMatch.item.image);
 
     if (!adminData.productOverrides || typeof adminData.productOverrides !== 'object') {
       adminData.productOverrides = {};
@@ -830,6 +855,11 @@ async function deleteProduct(req, res) {
   var deletedProductNameKey = '';
   var deletedCategoryKey = '';
   var redirectPath = getSafeRedirectPath(req, defaultAdminPath);
+  var hasMongoConfiguration = Boolean(String(process.env.MONGODB_URI || '').trim());
+
+  if (hasMongoConfiguration && !await ensureDatabaseConnection()) {
+    return res.redirect(buildErrorRedirect(redirectPath, 'db-unavailable'));
+  }
 
   if (!productId || !isValidEntityId(productId)) {
     return res.redirect(buildErrorRedirect(redirectPath, 'product-id-required'));
@@ -917,6 +947,11 @@ async function deleteCategory(req, res) {
   var deletedProductIdsByKey = Object.create(null);
   var deletedProductIds = [];
   var redirectPath = getSafeRedirectPath(req, defaultAdminPath);
+  var hasMongoConfiguration = Boolean(String(process.env.MONGODB_URI || '').trim());
+
+  if (hasMongoConfiguration && !await ensureDatabaseConnection()) {
+    return res.redirect(buildErrorRedirect(redirectPath, 'db-unavailable'));
+  }
 
   if (!categoryName || !isWithinLength(categoryName, maxCategoryNameLength)) {
     return res.redirect(buildErrorRedirect(redirectPath, 'category-name-required'));
@@ -1013,6 +1048,11 @@ async function saveCategory(req, res) {
   var parsedCategoryItems = catalogService.parseCommaSeparatedList(req.body.categoryItems);
   var categoryItems = sanitizeCategoryItems(req.body.categoryItems);
   var redirectPath = getSafeRedirectPath(req, defaultAdminPath);
+  var hasMongoConfiguration = Boolean(String(process.env.MONGODB_URI || '').trim());
+
+  if (hasMongoConfiguration && !await ensureDatabaseConnection()) {
+    return res.redirect(buildErrorRedirect(redirectPath, 'db-unavailable'));
+  }
 
   if (!categoryName) {
     return res.redirect(buildErrorRedirect(redirectPath, 'category-name-required'));
@@ -1247,6 +1287,10 @@ function saveProduct(req, res) {
       return res.redirect(buildErrorRedirect(redirectPath, 'save-failed'));
     }
 
+    if (!req.file) {
+      return res.redirect(buildErrorRedirect(redirectPath, 'product-image-file-required'));
+    }
+
     if (hasMongoConfiguration) {
       hasDatabaseConnection = await ensureDatabaseConnection();
       if (!hasDatabaseConnection) {
@@ -1265,11 +1309,13 @@ function saveProduct(req, res) {
     var productPricing = resolveProductPricing(req.body.productPrice, req.body.productDiscountPercent);
     var productPrice = productPricing.price || 'Contact for price';
     var productQuantity = normalizeProductQuantity(req.body.productQuantity);
-    var uploadedImagePath = await catalogService.optimizeUploadedImage(req.file);
+    var uploadedImagePath = await catalogService.optimizeAndPromoteUploadedImage(req.file);
     var primaryImage = uploadedImagePath || '';
+    var primaryImages = catalogService.normalizeImageList([primaryImage], primaryImage);
     var catalog = catalogService.getCatalogContext();
     var productId = catalogService.buildUniqueProductId(categoryName, productName, catalog.productSections);
     var adminData = catalogService.getAdminData();
+    var createdProductEntry = null;
 
     if (!categoryName || !isWithinLength(categoryName, maxCategoryNameLength)) {
       return res.redirect(buildErrorRedirect(redirectPath, 'product-category-required'));
@@ -1292,7 +1338,7 @@ function saveProduct(req, res) {
     }
 
     if (!uploadedImagePath) {
-      return res.redirect(buildErrorRedirect(redirectPath, 'product-image-file-required'));
+      return res.redirect(buildErrorRedirect(redirectPath, 'cloudinary-upload-failed'));
     }
 
     if (hasDuplicateProductName(categoryName, productName, catalog.productSections)) {
@@ -1307,7 +1353,7 @@ function saveProduct(req, res) {
       });
     }
 
-    adminData.products.push({
+    createdProductEntry = {
       id: productId,
       type: categoryName,
       name: productName,
@@ -1317,8 +1363,9 @@ function saveProduct(req, res) {
       discountPercent: productPricing.discountPercent ? String(productPricing.discountPercent) : '',
       quantity: productQuantity,
       image: primaryImage,
-      images: catalogService.normalizeImageList([primaryImage], primaryImage),
-    });
+      images: primaryImages,
+    };
+    adminData.products.push(createdProductEntry);
 
     if (!await catalogService.saveAdminData()) {
       if (hasMongoConfiguration) {

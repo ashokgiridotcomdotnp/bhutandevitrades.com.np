@@ -24,8 +24,8 @@
   var availableStockQuantity = parseAvailableStockQuantity(form.getAttribute('data-order-stock-quantity'));
 
   function parsePositiveNumber(value) {
-    var normalizedValue = String(value || '').replace(/,/g, '').replace(/[^0-9.]/g, '');
-    var parsedValue = Number(normalizedValue);
+    var cleanValue = String(value || '').trim();
+    var parsedValue = Number(cleanValue);
 
     if (!Number.isFinite(parsedValue) || parsedValue <= 0) {
       return 0;
@@ -49,18 +49,9 @@
     return Math.floor(parsedValue);
   }
 
-  function normalizeOrderPhone(value) {
-    var digits = String(value || '').replace(/[^0-9]/g, '');
-
-    if (digits.indexOf('977') === 0 && digits.length === 13) {
-      return digits.slice(3);
-    }
-
-    return digits;
-  }
-
   function isValidOrderPhone(value) {
-    return /^9[0-9]{9}$/.test(normalizeOrderPhone(value));
+    var phoneNumber = String(value || '').trim();
+    return /^(?:9[0-9]{9}|\+9779[0-9]{9}|9779[0-9]{9})$/.test(phoneNumber);
   }
 
   function toPositiveInteger(value) {

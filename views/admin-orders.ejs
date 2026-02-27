@@ -225,12 +225,9 @@
                 <tr class="align-top transition-colors hover:bg-slate-50">
                   <td class="border border-slate-200 px-3 py-2">
                     <div class="flex items-center gap-2">
-                      <img
-                        src="/images/productParts/no-image.webp"
-                        alt="<%= productName %>"
-                        class="h-10 w-10 rounded-md border border-slate-200 bg-white object-cover"
-                        loading="lazy"
-                      />
+                      <div class="flex h-10 w-10 items-center justify-center rounded-md border border-slate-200 bg-white text-xs font-bold uppercase text-slate-500">
+                        <%= (productName || '?').charAt(0) %>
+                      </div>
                       <div>
                         <p class="font-semibold text-slate-800"><%= productName %></p>
                         <span class="mt-0.5 inline-flex items-center rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-700">Pending</span>
@@ -347,12 +344,9 @@
                 <tr class="align-top transition-colors hover:bg-slate-50">
                   <td class="border border-slate-200 px-3 py-2">
                     <div class="flex items-center gap-2">
-                      <img
-                        src="/images/productParts/no-image.webp"
-                        alt="<%= productNameAccepted %>"
-                        class="h-10 w-10 rounded-md border border-slate-200 bg-white object-cover"
-                        loading="lazy"
-                      />
+                      <div class="flex h-10 w-10 items-center justify-center rounded-md border border-slate-200 bg-white text-xs font-bold uppercase text-slate-500">
+                        <%= (productNameAccepted || '?').charAt(0) %>
+                      </div>
                       <div>
                         <p class="font-semibold text-slate-800"><%= productNameAccepted %></p>
                         <span class="mt-0.5 inline-flex items-center rounded-full border border-emerald-300 bg-emerald-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-emerald-700">Accepted</span>

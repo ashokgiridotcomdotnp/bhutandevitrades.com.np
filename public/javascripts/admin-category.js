@@ -30,6 +30,7 @@
   var addFormPricePreview = document.querySelector('[data-add-form-price-preview]');
   var addFormPriceOriginal = document.querySelector('[data-add-form-price-original]');
   var addFormPriceFinal = document.querySelector('[data-add-form-price-final]');
+  var createProductForm = document.getElementById('category-product-create-form');
   var hasDeleteModal = Boolean(deleteAlert && deleteAlertTitle && deleteAlertMessage && deleteAlertCancel && deleteAlertConfirm);
 
   function clearAdminFlashQueryParams() {
@@ -333,6 +334,179 @@
     deleteAlert.classList.remove('flex');
   }
 
+  function setLoadingOverlay(isVisible) {
+    var globalLoading = window.bdLoading || null;
+
+    if (!globalLoading || typeof globalLoading !== 'object') {
+      return;
+    }
+
+    if (isVisible) {
+      if (typeof globalLoading.show === 'function') {
+        globalLoading.show();
+      }
+      return;
+    }
+
+    if (typeof globalLoading.hide === 'function') {
+      globalLoading.hide();
+    }
+  }
+
+  function showToast(type, message) {
+    if (typeof window.bdShowToast === 'function') {
+      window.bdShowToast({
+        type: type,
+        message: message,
+      });
+      return;
+    }
+
+    if (message) {
+      window.alert(message);
+    }
+  }
+
+  function extractAlertMessageFromHtml(htmlText) {
+    var parser = null;
+    var doc = null;
+    var errorAlert = null;
+    var warningAlert = null;
+    var successAlert = null;
+    var extractText = function (node) {
+      return String(node && node.textContent ? node.textContent : '').replace(/\s+/g, ' ').trim();
+    };
+
+    if (!htmlText || typeof DOMParser !== 'function') {
+      return { type: '', message: '' };
+    }
+
+    parser = new DOMParser();
+    doc = parser.parseFromString(htmlText, 'text/html');
+    errorAlert = doc.querySelector('[data-error-alert]');
+    if (errorAlert) {
+      return {
+        type: 'error',
+        message: extractText(errorAlert),
+      };
+    }
+
+    warningAlert = doc.querySelector('[data-warning-alert]');
+    if (warningAlert) {
+      return {
+        type: 'warning',
+        message: extractText(warningAlert),
+      };
+    }
+
+    successAlert = doc.querySelector('[data-success-alert]');
+    if (successAlert) {
+      return {
+        type: 'success',
+        message: extractText(successAlert),
+      };
+    }
+
+    return { type: '', message: '' };
+  }
+
+  function setSubmitButtonState(form, isSubmitting, activeSubmitter) {
+    var submitButtons = Array.prototype.slice.call(form.querySelectorAll('button[type="submit"]'));
+
+    if (!submitButtons.length) {
+      return;
+    }
+
+    submitButtons.forEach(function (button) {
+      var defaultLabel = String(button.getAttribute('data-default-label') || '').trim();
+
+      if (!defaultLabel) {
+        defaultLabel = String(button.textContent || '').trim() || 'Save';
+        button.setAttribute('data-default-label', defaultLabel);
+      }
+
+      button.disabled = Boolean(isSubmitting);
+      button.textContent = isSubmitting && (!activeSubmitter || button === activeSubmitter)
+        ? 'Saving...'
+        : defaultLabel;
+    });
+  }
+
+  function clearFormFileInputs(form) {
+    if (!form) {
+      return;
+    }
+
+    form.querySelectorAll('[data-file-input]').forEach(function (input) {
+      input.value = '';
+      input.dispatchEvent(new Event('change'));
+    });
+  }
+
+  async function submitProductFormWithoutReload(form, activeSubmitter, options) {
+    var response = null;
+    var responseHtml = '';
+    var finalUrl = null;
+    var feedback = null;
+    var hasError = false;
+    var successFallbackMessage = options && options.successFallbackMessage
+      ? options.successFallbackMessage
+      : 'Product saved successfully.';
+    var errorFallbackMessage = options && options.errorFallbackMessage
+      ? options.errorFallbackMessage
+      : 'Could not save product. Please try again.';
+
+    if (!form || form.getAttribute('data-is-submitting') === '1') {
+      return;
+    }
+
+    if (typeof form.reportValidity === 'function' && !form.reportValidity()) {
+      return;
+    }
+
+    form.setAttribute('data-is-submitting', '1');
+    setSubmitButtonState(form, true, activeSubmitter);
+    setLoadingOverlay(true);
+
+    try {
+      response = await fetch(form.action, {
+        method: 'POST',
+        body: new FormData(form),
+        credentials: 'same-origin',
+        headers: {
+          'X-Requested-With': 'XMLHttpRequest',
+        },
+      });
+
+      finalUrl = new URL(response.url, window.location.href);
+      if (finalUrl.pathname === '/admin/login') {
+        window.location.href = '/admin/login';
+        return;
+      }
+
+      responseHtml = await response.text();
+      feedback = extractAlertMessageFromHtml(responseHtml);
+      hasError = finalUrl.searchParams.has('error') || feedback.type === 'error';
+
+      if (hasError) {
+        showToast('error', feedback.message || errorFallbackMessage);
+        return;
+      }
+
+      showToast(feedback.type === 'warning' ? 'warning' : 'success', feedback.message || successFallbackMessage);
+
+      if (options && typeof options.onSuccess === 'function') {
+        options.onSuccess(form);
+      }
+    } catch (error) {
+      showToast('error', errorFallbackMessage);
+    } finally {
+      form.removeAttribute('data-is-submitting');
+      setSubmitButtonState(form, false, null);
+      setLoadingOverlay(false);
+    }
+  }
+
   document.querySelectorAll('[data-edit-toggle]').forEach(function (button) {
     button.addEventListener('click', function () {
       toggleEdit(button.getAttribute('data-edit-toggle'), true);
@@ -397,6 +571,49 @@
     helmetCoverageSelect.addEventListener('change', syncHelmetCoverageButtons);
     syncHelmetCoverageButtons();
   }
+
+  if (createProductForm) {
+    createProductForm.setAttribute('data-skip-global-loading', 'true');
+    createProductForm.addEventListener('submit', function (event) {
+      var submitter = event.submitter && event.submitter.form === createProductForm
+        ? event.submitter
+        : null;
+
+      event.preventDefault();
+      submitProductFormWithoutReload(createProductForm, submitter, {
+        successFallbackMessage: 'Product saved successfully.',
+        errorFallbackMessage: 'Could not save product right now. Please try again.',
+        onSuccess: function () {
+          createProductForm.reset();
+          syncAddSubcategoryInputMode();
+          syncAddFormPricePreview();
+          clearFormFileInputs(createProductForm);
+          if (helmetCoverageSelect) {
+            helmetCoverageSelect.value = '';
+            syncHelmetCoverageButtons();
+          }
+        },
+      });
+    });
+  }
+
+  document.querySelectorAll('form[data-edit-form]').forEach(function (editForm) {
+    editForm.setAttribute('data-skip-global-loading', 'true');
+    editForm.addEventListener('submit', function (event) {
+      var submitter = event.submitter && event.submitter.form === editForm
+        ? event.submitter
+        : null;
+
+      event.preventDefault();
+      submitProductFormWithoutReload(editForm, submitter, {
+        successFallbackMessage: 'Product updated successfully.',
+        errorFallbackMessage: 'Could not update product right now. Please try again.',
+        onSuccess: function () {
+          clearFormFileInputs(editForm);
+        },
+      });
+    });
+  });
 
   document.querySelectorAll('[data-delete-trigger]').forEach(function (button) {
     button.addEventListener('click', function () {

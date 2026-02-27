@@ -32,6 +32,7 @@
   var quickAddPricePreview = document.querySelector('[data-product-price-preview]');
   var quickAddPriceOriginal = document.querySelector('[data-product-price-original]');
   var quickAddPriceFinal = document.querySelector('[data-product-price-final]');
+  var quickAddProductForm = document.querySelector('form[action="/admin/products"][enctype="multipart/form-data"]');
   var statusTooltip = document.querySelector('[data-status-tooltip]');
   var hasDeleteModal = Boolean(deleteAlert && deleteAlertTitle && deleteAlertMessage && deleteAlertCancel && deleteAlertConfirm);
 
@@ -281,6 +282,175 @@
     deleteAlert.classList.add('flex');
   }
 
+  function setLoadingOverlay(isVisible) {
+    var globalLoading = window.bdLoading || null;
+
+    if (!globalLoading || typeof globalLoading !== 'object') {
+      return;
+    }
+
+    if (isVisible) {
+      if (typeof globalLoading.show === 'function') {
+        globalLoading.show();
+      }
+      return;
+    }
+
+    if (typeof globalLoading.hide === 'function') {
+      globalLoading.hide();
+    }
+  }
+
+  function showToast(type, message) {
+    if (typeof window.bdShowToast === 'function') {
+      window.bdShowToast({
+        type: type,
+        message: message,
+      });
+      return;
+    }
+
+    if (message) {
+      window.alert(message);
+    }
+  }
+
+  function extractAlertMessageFromHtml(htmlText) {
+    var parser = null;
+    var doc = null;
+    var errorAlert = null;
+    var warningAlert = null;
+    var successAlert = null;
+    var extractText = function (node) {
+      return String(node && node.textContent ? node.textContent : '').replace(/\s+/g, ' ').trim();
+    };
+
+    if (!htmlText || typeof DOMParser !== 'function') {
+      return { type: '', message: '' };
+    }
+
+    parser = new DOMParser();
+    doc = parser.parseFromString(htmlText, 'text/html');
+    errorAlert = doc.querySelector('[data-error-alert]');
+    if (errorAlert) {
+      return {
+        type: 'error',
+        message: extractText(errorAlert),
+      };
+    }
+
+    warningAlert = doc.querySelector('[data-warning-alert]');
+    if (warningAlert) {
+      return {
+        type: 'warning',
+        message: extractText(warningAlert),
+      };
+    }
+
+    successAlert = doc.querySelector('[data-success-alert]');
+    if (successAlert) {
+      return {
+        type: 'success',
+        message: extractText(successAlert),
+      };
+    }
+
+    return { type: '', message: '' };
+  }
+
+  function setSubmitButtonState(form, isSubmitting, activeSubmitter) {
+    var submitButtons = Array.prototype.slice.call(form.querySelectorAll('button[type="submit"]'));
+
+    if (!submitButtons.length) {
+      return;
+    }
+
+    submitButtons.forEach(function (button) {
+      var defaultLabel = String(button.getAttribute('data-default-label') || '').trim();
+
+      if (!defaultLabel) {
+        defaultLabel = String(button.textContent || '').trim() || 'Save';
+        button.setAttribute('data-default-label', defaultLabel);
+      }
+
+      button.disabled = Boolean(isSubmitting);
+      button.textContent = isSubmitting && (!activeSubmitter || button === activeSubmitter)
+        ? 'Saving...'
+        : defaultLabel;
+    });
+  }
+
+  function resetQuickAddProductForm() {
+    if (!quickAddProductForm) {
+      return;
+    }
+
+    quickAddProductForm.reset();
+    syncQuickAddCategoryFields();
+    syncQuickAddPricePreview();
+    quickAddProductForm.querySelectorAll('[data-file-input]').forEach(function (input) {
+      input.dispatchEvent(new Event('change'));
+    });
+  }
+
+  async function submitQuickAddProductForm(form, activeSubmitter) {
+    var response = null;
+    var responseHtml = '';
+    var finalUrl = null;
+    var feedback = null;
+    var hasError = false;
+    var message = '';
+
+    if (!form || form.getAttribute('data-is-submitting') === '1') {
+      return;
+    }
+
+    if (typeof form.reportValidity === 'function' && !form.reportValidity()) {
+      return;
+    }
+
+    form.setAttribute('data-is-submitting', '1');
+    setSubmitButtonState(form, true, activeSubmitter);
+    setLoadingOverlay(true);
+
+    try {
+      response = await fetch(form.action, {
+        method: 'POST',
+        body: new FormData(form),
+        credentials: 'same-origin',
+        headers: {
+          'X-Requested-With': 'XMLHttpRequest',
+        },
+      });
+
+      finalUrl = new URL(response.url, window.location.href);
+      if (finalUrl.pathname === '/admin/login') {
+        window.location.href = '/admin/login';
+        return;
+      }
+
+      responseHtml = await response.text();
+      feedback = extractAlertMessageFromHtml(responseHtml);
+      hasError = finalUrl.searchParams.has('error') || feedback.type === 'error';
+
+      if (hasError) {
+        message = feedback.message || 'Could not save product. Please try again.';
+        showToast('error', message);
+        return;
+      }
+
+      message = feedback.message || 'Product saved successfully.';
+      showToast(feedback.type === 'warning' ? 'warning' : 'success', message);
+      resetQuickAddProductForm();
+    } catch (error) {
+      showToast('error', 'Could not save product right now. Please try again.');
+    } finally {
+      form.removeAttribute('data-is-submitting');
+      setSubmitButtonState(form, false, null);
+      setLoadingOverlay(false);
+    }
+  }
+
   function hideDeleteAlert() {
     if (!hasDeleteModal) {
       return;
@@ -363,4 +533,16 @@
       hideDeleteAlert();
     }
   });
+
+  if (quickAddProductForm) {
+    quickAddProductForm.setAttribute('data-skip-global-loading', 'true');
+    quickAddProductForm.addEventListener('submit', function (event) {
+      var submitter = event.submitter && event.submitter.form === quickAddProductForm
+        ? event.submitter
+        : null;
+
+      event.preventDefault();
+      submitQuickAddProductForm(quickAddProductForm, submitter);
+    });
+  }
 })();

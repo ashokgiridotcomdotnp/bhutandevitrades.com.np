@@ -436,9 +436,8 @@
                   <td class="px-3 py-3 font-semibold text-slate-800"><%= stockValue %></td>
                   <td class="px-3 py-3">
                     <img
-                      src="<%= item.image || '/images/productParts/no-image.webp' %>"
+                      src="<%= item.image %>"
                       alt="<%= item.name %>"
-                      onerror="this.onerror=null;this.src='/images/productParts/no-image.webp';"
                       class="h-16 w-24 rounded-md border border-slate-200 bg-white object-cover"
                       loading="lazy"
                     />

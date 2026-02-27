@@ -2,90 +2,31 @@
   "categories": [
     {
       "name": "Helmet",
-      "description": "In motorcycle and scooter helmets there are a lot of different kinds of models and types of helmets.",
+      "description": "All Kind Of Helmet is Here.",
       "items": [
-        "Full Face Helmets",
-        "Vega",
-        "STM"
-      ]
-    },
-    {
-      "name": "Tyre",
-      "description": "All Kind Of Tyre is Available",
-      "items": [
-        "Yamaha",
-        "Bajaj",
-        "Honda"
-      ]
-    },
-    {
-      "name": "Mobil",
-      "description": "All Kind Of Mobil Is Here.",
-      "items": [
-        "Servo",
-        "Motul"
-      ]
-    },
-    {
-      "name": "Shock",
-      "description": "Added from admin panel",
-      "items": [
-        "Fz"
+        "Vega"
       ]
     }
   ],
   "products": [
     {
-      "id": "tyre-yamaha",
-      "type": "Tyre",
-      "name": "Yamaha",
-      "spec": "Discounted",
-      "price": "NPR 2,134",
-      "originalPrice": "NPR 2,200",
-      "discountPercent": "3",
-      "quantity": "0",
-      "image": "/uploads/products/tyre-1771941778168-386268769-opt.webp",
+      "id": "helmet-vega",
+      "type": "Helmet",
+      "name": "Vega",
+      "spec": "Type: Full | Vega helmet is In Discounted Price.",
+      "price": "NPR 2,375",
+      "originalPrice": "NPR 2,500",
+      "discountPercent": "5",
+      "quantity": "29",
+      "image": "https://res.cloudinary.com/di4d5iphe/image/upload/v1772181664/bhutandevi/products/d7wsqsgdxa8diztjkkaq.jpg",
       "images": [
-        "/uploads/products/tyre-1771941778168-386268769-opt.webp"
-      ]
-    },
-    {
-      "id": "mobil-servo",
-      "type": "Mobil",
-      "name": "Servo",
-      "spec": "Servo",
-      "price": "NPR 450",
-      "originalPrice": "NPR 500",
-      "discountPercent": "10",
-      "quantity": "6",
-      "image": "/uploads/products/engineoil-1771942357883-205281974-opt.webp",
-      "images": [
-        "/uploads/products/engineoil-1771942357883-205281974-opt.webp"
+        "https://res.cloudinary.com/di4d5iphe/image/upload/v1772181664/bhutandevi/products/d7wsqsgdxa8diztjkkaq.jpg"
       ]
     }
   ],
   "priceOverrides": {},
   "imageOverrides": {},
-  "productOverrides": {
-    "tyre-yamaha": {
-      "type": "Tyre",
-      "name": "Yamaha",
-      "spec": "All Kind Of Yamaha Tyre is Available.",
-      "price": "NPR 1,870",
-      "originalPrice": "NPR 2,200",
-      "discountPercent": "15",
-      "quantity": "50",
-      "image": "/uploads/products/tyre-1771941778168-386268769-opt.webp"
-    }
-  },
-  "deletedProductIds": [
-    "engine-oil-motul",
-    "engine-oil-servo-20w-50",
-    "tyres-fz-tire-2"
-  ],
-  "deletedCategoryNames": [
-    "Grease",
-    "Engine Oil",
-    "Chain Sprocket"
-  ]
+  "productOverrides": {},
+  "deletedProductIds": [],
+  "deletedCategoryNames": []
 }
