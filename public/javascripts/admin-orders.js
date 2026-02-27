@@ -35,9 +35,89 @@
     contentPanel.classList.toggle('hidden', isLoading);
   }
 
+  function showToast(type, message) {
+    if (typeof window.bdShowToast === 'function') {
+      window.bdShowToast({
+        type: type,
+        message: message,
+      });
+      return;
+    }
+    if (message) {
+      window.alert(message);
+    }
+  }
+
+  function setLoadingOverlay(isVisible) {
+    var globalLoading = window.bdLoading || null;
+    if (!globalLoading || typeof globalLoading !== 'object') {
+      return;
+    }
+    if (isVisible) {
+      if (typeof globalLoading.show === 'function') {
+        globalLoading.show();
+      }
+      return;
+    }
+    if (typeof globalLoading.hide === 'function') {
+      globalLoading.hide();
+    }
+  }
+
+  async function submitOrderFormAsync(form) {
+    var response = null;
+    var result = null;
+    var orderId = null;
+
+    if (!form) {
+      return;
+    }
+
+    setLoadingOverlay(true);
+
+    try {
+      response = await fetch(form.action, {
+        method: 'POST',
+        body: new FormData(form),
+        credentials: 'same-origin',
+        headers: {
+          'X-Requested-With': 'XMLHttpRequest',
+        },
+      });
+
+      if (response.url && response.url.indexOf('/admin/login') !== -1) {
+        window.location.href = '/admin/login';
+        return;
+      }
+
+      result = await response.json();
+
+      if (result.success) {
+        showToast('success', result.message || 'Operation successful');
+        // Remove the row from DOM
+        orderId = form.querySelector('input[name="orderId"]')?.value;
+        if (orderId) {
+          var row = form.closest('tr');
+          if (row) {
+            row.style.transition = 'opacity 0.3s ease';
+            row.style.opacity = '0';
+            setTimeout(function () {
+              row.remove();
+            }, 300);
+          }
+        }
+      } else {
+        showToast('error', result.message || 'Operation failed');
+      }
+    } catch (error) {
+      showToast('error', 'Failed to process request. Please try again.');
+    } finally {
+      setLoadingOverlay(false);
+    }
+  }
+
   function bindOrdersLoadingState() {
     var links = Array.prototype.slice.call(document.querySelectorAll('[data-orders-nav-link]'));
-    var forms = Array.prototype.slice.call(document.querySelectorAll('[data-orders-nav-form]'));
 
     links.forEach(function (link) {
       link.addEventListener('click', function (event) {
@@ -45,20 +125,26 @@
           event.preventDefault();
           return;
         }
-
         setOrdersLoadingState(true);
       });
     });
 
-    forms.forEach(function (form) {
+    // Handle accept forms
+    document.querySelectorAll('form[action="/admin/orders/accept"]').forEach(function (form) {
       form.addEventListener('submit', function (event) {
-        window.setTimeout(function () {
-          if (event.defaultPrevented) {
-            return;
-          }
+        event.preventDefault();
+        submitOrderFormAsync(form);
+      });
+    });
 
-          setOrdersLoadingState(true);
-        }, 0);
+    // Handle delete forms
+    document.querySelectorAll('form[action="/admin/orders/delete"]').forEach(function (form) {
+      form.removeAttribute('onsubmit');
+      form.addEventListener('submit', function (event) {
+        event.preventDefault();
+        if (window.confirm('Delete this order request?')) {
+          submitOrderFormAsync(form);
+        }
       });
     });
   }

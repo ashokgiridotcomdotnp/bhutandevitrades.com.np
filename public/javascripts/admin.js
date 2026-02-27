@@ -395,9 +395,8 @@
 
   async function submitQuickAddProductForm(form, activeSubmitter) {
     var response = null;
-    var responseHtml = '';
+    var result = null;
     var finalUrl = null;
-    var feedback = null;
     var hasError = false;
     var message = '';
 
@@ -420,6 +419,7 @@
         credentials: 'same-origin',
         headers: {
           'X-Requested-With': 'XMLHttpRequest',
+          'Accept': 'application/json',
         },
       });
 
@@ -429,18 +429,23 @@
         return;
       }
 
-      responseHtml = await response.text();
-      feedback = extractAlertMessageFromHtml(responseHtml);
-      hasError = finalUrl.searchParams.has('error') || feedback.type === 'error';
+      // Parse JSON response
+      result = await response.json();
+      hasError = !result.success;
 
       if (hasError) {
-        message = feedback.message || 'Could not save product. Please try again.';
+        // Handle validation errors (array of errors) or single error message
+        if (result.errors && Array.isArray(result.errors) && result.errors.length > 0) {
+          message = result.errors.map(function (err) { return err.message; }).join(', ');
+        } else {
+          message = result.message || result.error || 'Could not save product. Please try again.';
+        }
         showToast('error', message);
         return;
       }
 
-      message = feedback.message || 'Product saved successfully.';
-      showToast(feedback.type === 'warning' ? 'warning' : 'success', message);
+      message = result.message || 'Product saved successfully.';
+      showToast('success', message);
       resetQuickAddProductForm();
     } catch (error) {
       showToast('error', 'Could not save product right now. Please try again.');
@@ -459,6 +464,71 @@
     pendingDeleteForm = null;
     deleteAlert.classList.add('hidden');
     deleteAlert.classList.remove('flex');
+  }
+
+  async function submitDeleteFormAsync(form) {
+    var response = null;
+    var result = null;
+
+    if (!form) {
+      return;
+    }
+
+    setLoadingOverlay(true);
+
+    try {
+      response = await fetch(form.action, {
+        method: 'POST',
+        body: new FormData(form),
+        credentials: 'same-origin',
+        headers: {
+          'X-Requested-With': 'XMLHttpRequest',
+        },
+      });
+
+      if (response.url && response.url.indexOf('/admin/login') !== -1) {
+        window.location.href = '/admin/login';
+        return;
+      }
+
+      result = await response.json();
+
+      if (result.success) {
+        showToast('success', result.message || 'Deleted successfully');
+        // Remove the deleted item from DOM
+        var productId = form.querySelector('input[name="productId"]')?.value;
+        var categoryName = form.querySelector('input[name="categoryName"]')?.value;
+        if (productId) {
+          var row = form.closest('tr');
+          if (row) {
+            row.remove();
+          } else {
+            // Try to find by data attribute
+            var triggerBtn = document.querySelector('[data-delete-product-trigger="' + productId + '"]');
+            if (triggerBtn) {
+              var card = triggerBtn.closest('article') || triggerBtn.closest('tr');
+              if (card) {
+                card.remove();
+              }
+            }
+          }
+        }
+        if (categoryName) {
+          var categoryKey = categoryName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+          var categoryCard = document.querySelector('[data-delete-category-form="' + categoryKey + '"]')?.closest('article');
+          if (categoryCard) {
+            categoryCard.remove();
+          }
+        }
+      } else {
+        showToast('error', result.message || 'Failed to delete');
+      }
+    } catch (error) {
+      showToast('error', 'Failed to delete. Please try again.');
+    } finally {
+      setLoadingOverlay(false);
+      hideDeleteAlert();
+    }
   }
 
   if (quickAddCategoryInput) {
@@ -517,7 +587,7 @@
 
     deleteAlertConfirm.addEventListener('click', function () {
       if (pendingDeleteForm) {
-        pendingDeleteForm.submit();
+        submitDeleteFormAsync(pendingDeleteForm);
       }
     });
 
@@ -544,5 +614,67 @@
       event.preventDefault();
       submitQuickAddProductForm(quickAddProductForm, submitter);
     });
+  }
+
+  // Handle category creation form async
+  var categoryForm = document.querySelector('form[action="/admin/categories"]');
+  if (categoryForm) {
+    categoryForm.setAttribute('data-skip-global-loading', 'true');
+    categoryForm.addEventListener('submit', function (event) {
+      event.preventDefault();
+      submitCategoryFormAsync(categoryForm);
+    });
+  }
+
+  async function submitCategoryFormAsync(form) {
+    var response = null;
+    var result = null;
+
+    if (!form || form.getAttribute('data-is-submitting') === '1') {
+      return;
+    }
+
+    if (typeof form.reportValidity === 'function' && !form.reportValidity()) {
+      return;
+    }
+
+    form.setAttribute('data-is-submitting', '1');
+    setSubmitButtonState(form, true, null);
+    setLoadingOverlay(true);
+
+    try {
+      response = await fetch(form.action, {
+        method: 'POST',
+        body: new FormData(form),
+        credentials: 'same-origin',
+        headers: {
+          'X-Requested-With': 'XMLHttpRequest',
+        },
+      });
+
+      if (response.url && response.url.indexOf('/admin/login') !== -1) {
+        window.location.href = '/admin/login';
+        return;
+      }
+
+      result = await response.json();
+
+      if (result.success) {
+        showToast('success', result.message || 'Category saved successfully');
+        form.reset();
+        // Reload page after short delay to show new category
+        setTimeout(function () {
+          window.location.reload();
+        }, 800);
+      } else {
+        showToast('error', result.message || 'Failed to save category');
+      }
+    } catch (error) {
+      showToast('error', 'Failed to save category. Please try again.');
+    } finally {
+      form.removeAttribute('data-is-submitting');
+      setSubmitButtonState(form, false, null);
+      setLoadingOverlay(false);
+    }
   }
 })();

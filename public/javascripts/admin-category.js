@@ -445,10 +445,10 @@
 
   async function submitProductFormWithoutReload(form, activeSubmitter, options) {
     var response = null;
-    var responseHtml = '';
+    var result = null;
     var finalUrl = null;
-    var feedback = null;
     var hasError = false;
+    var message = '';
     var successFallbackMessage = options && options.successFallbackMessage
       ? options.successFallbackMessage
       : 'Product saved successfully.';
@@ -475,6 +475,7 @@
         credentials: 'same-origin',
         headers: {
           'X-Requested-With': 'XMLHttpRequest',
+          'Accept': 'application/json',
         },
       });
 
@@ -484,16 +485,23 @@
         return;
       }
 
-      responseHtml = await response.text();
-      feedback = extractAlertMessageFromHtml(responseHtml);
-      hasError = finalUrl.searchParams.has('error') || feedback.type === 'error';
+      // Parse JSON response
+      result = await response.json();
+      hasError = !result.success;
 
       if (hasError) {
-        showToast('error', feedback.message || errorFallbackMessage);
+        // Handle validation errors (array of errors) or single error message
+        if (result.errors && Array.isArray(result.errors) && result.errors.length > 0) {
+          message = result.errors.map(function (err) { return err.message; }).join(', ');
+        } else {
+          message = result.message || result.error || errorFallbackMessage;
+        }
+        showToast('error', message);
         return;
       }
 
-      showToast(feedback.type === 'warning' ? 'warning' : 'success', feedback.message || successFallbackMessage);
+      message = result.message || successFallbackMessage;
+      showToast('success', message);
 
       if (options && typeof options.onSuccess === 'function') {
         options.onSuccess(form);
@@ -648,12 +656,76 @@
     });
   });
 
+  async function submitDeleteFormAsync(form) {
+    var response = null;
+    var result = null;
+    var productId = null;
+    var categoryName = null;
+
+    if (!form) {
+      return;
+    }
+
+    setLoadingOverlay(true);
+
+    try {
+      response = await fetch(form.action, {
+        method: 'POST',
+        body: new FormData(form),
+        credentials: 'same-origin',
+        headers: {
+          'X-Requested-With': 'XMLHttpRequest',
+        },
+      });
+
+      if (response.url && response.url.indexOf('/admin/login') !== -1) {
+        window.location.href = '/admin/login';
+        return;
+      }
+
+      result = await response.json();
+
+      if (result.success) {
+        showToast('success', result.message || 'Deleted successfully');
+        // Remove the deleted item from DOM
+        productId = form.querySelector('input[name="productId"]')?.value;
+        categoryName = form.querySelector('input[name="categoryName"]')?.value;
+
+        if (productId) {
+          // Find and remove the row
+          var viewRow = document.querySelector('[data-view-panel="' + productId + '"]');
+          var editRow = document.querySelector('[data-edit-row="' + productId + '"]');
+          if (viewRow) {
+            viewRow.remove();
+          }
+          if (editRow) {
+            editRow.remove();
+          }
+        }
+
+        if (categoryName) {
+          // Redirect to admin dashboard after deleting category
+          setTimeout(function () {
+            window.location.href = '/admin';
+          }, 800);
+        }
+      } else {
+        showToast('error', result.message || 'Failed to delete');
+      }
+    } catch (error) {
+      showToast('error', 'Failed to delete. Please try again.');
+    } finally {
+      setLoadingOverlay(false);
+      hideDeleteAlert();
+    }
+  }
+
   if (hasDeleteModal) {
     deleteAlertCancel.addEventListener('click', hideDeleteAlert);
 
     deleteAlertConfirm.addEventListener('click', function () {
       if (pendingDeleteForm) {
-        pendingDeleteForm.submit();
+        submitDeleteFormAsync(pendingDeleteForm);
       }
     });
 

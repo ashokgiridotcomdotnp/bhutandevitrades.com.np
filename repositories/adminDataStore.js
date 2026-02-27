@@ -4,7 +4,8 @@ var database = require('../lib/db');
 var AdminState = require('../models/AdminState');
 
 var adminDataFilePath = path.join(__dirname, '..', 'data', 'admin-data.json');
-var adminStateKey = 'catalog-admin-data';
+var adminStateDocumentKey = 'catalog-admin-state';
+var legacyAdminStateDocumentKeys = ['catalog-admin-data'];
 
 function normalizePayload(value, normalizeData, createDefaultData) {
   if (typeof normalizeData === 'function') {
@@ -16,6 +17,53 @@ function normalizePayload(value, normalizeData, createDefaultData) {
   }
 
   return typeof createDefaultData === 'function' ? createDefaultData() : {};
+}
+
+function resolveStateValue(state) {
+  if (state && state.value && typeof state.value === 'object') {
+    return state.value;
+  }
+
+  if (state && state.payload && typeof state.payload === 'object') {
+    // Backward compatibility for old documents saved with `payload`.
+    return state.payload;
+  }
+
+  return null;
+}
+
+async function migrateLegacyDocumentKeyIfNeeded(state, normalizedState) {
+  if (!state || !state.key || state.key === adminStateDocumentKey) {
+    return;
+  }
+
+  try {
+    await AdminState.findOneAndUpdate(
+      { key: adminStateDocumentKey },
+      {
+        $set: {
+          value: normalizedState,
+          updatedAt: new Date(),
+        },
+        $setOnInsert: {
+          key: adminStateDocumentKey,
+        },
+        $unset: {
+          payload: 1,
+        },
+      },
+      {
+        upsert: true,
+        setDefaultsOnInsert: true,
+      }
+    );
+
+    if (state._id) {
+      await AdminState.deleteOne({ _id: state._id });
+    }
+  } catch (error) {
+    console.error('Failed to migrate legacy admin data document key:', error.message);
+  }
 }
 
 function loadFromFile(createDefaultData, normalizeData) {
@@ -31,6 +79,24 @@ function loadFromFile(createDefaultData, normalizeData) {
 
     return normalizePayload(JSON.parse(content), normalizeData, createDefaultData);
   } catch (error) {
+    console.error('Failed to load admin data from file:', error.message);
+    return typeof createDefaultData === 'function' ? createDefaultData() : {};
+  }
+}
+
+async function loadFromFileAsync(createDefaultData, normalizeData) {
+  try {
+    var content = await fs.promises.readFile(adminDataFilePath, 'utf8');
+    if (!content.trim()) {
+      return typeof createDefaultData === 'function' ? createDefaultData() : {};
+    }
+
+    return normalizePayload(JSON.parse(content), normalizeData, createDefaultData);
+  } catch (error) {
+    if (error && error.code === 'ENOENT') {
+      return typeof createDefaultData === 'function' ? createDefaultData() : {};
+    }
+
     console.error('Failed to load admin data from file:', error.message);
     return typeof createDefaultData === 'function' ? createDefaultData() : {};
   }
@@ -56,21 +122,30 @@ async function loadFromDatabase(normalizeData, createDefaultData) {
   }
 
   try {
-    var state = await AdminState.findOne({ key: adminStateKey }).lean();
-    var stateValue = null;
+    var state = await AdminState.findOne({ key: adminStateDocumentKey })
+      .sort({ updatedAt: -1 })
+      .lean();
+    var stateValue = resolveStateValue(state);
 
-    if (state && state.value && typeof state.value === 'object') {
-      stateValue = state.value;
-    } else if (state && state.payload && typeof state.payload === 'object') {
-      // Backward compatibility for old documents saved with `payload`.
-      stateValue = state.payload;
+    if (!stateValue && legacyAdminStateDocumentKeys.length > 0) {
+      var legacyState = await AdminState.findOne({ key: { $in: legacyAdminStateDocumentKeys } })
+        .sort({ updatedAt: -1 })
+        .lean();
+      var legacyStateValue = resolveStateValue(legacyState);
+
+      if (legacyStateValue) {
+        state = legacyState;
+        stateValue = legacyStateValue;
+      }
     }
 
     if (!stateValue) {
       return null;
     }
 
-    return normalizePayload(stateValue, normalizeData, createDefaultData);
+    var normalizedState = normalizePayload(stateValue, normalizeData, createDefaultData);
+    await migrateLegacyDocumentKeyIfNeeded(state, normalizedState);
+    return normalizedState;
   } catch (error) {
     console.error('Failed to load admin data from database:', error.message);
     return null;
@@ -87,14 +162,14 @@ async function saveToDatabase(data, normalizeData, createDefaultData) {
     var normalizedData = normalizePayload(data, normalizeData, createDefaultData);
 
     await AdminState.findOneAndUpdate(
-      { key: adminStateKey },
+      { key: adminStateDocumentKey },
       {
         $set: {
           value: normalizedData,
           updatedAt: new Date(),
         },
         $setOnInsert: {
-          key: adminStateKey,
+          key: adminStateDocumentKey,
         },
         $unset: {
           payload: 1,
@@ -106,6 +181,10 @@ async function saveToDatabase(data, normalizeData, createDefaultData) {
       }
     );
 
+    if (legacyAdminStateDocumentKeys.length > 0) {
+      await AdminState.deleteMany({ key: { $in: legacyAdminStateDocumentKeys } });
+    }
+
     return true;
   } catch (error) {
     console.error('Failed to save admin data to database:', error.message);
@@ -116,6 +195,7 @@ async function saveToDatabase(data, normalizeData, createDefaultData) {
 module.exports = {
   loadFromDatabase: loadFromDatabase,
   loadFromFile: loadFromFile,
+  loadFromFileAsync: loadFromFileAsync,
   saveToDatabase: saveToDatabase,
   saveToFile: saveToFile,
 };

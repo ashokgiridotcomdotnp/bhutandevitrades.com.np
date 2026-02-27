@@ -1,3 +1,4 @@
+var fs = require('fs');
 var catalogService = require('../services/catalogService');
 var database = require('../lib/db');
 var resendService = require('../services/resendService');
@@ -16,6 +17,12 @@ var maxAdminOrderMessageLength = 1000;
 var adminOrderRequestsLimit = 150;
 var adminOrderRequestsPageSize = 10;
 var defaultAdminOrdersPath = '/admin/orders';
+var parsedAdminRefreshCooldownMs = Number(process.env.ADMIN_DATA_REFRESH_COOLDOWN_MS);
+var adminRefreshCooldownMs = Number.isFinite(parsedAdminRefreshCooldownMs) && parsedAdminRefreshCooldownMs >= 0
+  ? Math.floor(parsedAdminRefreshCooldownMs)
+  : 15000;
+var isAdminRefreshInProgress = false;
+var lastAdminRefreshAt = 0;
 
 function toCategorySlug(value) {
   return catalogService.normalizeForSearch(value).replace(/\s+/g, '-');
@@ -305,14 +312,29 @@ function findCategoryBoardBySlug(categorySlug, categoryBoards) {
 }
 
 function refreshAdminDataMiddleware(req, res, next) {
+  var requestMethod = String(req && req.method ? req.method : '').toUpperCase();
+  var now = Date.now();
+  if (requestMethod && requestMethod !== 'GET' && requestMethod !== 'HEAD') {
+    return next();
+  }
+
+  if (isAdminRefreshInProgress || ((now - lastAdminRefreshAt) < adminRefreshCooldownMs)) {
+    return next();
+  }
+
+  isAdminRefreshInProgress = true;
+  lastAdminRefreshAt = now;
+
   catalogService
     .refreshAdminData()
     .catch(function (error) {
       console.error('Failed to refresh admin data:', error.message);
     })
     .finally(function () {
-      next();
+      isAdminRefreshInProgress = false;
     });
+
+  return next();
 }
 
 function countObjectKeys(value) {
@@ -645,29 +667,48 @@ async function saveProductPrice(req, res) {
   var adminData = catalogService.getAdminData();
   var redirectPath = getSafeRedirectPath(req, defaultAdminPath);
   var hasMongoConfiguration = Boolean(String(process.env.MONGODB_URI || '').trim());
+  var isAjax = req.xhr || req.headers['x-requested-with'] === 'XMLHttpRequest' || req.headers.accept === 'application/json';
 
   if (hasMongoConfiguration && !await ensureDatabaseConnection()) {
+    if (isAjax) {
+      return res.status(503).json({ success: false, error: 'db-unavailable', message: 'Database unavailable' });
+    }
     return res.redirect(buildErrorRedirect(redirectPath, 'db-unavailable'));
   }
 
   if (!productId || !isValidEntityId(productId)) {
+    if (isAjax) {
+      return res.status(400).json({ success: false, error: 'product-id-required', message: 'Product ID required' });
+    }
     return res.redirect(buildErrorRedirect(redirectPath, 'product-id-required'));
   }
 
   if (!hasValidPriceValue(req.body.productPrice)) {
+    if (isAjax) {
+      return res.status(400).json({ success: false, error: 'product-price-required', message: 'Valid price required' });
+    }
     return res.redirect(buildErrorRedirect(redirectPath, 'product-price-required'));
   }
 
   if (!catalogService.findProductById(productId, catalog.productSections)) {
+    if (isAjax) {
+      return res.status(404).json({ success: false, error: 'product-not-found', message: 'Product not found' });
+    }
     return res.redirect(buildErrorRedirect(redirectPath, 'product-not-found'));
   }
 
   adminData.priceOverrides[productId] = productPrice;
 
   if (!await catalogService.saveAdminData()) {
+    if (isAjax) {
+      return res.status(500).json({ success: false, error: 'save-failed', message: 'Failed to save price' });
+    }
     return res.redirect(buildErrorRedirect(redirectPath, 'save-failed'));
   }
 
+  if (isAjax) {
+    return res.json({ success: true, message: 'Price saved successfully', price: productPrice });
+  }
   return res.redirect(buildStatusRedirect(redirectPath, 'price-saved'));
 }
 
@@ -675,50 +716,76 @@ function saveProductImage(req, res) {
   catalogService.imageUpload.single('productImageFile')(req, res, async function (uploadError) {
     var redirectPath = getSafeRedirectPath(req, defaultAdminPath);
     var hasMongoConfiguration = Boolean(String(process.env.MONGODB_URI || '').trim());
+    var isAjax = req.xhr || req.headers['x-requested-with'] === 'XMLHttpRequest' || req.headers.accept === 'application/json';
 
     if (uploadError) {
+      var errorCode = 'save-failed';
+      var errorMessage = 'Save failed';
       if (uploadError.code === 'LIMIT_FILE_SIZE') {
-        return res.redirect(buildErrorRedirect(redirectPath, 'image-too-large'));
+        errorCode = 'image-too-large';
+        errorMessage = 'Image too large';
+      } else if (uploadError.message === 'invalid-image-file') {
+        errorCode = 'invalid-image-file';
+        errorMessage = 'Invalid image file';
       }
-
-      if (uploadError.message === 'invalid-image-file') {
-        return res.redirect(buildErrorRedirect(redirectPath, 'invalid-image-file'));
+      if (isAjax) {
+        return res.status(400).json({ success: false, error: errorCode, message: errorMessage });
       }
-
-      return res.redirect(buildErrorRedirect(redirectPath, 'save-failed'));
+      return res.redirect(buildErrorRedirect(redirectPath, errorCode));
     }
 
     if (!req.file) {
+      if (isAjax) {
+        return res.status(400).json({ success: false, error: 'product-image-file-required', message: 'Image file required' });
+      }
       return res.redirect(buildErrorRedirect(redirectPath, 'product-image-file-required'));
     }
 
     if (hasMongoConfiguration && !await ensureDatabaseConnection()) {
+      if (isAjax) {
+        return res.status(503).json({ success: false, error: 'db-unavailable', message: 'Database unavailable' });
+      }
       return res.redirect(buildErrorRedirect(redirectPath, 'db-unavailable'));
     }
 
     var productId = catalogService.toTrimmedString(req.body.productId);
-    var uploadedImagePath = await catalogService.optimizeAndPromoteUploadedImage(req.file);
+    var uploadedImagePath = await catalogService.optimizeUploadedImage(req.file);
     var catalog = catalogService.getCatalogContext();
     var adminData = catalogService.getAdminData();
 
     if (!productId || !isValidEntityId(productId)) {
+      if (isAjax) {
+        return res.status(400).json({ success: false, error: 'product-id-required', message: 'Product ID required' });
+      }
       return res.redirect(buildErrorRedirect(redirectPath, 'product-id-required'));
     }
 
     if (!uploadedImagePath) {
+      if (isAjax) {
+        return res.status(500).json({ success: false, error: 'cloudinary-upload-failed', message: 'Image upload failed' });
+      }
       return res.redirect(buildErrorRedirect(redirectPath, 'cloudinary-upload-failed'));
     }
 
     if (!catalogService.findProductById(productId, catalog.productSections)) {
+      if (isAjax) {
+        return res.status(404).json({ success: false, error: 'product-not-found', message: 'Product not found' });
+      }
       return res.redirect(buildErrorRedirect(redirectPath, 'product-not-found'));
     }
 
     adminData.imageOverrides[productId] = uploadedImagePath;
 
     if (!await catalogService.saveAdminData()) {
+      if (isAjax) {
+        return res.status(500).json({ success: false, error: 'save-failed', message: 'Failed to save image' });
+      }
       return res.redirect(buildErrorRedirect(redirectPath, 'save-failed'));
     }
 
+    if (isAjax) {
+      return res.json({ success: true, message: 'Image saved successfully', image: uploadedImagePath });
+    }
     return res.redirect(buildStatusRedirect(redirectPath, 'image-saved'));
   });
 }
@@ -727,21 +794,30 @@ function editProduct(req, res) {
   catalogService.imageUpload.single('productImageFile')(req, res, async function (uploadError) {
     var redirectPath = getSafeRedirectPath(req, defaultAdminPath);
     var hasMongoConfiguration = Boolean(String(process.env.MONGODB_URI || '').trim());
+    var isAjax = req.xhr || req.headers['x-requested-with'] === 'XMLHttpRequest' || req.headers.accept === 'application/json';
+
+    function sendErrorResponse(errorCode, message, statusCode) {
+      if (isAjax) {
+        return res.status(statusCode || 400).json({ success: false, error: errorCode, message: message });
+      }
+      return res.redirect(buildErrorRedirect(redirectPath, errorCode));
+    }
 
     if (uploadError) {
+      var errorCode = 'save-failed';
+      var errorMessage = 'Save failed';
       if (uploadError.code === 'LIMIT_FILE_SIZE') {
-        return res.redirect(buildErrorRedirect(redirectPath, 'image-too-large'));
+        errorCode = 'image-too-large';
+        errorMessage = 'Image too large';
+      } else if (uploadError.message === 'invalid-image-file') {
+        errorCode = 'invalid-image-file';
+        errorMessage = 'Invalid image file';
       }
-
-      if (uploadError.message === 'invalid-image-file') {
-        return res.redirect(buildErrorRedirect(redirectPath, 'invalid-image-file'));
-      }
-
-      return res.redirect(buildErrorRedirect(redirectPath, 'save-failed'));
+      return sendErrorResponse(errorCode, errorMessage, 400);
     }
 
     if (hasMongoConfiguration && !await ensureDatabaseConnection()) {
-      return res.redirect(buildErrorRedirect(redirectPath, 'db-unavailable'));
+      return sendErrorResponse('db-unavailable', 'Database unavailable', 503);
     }
 
     var productId = catalogService.toTrimmedString(req.body.productId);
@@ -764,42 +840,42 @@ function editProduct(req, res) {
     var resolvedImagePath = '';
 
     if (req.file) {
-      uploadedImagePath = await catalogService.optimizeAndPromoteUploadedImage(req.file);
+      uploadedImagePath = await catalogService.optimizeUploadedImage(req.file);
       if (!uploadedImagePath) {
-        return res.redirect(buildErrorRedirect(redirectPath, 'cloudinary-upload-failed'));
+        return sendErrorResponse('cloudinary-upload-failed', 'Image upload failed', 500);
       }
     }
 
     if (!productId || !isValidEntityId(productId)) {
-      return res.redirect(buildErrorRedirect(redirectPath, 'product-id-required'));
+      return sendErrorResponse('product-id-required', 'Product ID required', 400);
     }
 
     if (!productCategory || !isWithinLength(productCategory, maxCategoryNameLength)) {
-      return res.redirect(buildErrorRedirect(redirectPath, 'product-category-required'));
+      return sendErrorResponse('product-category-required', 'Product category required', 400);
     }
 
     if (!productName || !isWithinLength(productName, maxProductNameLength)) {
-      return res.redirect(buildErrorRedirect(redirectPath, 'product-name-required'));
+      return sendErrorResponse('product-name-required', 'Product name required', 400);
     }
 
     if (!hasValidPriceValue(req.body.productPrice) || productPricing.isPriceMissing) {
-      return res.redirect(buildErrorRedirect(redirectPath, 'product-price-required'));
+      return sendErrorResponse('product-price-required', 'Valid price required', 400);
     }
 
     if (!isWithinLength(rawProductSpec, maxProductSpecLength)) {
-      return res.redirect(buildErrorRedirect(redirectPath, 'invalid-input'));
+      return sendErrorResponse('invalid-input', 'Invalid input', 400);
     }
 
     if (catalogService.toTrimmedString(req.body.productQuantity) && !hasValidQuantityValue(req.body.productQuantity)) {
-      return res.redirect(buildErrorRedirect(redirectPath, 'invalid-input'));
+      return sendErrorResponse('invalid-input', 'Invalid quantity', 400);
     }
 
     if (!productMatch) {
-      return res.redirect(buildErrorRedirect(redirectPath, 'product-not-found'));
+      return sendErrorResponse('product-not-found', 'Product not found', 404);
     }
 
     if (hasDuplicateProductName(productCategory, productName, catalog.productSections, productId)) {
-      return res.redirect(buildErrorRedirect(redirectPath, 'duplicate-product'));
+      return sendErrorResponse('duplicate-product', 'Product already exists', 409);
     }
 
     resolvedImagePath =
@@ -811,7 +887,7 @@ function editProduct(req, res) {
       adminData.productOverrides = {};
     }
 
-    adminData.productOverrides[productId] = {
+    var updatedProduct = {
       type: productCategory,
       name: productName,
       spec: productSpec,
@@ -821,6 +897,7 @@ function editProduct(req, res) {
       quantity: productQuantity,
       image: resolvedImagePath,
     };
+    adminData.productOverrides[productId] = updatedProduct;
 
     catalogService.upsertAdminCategory(productCategory, '', [productName]);
 
@@ -839,9 +916,12 @@ function editProduct(req, res) {
     }
 
     if (!await catalogService.saveAdminData()) {
-      return res.redirect(buildErrorRedirect(redirectPath, 'save-failed'));
+      return sendErrorResponse('save-failed', 'Failed to update product', 500);
     }
 
+    if (isAjax) {
+      return res.json({ success: true, message: 'Product updated successfully', productId: productId, product: updatedProduct });
+    }
     return res.redirect(buildStatusRedirect(redirectPath, 'product-updated'));
   });
 }
@@ -856,16 +936,26 @@ async function deleteProduct(req, res) {
   var deletedCategoryKey = '';
   var redirectPath = getSafeRedirectPath(req, defaultAdminPath);
   var hasMongoConfiguration = Boolean(String(process.env.MONGODB_URI || '').trim());
+  var isAjax = req.xhr || req.headers['x-requested-with'] === 'XMLHttpRequest' || req.headers.accept === 'application/json';
 
   if (hasMongoConfiguration && !await ensureDatabaseConnection()) {
+    if (isAjax) {
+      return res.status(503).json({ success: false, error: 'db-unavailable', message: 'Database unavailable' });
+    }
     return res.redirect(buildErrorRedirect(redirectPath, 'db-unavailable'));
   }
 
   if (!productId || !isValidEntityId(productId)) {
+    if (isAjax) {
+      return res.status(400).json({ success: false, error: 'product-id-required', message: 'Product ID required' });
+    }
     return res.redirect(buildErrorRedirect(redirectPath, 'product-id-required'));
   }
 
   if (!productMatch) {
+    if (isAjax) {
+      return res.status(404).json({ success: false, error: 'product-not-found', message: 'Product not found' });
+    }
     return res.redirect(buildErrorRedirect(redirectPath, 'product-not-found'));
   }
 
@@ -925,9 +1015,15 @@ async function deleteProduct(req, res) {
   }
 
   if (!await catalogService.saveAdminData()) {
+    if (isAjax) {
+      return res.status(500).json({ success: false, error: 'save-failed', message: 'Failed to delete product' });
+    }
     return res.redirect(buildErrorRedirect(redirectPath, 'save-failed'));
   }
 
+  if (isAjax) {
+    return res.json({ success: true, message: 'Product deleted successfully', productId: productId });
+  }
   return res.redirect(buildStatusRedirect(redirectPath, 'product-deleted'));
 }
 
@@ -948,12 +1044,19 @@ async function deleteCategory(req, res) {
   var deletedProductIds = [];
   var redirectPath = getSafeRedirectPath(req, defaultAdminPath);
   var hasMongoConfiguration = Boolean(String(process.env.MONGODB_URI || '').trim());
+  var isAjax = req.xhr || req.headers['x-requested-with'] === 'XMLHttpRequest' || req.headers.accept === 'application/json';
 
   if (hasMongoConfiguration && !await ensureDatabaseConnection()) {
+    if (isAjax) {
+      return res.status(503).json({ success: false, error: 'db-unavailable', message: 'Database unavailable' });
+    }
     return res.redirect(buildErrorRedirect(redirectPath, 'db-unavailable'));
   }
 
   if (!categoryName || !isWithinLength(categoryName, maxCategoryNameLength)) {
+    if (isAjax) {
+      return res.status(400).json({ success: false, error: 'category-name-required', message: 'Category name required' });
+    }
     return res.redirect(buildErrorRedirect(redirectPath, 'category-name-required'));
   }
 
@@ -962,6 +1065,9 @@ async function deleteCategory(req, res) {
   }) || null;
 
   if (!matchedBoard) {
+    if (isAjax) {
+      return res.status(404).json({ success: false, error: 'category-not-found', message: 'Category not found' });
+    }
     return res.redirect(buildErrorRedirect(redirectPath, 'category-not-found'));
   }
 
@@ -1036,9 +1142,15 @@ async function deleteCategory(req, res) {
   }
 
   if (!await catalogService.saveAdminData()) {
+    if (isAjax) {
+      return res.status(500).json({ success: false, error: 'save-failed', message: 'Failed to delete category' });
+    }
     return res.redirect(buildErrorRedirect(redirectPath, 'save-failed'));
   }
 
+  if (isAjax) {
+    return res.json({ success: true, message: 'Category deleted successfully', categoryName: matchedCategoryName });
+  }
   return res.redirect(buildStatusRedirect(defaultAdminPath, 'category-deleted'));
 }
 
@@ -1049,29 +1161,48 @@ async function saveCategory(req, res) {
   var categoryItems = sanitizeCategoryItems(req.body.categoryItems);
   var redirectPath = getSafeRedirectPath(req, defaultAdminPath);
   var hasMongoConfiguration = Boolean(String(process.env.MONGODB_URI || '').trim());
+  var isAjax = req.xhr || req.headers['x-requested-with'] === 'XMLHttpRequest' || req.headers.accept === 'application/json';
 
   if (hasMongoConfiguration && !await ensureDatabaseConnection()) {
+    if (isAjax) {
+      return res.status(503).json({ success: false, error: 'db-unavailable', message: 'Database unavailable' });
+    }
     return res.redirect(buildErrorRedirect(redirectPath, 'db-unavailable'));
   }
 
   if (!categoryName) {
+    if (isAjax) {
+      return res.status(400).json({ success: false, error: 'category-name-required', message: 'Category name required' });
+    }
     return res.redirect(buildErrorRedirect(redirectPath, 'category-name-required'));
   }
 
   if (!isWithinLength(categoryName, maxCategoryNameLength) || !isWithinLength(categoryDescription, maxCategoryDescriptionLength)) {
+    if (isAjax) {
+      return res.status(400).json({ success: false, error: 'invalid-input', message: 'Invalid input' });
+    }
     return res.redirect(buildErrorRedirect(redirectPath, 'invalid-input'));
   }
 
   if (parsedCategoryItems.length > maxCategoryItemsCount) {
+    if (isAjax) {
+      return res.status(400).json({ success: false, error: 'invalid-input', message: 'Too many items' });
+    }
     return res.redirect(buildErrorRedirect(redirectPath, 'invalid-input'));
   }
 
   catalogService.upsertAdminCategory(categoryName, categoryDescription, categoryItems);
 
   if (!await catalogService.saveAdminData()) {
+    if (isAjax) {
+      return res.status(500).json({ success: false, error: 'save-failed', message: 'Failed to save category' });
+    }
     return res.redirect(buildErrorRedirect(redirectPath, 'save-failed'));
   }
 
+  if (isAjax) {
+    return res.json({ success: true, message: 'Category saved successfully', categoryName: categoryName });
+  }
   return res.redirect(buildStatusRedirect(redirectPath, 'category-saved'));
 }
 
@@ -1081,6 +1212,7 @@ async function acceptOrderRequest(req, res) {
   var adminMessage = normalizeMultilineText(requestBody.adminMessage);
   var redirectPath = getSafeRedirectPath(req, defaultAdminOrdersPath);
   var hasMongoConfiguration = Boolean(String(process.env.MONGODB_URI || '').trim());
+  var isAjax = req.xhr || req.headers['x-requested-with'] === 'XMLHttpRequest' || req.headers.accept === 'application/json';
   var orderRecord = null;
   var orderStatus = '';
   var orderProductId = '';
@@ -1097,31 +1229,48 @@ async function acceptOrderRequest(req, res) {
   var productName = '';
   var orderRecordId = '';
 
+  function sendErrorResponse(errorCode, message, statusCode) {
+    if (isAjax) {
+      return res.status(statusCode || 400).json({ success: false, error: errorCode, message: message });
+    }
+    return res.redirect(buildErrorRedirect(redirectPath, errorCode));
+  }
+
+  function sendSuccessResponse(message) {
+    if (isAjax) {
+      return res.json({ success: true, message: message, orderId: orderId });
+    }
+    return res.redirect(buildStatusRedirect(redirectPath, 'order-accepted'));
+  }
+
   if (!orderId) {
-    return res.redirect(buildErrorRedirect(redirectPath, 'order-id-required'));
+    return sendErrorResponse('order-id-required', 'Order ID required');
   }
 
   if (!/^[a-f0-9]{24}$/i.test(orderId)) {
-    return res.redirect(buildErrorRedirect(redirectPath, 'order-not-found'));
+    return sendErrorResponse('order-not-found', 'Order not found', 404);
   }
 
   if (adminMessage.length > maxAdminOrderMessageLength) {
-    return res.redirect(buildErrorRedirect(redirectPath, 'invalid-input'));
+    return sendErrorResponse('invalid-input', 'Message too long');
   }
 
   try {
     if (!await ensureDatabaseConnection()) {
-      return res.redirect(buildErrorRedirect(redirectPath, 'db-unavailable'));
+      return sendErrorResponse('db-unavailable', 'Database unavailable', 503);
     }
 
     orderRecord = await Order.findById(orderId);
 
     if (!orderRecord) {
-      return res.redirect(buildErrorRedirect(redirectPath, 'order-not-found'));
+      return sendErrorResponse('order-not-found', 'Order not found', 404);
     }
 
     orderStatus = catalogService.toTrimmedString(orderRecord.adminStatus).toLowerCase();
     if (orderStatus === 'accepted') {
+      if (isAjax) {
+        return res.json({ success: true, message: 'Order already accepted', orderId: orderId, alreadyAccepted: true });
+      }
       return res.redirect(buildStatusRedirect(redirectPath, 'order-accepted'));
     }
 
@@ -1139,11 +1288,11 @@ async function acceptOrderRequest(req, res) {
 
         if (availableStockQuantity !== null) {
           if (availableStockQuantity < 1) {
-            return res.redirect(buildErrorRedirect(redirectPath, 'out-of-stock'));
+            return sendErrorResponse('out-of-stock', 'Product out of stock', 400);
           }
 
           if (orderQuantity > availableStockQuantity) {
-            return res.redirect(buildErrorRedirect(redirectPath, 'insufficient-stock'));
+            return sendErrorResponse('insufficient-stock', 'Insufficient stock', 400);
           }
 
           nextStockQuantity = String(Math.max(availableStockQuantity - orderQuantity, 0));
@@ -1182,10 +1331,9 @@ async function acceptOrderRequest(req, res) {
 
     if (stockUpdated && !await catalogService.saveAdminData()) {
       if (hasMongoConfiguration && !await ensureDatabaseConnection()) {
-        return res.redirect(buildErrorRedirect(redirectPath, 'db-unavailable'));
+        return sendErrorResponse('db-unavailable', 'Database unavailable', 503);
       }
-
-      return res.redirect(buildErrorRedirect(redirectPath, 'save-failed'));
+      return sendErrorResponse('save-failed', 'Failed to save', 500);
     }
 
     orderRecord.adminStatus = 'accepted';
@@ -1230,10 +1378,10 @@ async function acceptOrderRequest(req, res) {
       });
     }
 
-    return res.redirect(buildStatusRedirect(redirectPath, 'order-accepted'));
+    return sendSuccessResponse('Order accepted successfully');
   } catch (error) {
     console.error('Order accept action failed:', error.message);
-    return res.redirect(buildErrorRedirect(redirectPath, 'save-failed'));
+    return sendErrorResponse('save-failed', 'Failed to process order', 500);
   }
 }
 
@@ -1241,31 +1389,42 @@ async function deleteOrderRequest(req, res) {
   var requestBody = req && req.body && typeof req.body === 'object' ? req.body : {};
   var orderId = catalogService.toTrimmedString(requestBody.orderId);
   var redirectPath = getSafeRedirectPath(req, defaultAdminOrdersPath);
+  var isAjax = req.xhr || req.headers['x-requested-with'] === 'XMLHttpRequest' || req.headers.accept === 'application/json';
   var deletedOrder = null;
 
+  function sendErrorResponse(errorCode, message, statusCode) {
+    if (isAjax) {
+      return res.status(statusCode || 400).json({ success: false, error: errorCode, message: message });
+    }
+    return res.redirect(buildErrorRedirect(redirectPath, errorCode));
+  }
+
   if (!orderId) {
-    return res.redirect(buildErrorRedirect(redirectPath, 'order-id-required'));
+    return sendErrorResponse('order-id-required', 'Order ID required');
   }
 
   if (!/^[a-f0-9]{24}$/i.test(orderId)) {
-    return res.redirect(buildErrorRedirect(redirectPath, 'order-not-found'));
+    return sendErrorResponse('order-not-found', 'Order not found', 404);
   }
 
   try {
     if (!await ensureDatabaseConnection()) {
-      return res.redirect(buildErrorRedirect(redirectPath, 'db-unavailable'));
+      return sendErrorResponse('db-unavailable', 'Database unavailable', 503);
     }
 
     deletedOrder = await Order.findByIdAndDelete(orderId);
 
     if (!deletedOrder) {
-      return res.redirect(buildErrorRedirect(redirectPath, 'order-not-found'));
+      return sendErrorResponse('order-not-found', 'Order not found', 404);
     }
 
+    if (isAjax) {
+      return res.json({ success: true, message: 'Order deleted successfully', orderId: orderId });
+    }
     return res.redirect(buildStatusRedirect(redirectPath, 'order-deleted'));
   } catch (error) {
     console.error('Order delete action failed:', error.message);
-    return res.redirect(buildErrorRedirect(redirectPath, 'save-failed'));
+    return sendErrorResponse('save-failed', 'Failed to delete order', 500);
   }
 }
 
@@ -1274,27 +1433,52 @@ function saveProduct(req, res) {
     var redirectPath = getSafeRedirectPath(req, defaultAdminPath);
     var hasMongoConfiguration = Boolean(String(process.env.MONGODB_URI || '').trim());
     var hasDatabaseConnection = true;
+    var isAjax = req.xhr || req.headers['x-requested-with'] === 'XMLHttpRequest' || req.headers.accept === 'application/json';
+
+    function sendErrorResponse(errorCode, message, statusCode) {
+      if (isAjax) {
+        return res.status(statusCode || 400).json({ success: false, error: errorCode, message: message });
+      }
+      return res.redirect(buildErrorRedirect(redirectPath, errorCode));
+    }
+
+    async function cleanupRejectedUploadFile() {
+      var filePath = req && req.file && req.file.path ? String(req.file.path).trim() : '';
+      if (!filePath) {
+        return;
+      }
+
+      try {
+        await fs.promises.unlink(filePath);
+      } catch (error) {
+        if (error && error.code === 'ENOENT') {
+          return;
+        }
+        console.error('Failed to cleanup rejected upload:', error.message);
+      }
+    }
 
     if (uploadError) {
+      var errorCode = 'save-failed';
+      var errorMessage = 'Save failed';
       if (uploadError.code === 'LIMIT_FILE_SIZE') {
-        return res.redirect(buildErrorRedirect(redirectPath, 'image-too-large'));
+        errorCode = 'image-too-large';
+        errorMessage = 'Image too large';
+      } else if (uploadError.message === 'invalid-image-file') {
+        errorCode = 'invalid-image-file';
+        errorMessage = 'Invalid image file';
       }
-
-      if (uploadError.message === 'invalid-image-file') {
-        return res.redirect(buildErrorRedirect(redirectPath, 'invalid-image-file'));
-      }
-
-      return res.redirect(buildErrorRedirect(redirectPath, 'save-failed'));
+      return sendErrorResponse(errorCode, errorMessage, 400);
     }
 
     if (!req.file) {
-      return res.redirect(buildErrorRedirect(redirectPath, 'product-image-file-required'));
+      return sendErrorResponse('product-image-file-required', 'Product image required', 400);
     }
 
     if (hasMongoConfiguration) {
       hasDatabaseConnection = await ensureDatabaseConnection();
       if (!hasDatabaseConnection) {
-        return res.redirect(buildErrorRedirect(redirectPath, 'db-unavailable'));
+        return sendErrorResponse('db-unavailable', 'Database unavailable', 503);
       }
     }
 
@@ -1309,40 +1493,50 @@ function saveProduct(req, res) {
     var productPricing = resolveProductPricing(req.body.productPrice, req.body.productDiscountPercent);
     var productPrice = productPricing.price || 'Contact for price';
     var productQuantity = normalizeProductQuantity(req.body.productQuantity);
-    var uploadedImagePath = await catalogService.optimizeAndPromoteUploadedImage(req.file);
-    var primaryImage = uploadedImagePath || '';
-    var primaryImages = catalogService.normalizeImageList([primaryImage], primaryImage);
     var catalog = catalogService.getCatalogContext();
     var productId = catalogService.buildUniqueProductId(categoryName, productName, catalog.productSections);
     var adminData = catalogService.getAdminData();
+    var uploadedImagePath = '';
+    var primaryImage = '';
+    var primaryImages = [];
     var createdProductEntry = null;
 
     if (!categoryName || !isWithinLength(categoryName, maxCategoryNameLength)) {
-      return res.redirect(buildErrorRedirect(redirectPath, 'product-category-required'));
+      await cleanupRejectedUploadFile();
+      return sendErrorResponse('product-category-required', 'Product category required', 400);
     }
 
     if (!productName || !isWithinLength(productName, maxProductNameLength)) {
-      return res.redirect(buildErrorRedirect(redirectPath, 'product-name-required'));
+      await cleanupRejectedUploadFile();
+      return sendErrorResponse('product-name-required', 'Product name required', 400);
     }
 
     if (!hasValidPriceValue(req.body.productPrice) || productPricing.isPriceMissing) {
-      return res.redirect(buildErrorRedirect(redirectPath, 'product-price-required'));
+      await cleanupRejectedUploadFile();
+      return sendErrorResponse('product-price-required', 'Valid price required', 400);
     }
 
     if (!isWithinLength(rawProductSpec, maxProductSpecLength)) {
-      return res.redirect(buildErrorRedirect(redirectPath, 'invalid-input'));
+      await cleanupRejectedUploadFile();
+      return sendErrorResponse('invalid-input', 'Invalid input', 400);
     }
 
     if (!hasValidQuantityValue(req.body.productQuantity)) {
-      return res.redirect(buildErrorRedirect(redirectPath, 'invalid-input'));
-    }
-
-    if (!uploadedImagePath) {
-      return res.redirect(buildErrorRedirect(redirectPath, 'cloudinary-upload-failed'));
+      await cleanupRejectedUploadFile();
+      return sendErrorResponse('invalid-input', 'Invalid quantity', 400);
     }
 
     if (hasDuplicateProductName(categoryName, productName, catalog.productSections)) {
-      return res.redirect(buildErrorRedirect(redirectPath, 'duplicate-product'));
+      await cleanupRejectedUploadFile();
+      return sendErrorResponse('duplicate-product', 'Product already exists', 409);
+    }
+
+    uploadedImagePath = await catalogService.optimizeUploadedImage(req.file);
+    primaryImage = uploadedImagePath || '';
+    primaryImages = catalogService.normalizeImageList([primaryImage], primaryImage);
+
+    if (!uploadedImagePath) {
+      return sendErrorResponse('cloudinary-upload-failed', 'Image upload failed', 500);
     }
 
     catalogService.upsertAdminCategory(categoryName, '', [productName]);
@@ -1371,12 +1565,15 @@ function saveProduct(req, res) {
       if (hasMongoConfiguration) {
         hasDatabaseConnection = await ensureDatabaseConnection();
         if (!hasDatabaseConnection) {
-          return res.redirect(buildErrorRedirect(redirectPath, 'db-unavailable'));
+          return sendErrorResponse('db-unavailable', 'Database unavailable', 503);
         }
       }
-      return res.redirect(buildErrorRedirect(redirectPath, 'save-failed'));
+      return sendErrorResponse('save-failed', 'Failed to save product', 500);
     }
 
+    if (isAjax) {
+      return res.json({ success: true, message: 'Product saved successfully', product: createdProductEntry });
+    }
     return res.redirect(buildStatusRedirect(redirectPath, 'product-saved'));
   });
 }

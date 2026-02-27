@@ -728,7 +728,7 @@ function getLoginErrorMessage(errorCode) {
 
 function getSignupStatusMessage(statusCode, email) {
   if (statusCode === 'code-sent') {
-    return 'Verification code sent to ' + email + '. Check inbox/spam.';
+    return 'Verification code sent to ' + email + '. Email delivery is async and may take up to 1 minute. Check inbox/spam.';
   }
 
   return '';
@@ -1079,7 +1079,6 @@ function renderOrderPage(req, res, next) {
 }
 
 function renderLoginPage(req, res) {
-  var catalog = catalogService.getCatalogContext();
   var statusCodeFromQuery = toTrimmedString(req.query.status);
   var errorCodeFromQuery = toTrimmedString(req.query.error);
   var emailFromQuery = normalizeEmail(req.query.email);
@@ -1089,8 +1088,6 @@ function renderLoginPage(req, res) {
   var statusCode = '';
   var errorCode = '';
   var email = '';
-  var categoryGroupsForView = catalogService.buildCategoryViewData('', '', catalog.categoryGroups);
-  var openCategoryName = catalogService.getOpenCategoryName(categoryGroupsForView, '', '');
 
   if (req.userAuth) {
     return res.redirect('/');
@@ -1120,55 +1117,28 @@ function renderLoginPage(req, res) {
 
   return res.render('login', {
     title: 'Login | BhutanDevi Trade and Suppliers',
-    q: '',
-    activeCategory: '',
-    currentPath: req.path,
-    currentUser: req.userAuth || null,
-    showUserAuthActions: true,
-    hasQuery: false,
-    openCategoryName: openCategoryName,
-    categoryGroups: categoryGroupsForView,
     authEmail: email,
     minPasswordLength: minPasswordLength,
     maxPasswordLength: maxPasswordLength,
     maxEmailLength: maxEmailLength,
     statusMessage: getLoginStatusMessage(statusCode),
     errorMessage: getLoginErrorMessage(errorCode),
-    topNavCategories: catalog.categoryGroups,
-    searchSuggestions: catalogService.buildSearchSuggestions(catalog.categoryGroups, catalog.productSections),
-    basePath: '/',
   });
 }
 
 function renderLoginPageWithMessage(req, res, statusCode, errorCode, email) {
-  var catalog = catalogService.getCatalogContext();
-  var categoryGroupsForView = catalogService.buildCategoryViewData('', '', catalog.categoryGroups);
-  var openCategoryName = catalogService.getOpenCategoryName(categoryGroupsForView, '', '');
-
   return res.status(errorCode ? 400 : 200).render('login', {
     title: 'Login | BhutanDevi Trade and Suppliers',
-    q: '',
-    activeCategory: '',
-    currentPath: '/login',
-    currentUser: null,
-    showUserAuthActions: true,
-    hasQuery: false,
-    openCategoryName: openCategoryName,
-    categoryGroups: categoryGroupsForView,
     authEmail: normalizeEmail(email),
     minPasswordLength: minPasswordLength,
     maxPasswordLength: maxPasswordLength,
     maxEmailLength: maxEmailLength,
     statusMessage: getLoginStatusMessage(statusCode),
     errorMessage: getLoginErrorMessage(errorCode),
-    topNavCategories: catalog.categoryGroups,
-    searchSuggestions: catalogService.buildSearchSuggestions(catalog.categoryGroups, catalog.productSections),
-    basePath: '/',
   });
 }
 
 function renderSignupPage(req, res) {
-  var catalog = catalogService.getCatalogContext();
   var statusCodeFromQuery = toTrimmedString(req.query.status);
   var errorCodeFromQuery = toTrimmedString(req.query.error);
   var emailFromQuery = normalizeEmail(req.query.email);
@@ -1182,8 +1152,6 @@ function renderSignupPage(req, res) {
   var email = '';
   var name = '';
   var requireCode = statusCode === 'code-sent' && Boolean(email);
-  var categoryGroupsForView = catalogService.buildCategoryViewData('', '', catalog.categoryGroups);
-  var openCategoryName = catalogService.getOpenCategoryName(categoryGroupsForView, '', '');
 
   if (req.userAuth) {
     return res.redirect('/');
@@ -1223,14 +1191,6 @@ function renderSignupPage(req, res) {
 
   return res.render('signup', {
     title: 'Sign Up | BhutanDevi Trade and Suppliers',
-    q: '',
-    activeCategory: '',
-    currentPath: req.path,
-    currentUser: req.userAuth || null,
-    showUserAuthActions: true,
-    hasQuery: false,
-    openCategoryName: openCategoryName,
-    categoryGroups: categoryGroupsForView,
     authEmail: email,
     authName: name,
     minUserNameLength: minUserNameLength,
@@ -1242,14 +1202,10 @@ function renderSignupPage(req, res) {
     requireCode: requireCode,
     statusMessage: getSignupStatusMessage(statusCode, email),
     errorMessage: getSignupErrorMessage(errorCode),
-    topNavCategories: catalog.categoryGroups,
-    searchSuggestions: catalogService.buildSearchSuggestions(catalog.categoryGroups, catalog.productSections),
-    basePath: '/',
   });
 }
 
 function renderForgotPasswordPage(req, res) {
-  var catalog = catalogService.getCatalogContext();
   var statusCodeFromQuery = toTrimmedString(req.query.status);
   var errorCodeFromQuery = toTrimmedString(req.query.error);
   var emailFromQuery = normalizeEmail(req.query.email);
@@ -1261,8 +1217,6 @@ function renderForgotPasswordPage(req, res) {
   var email = '';
   var authenticatedUser = req.userAuth && req.userAuth.email ? req.userAuth : null;
   var requireCode = false;
-  var categoryGroupsForView = catalogService.buildCategoryViewData('', '', catalog.categoryGroups);
-  var openCategoryName = catalogService.getOpenCategoryName(categoryGroupsForView, '', '');
   var effectiveEmail = '';
 
   forgotState = getScopedStateFromCookie(req, forgotStateCookieName);
@@ -1293,14 +1247,6 @@ function renderForgotPasswordPage(req, res) {
 
   return res.render('forgot-password', {
     title: 'Forgot Password | BhutanDevi Trade and Suppliers',
-    q: '',
-    activeCategory: '',
-    currentPath: req.path,
-    currentUser: req.userAuth || null,
-    showUserAuthActions: true,
-    hasQuery: false,
-    openCategoryName: openCategoryName,
-    categoryGroups: categoryGroupsForView,
     authEmail: effectiveEmail,
     minPasswordLength: minPasswordLength,
     maxPasswordLength: maxPasswordLength,
@@ -1309,9 +1255,6 @@ function renderForgotPasswordPage(req, res) {
     requireCode: requireCode,
     statusMessage: getForgotPasswordStatusMessage(statusCode, effectiveEmail),
     errorMessage: getForgotPasswordErrorMessage(errorCode),
-    topNavCategories: catalog.categoryGroups,
-    searchSuggestions: catalogService.buildSearchSuggestions(catalog.categoryGroups, catalog.productSections),
-    basePath: '/',
   });
 }
 

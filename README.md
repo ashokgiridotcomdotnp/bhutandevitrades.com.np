@@ -159,7 +159,7 @@ Priority order:
 MongoDB model key:
 
 ```
-key: "catalog-admin-data"
+key: "catalog-admin-state"
 ```
 
 Fallback file:
@@ -386,7 +386,7 @@ Structure:
 Only one document must exist:
 
 ```
-key = "catalog-admin-data"
+key = "catalog-admin-state"
 ```
 
 ---

@@ -186,7 +186,21 @@
     showNav();
   }
 
+  function initMobileBottomNav() {
+    var categoriesButton = document.getElementById('mobile-nav-categories');
+    var sidebarOpenButton = document.getElementById('mobile-sidebar-open');
+
+    if (!categoriesButton || !sidebarOpenButton) {
+      return;
+    }
+
+    categoriesButton.addEventListener('click', function () {
+      sidebarOpenButton.click();
+    });
+  }
+
   initUserMenu();
   initCategoryScrollArrow();
   initMobileNavAutoHide();
+  initMobileBottomNav();
 })();
