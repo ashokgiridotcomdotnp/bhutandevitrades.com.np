@@ -1,53 +1,19 @@
 {
-  "categories": [
-    {
-      "name": "Helmet",
-      "description": "Stm Helmet is Available",
-      "items": [
-        "Stm"
-      ]
-    },
-    {
-      "name": "Tyre",
-      "description": "All Kind Of Tyre is Available",
-      "items": [
-        "Yamaha"
-      ]
-    }
-  ],
-  "products": [
-    {
-      "id": "tyre-yamaha",
-      "type": "Tyre",
-      "name": "Yamaha",
-      "spec": "Yamaha Tyre is here",
-      "price": "NPR 1,800",
-      "originalPrice": "NPR 2,000",
-      "discountPercent": "10",
-      "quantity": "20",
-      "image": "https://res.cloudinary.com/di4d5iphe/image/upload/v1772204555/bhutandevi/products/a42dnlpmvr4wlxv7xtwt.webp",
-      "images": [
-        "https://res.cloudinary.com/di4d5iphe/image/upload/v1772204555/bhutandevi/products/a42dnlpmvr4wlxv7xtwt.webp"
-      ]
-    },
-    {
-      "id": "helmet-stm",
-      "type": "Helmet",
-      "name": "Stm",
-      "spec": "Type: Half | stm",
-      "price": "NPR 4,140",
-      "originalPrice": "NPR 4,600",
-      "discountPercent": "10",
-      "quantity": "30",
-      "image": "https://res.cloudinary.com/di4d5iphe/image/upload/v1772204858/bhutandevi/products/okia4ogcdkq4lipdqkhc.webp",
-      "images": [
-        "https://res.cloudinary.com/di4d5iphe/image/upload/v1772204858/bhutandevi/products/okia4ogcdkq4lipdqkhc.webp"
-      ]
-    }
-  ],
+  "categories": [],
+  "products": [],
   "priceOverrides": {},
   "imageOverrides": {},
   "productOverrides": {},
-  "deletedProductIds": [],
-  "deletedCategoryNames": []
+  "deletedProductIds": [
+    "mobils-servo",
+    "helmet-stm"
+  ],
+  "deletedCategoryNames": [
+    "Kera",
+    "Lado",
+    "askdn sa",
+    "ad kas dkas dka dkas d",
+    "Helmet",
+    "Mobil"
+  ]
 }

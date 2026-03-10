@@ -1,3 +1,4 @@
+var mongoose = require('mongoose');
 var crypto = require('crypto');
 var catalogService = require('../services/catalogService');
 var database = require('../lib/db');
@@ -25,6 +26,10 @@ var forgotPrefillCookieName = 'bd_forgot_prefill';
 var forgotStateCookieName = 'bd_forgot_state';
 var profileStateCookieName = 'bd_profile_state';
 var homeStateCookieName = 'bd_home_state';
+var supportedAuthCodePurposes = {
+  signup: true,
+  'password-reset': true,
+};
 
 function toTrimmedString(value) {
   return String(value || '').trim();
@@ -565,6 +570,22 @@ async function doesPasswordMatch(password, salt, expectedHash) {
   }
 }
 
+function isSupportedAuthCodePurpose(purpose) {
+  return Boolean(supportedAuthCodePurposes[toTrimmedString(purpose)]);
+}
+
+function getAuthCodeActionText(purpose) {
+  if (purpose === 'signup') {
+    return 'email verification';
+  }
+
+  if (purpose === 'password-reset') {
+    return 'password reset';
+  }
+
+  return 'verification';
+}
+
 function buildOtpEmailSubject(purpose, code) {
   if (purpose === 'signup') {
     return 'Your BhutanDevi email verification code: ' + code;
@@ -574,17 +595,11 @@ function buildOtpEmailSubject(purpose, code) {
     return 'Your BhutanDevi password reset code: ' + code;
   }
 
-  return 'Your BhutanDevi login code: ' + code;
+  return 'Your BhutanDevi verification code: ' + code;
 }
 
 function buildOtpEmailText(purpose, code) {
-  var actionText = 'login';
-
-  if (purpose === 'signup') {
-    actionText = 'email verification';
-  } else if (purpose === 'password-reset') {
-    actionText = 'password reset';
-  }
+  var actionText = getAuthCodeActionText(purpose);
 
   return [
     'Your BhutanDevi ' + actionText + ' code is: ' + code,
@@ -595,13 +610,7 @@ function buildOtpEmailText(purpose, code) {
 }
 
 function buildOtpEmailHtml(purpose, code) {
-  var actionText = 'login';
-
-  if (purpose === 'signup') {
-    actionText = 'email verification';
-  } else if (purpose === 'password-reset') {
-    actionText = 'password reset';
-  }
+  var actionText = getAuthCodeActionText(purpose);
 
   return [
     '<div style="font-family:Arial,sans-serif;line-height:1.5;color:#0f172a;">',
@@ -618,8 +627,39 @@ async function ensureDatabaseConnection() {
   return database.connectToDatabase();
 }
 
+async function getAcceptedSoldStockCount(productId) {
+  var normalizedProductId = toTrimmedString(productId);
+  var acceptedOrders = [];
+
+  if (!normalizedProductId) {
+    return 0;
+  }
+
+  try {
+    if (!await ensureDatabaseConnection()) {
+      return 0;
+    }
+
+    acceptedOrders = await Order.find({
+      productId: normalizedProductId,
+      adminStatus: 'accepted',
+    }).select('quantity').lean();
+
+    return acceptedOrders.reduce(function (total, orderRecord) {
+      return total + parsePositiveInteger(orderRecord && orderRecord.quantity, 1);
+    }, 0);
+  } catch (error) {
+    console.error('Failed to load sold stock count:', error.message);
+    return 0;
+  }
+}
+
 async function issueAuthCode(email, purpose, name, passwordPayload) {
   var code = generateAuthCode();
+
+  if (!isSupportedAuthCodePurpose(purpose)) {
+    throw new Error('unsupported-auth-code-purpose');
+  }
 
   await UserAuthCode.deleteMany({
     email: email,
@@ -641,11 +681,19 @@ async function issueAuthCode(email, purpose, name, passwordPayload) {
 }
 
 async function verifyAuthCode(email, purpose, verificationCode) {
+  if (!isSupportedAuthCodePurpose(purpose)) {
+    return {
+      ok: false,
+      errorCode: 'invalid-code',
+      record: null,
+    };
+  }
+
   var codeRecord = await UserAuthCode.findOne({
     email: email,
     purpose: purpose,
     usedAt: null,
-    expiresAt: { $gt: new Date() },
+    expiresAt: mongoose.trusted({ $gt: new Date() }),
   }).sort({ createdAt: -1 });
 
   if (!codeRecord) {
@@ -1001,7 +1049,7 @@ function renderHomePage(req, res, next) {
   });
 }
 
-function renderProductDetail(req, res, next) {
+async function renderProductDetail(req, res, next) {
   var productId = typeof req.params.productId === 'string' ? req.params.productId.trim() : '';
   var q = typeof req.query.q === 'string' ? req.query.q.trim() : '';
   var rawCategory = typeof req.query.category === 'string' ? req.query.category.trim() : '';
@@ -1010,10 +1058,13 @@ function renderProductDetail(req, res, next) {
   var categoryGroupsForView = catalogService.buildCategoryViewData(q, selectedCategory, catalog.categoryGroups);
   var openCategoryName = catalogService.getOpenCategoryName(categoryGroupsForView, selectedCategory, q);
   var productMatch = catalogService.findProductById(productId, catalog.productSections);
+  var soldStockCount = 0;
 
   if (!productMatch) {
     return next();
   }
+
+  soldStockCount = await getAcceptedSoldStockCount(productMatch.item && productMatch.item.id);
 
   res.render('product-detail', {
     title: productMatch.item.name + ' | BhutanDevi Trade and Suppliers',
@@ -1026,7 +1077,7 @@ function renderProductDetail(req, res, next) {
     openCategoryName: openCategoryName,
     categoryGroups: categoryGroupsForView,
     product: productMatch.item,
-    sectionTitle: productMatch.sectionTitle,
+    soldStockCount: soldStockCount,
     topNavCategories: catalog.categoryGroups,
     searchSuggestions: catalogService.buildSearchSuggestions(catalog.categoryGroups, catalog.productSections),
     storeWhatsappNumber: getStoreWhatsappNumber(),

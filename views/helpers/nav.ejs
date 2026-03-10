@@ -50,7 +50,7 @@
           <% } %>
 
           <a href="<%= currentBasePath %>" class="inline-flex shrink-0 items-center gap-2 rounded-xl bg-slate-900 px-3 py-2 text-white shadow-sm hover:-translate-y-0.5 hover:shadow-md">
-            <img src="/icons/logo.svg" alt="BhutanDevi logo" class="h-7 w-7 rounded-full bg-white p-1" />
+            <img src="/images/logo.png" alt="BhutanDevi logo" class="h-7 w-7 rounded-full border border-white object-contain" />
             <span class="hidden whitespace-nowrap text-[11px] font-bold tracking-wide text-slate-100 sm:block">bhutandevitradeandsuppliers</span>
           </a>
 
@@ -160,7 +160,7 @@
 
           <% if (shouldShowUserAuthActions && !authenticatedUser) { %>
           <div class="ml-1 flex shrink-0 items-center gap-2 border-l border-slate-200 pl-2">
-            <a href="/login" class="<%= isLoginPath ? 'pro-btn-primary px-3 py-1.5 text-xs' : 'pro-btn-secondary px-3 py-1.5 text-xs' %> gap-1.5">
+            <a href="/login" class="<%= isLoginPath ? 'pro-btn-primary pro-btn-xs' : 'pro-btn-secondary pro-btn-xs' %> gap-1.5">
               <img
                 src="<%= isLoginPath ? '/icons/login-white.svg' : '/icons/login-black.svg' %>"
                 alt=""
@@ -170,7 +170,7 @@
               />
               <span>Login</span>
             </a>
-            <a href="/signup" class="<%= isSignupPath ? 'pro-btn-primary px-3 py-1.5 text-xs' : 'pro-btn-secondary px-3 py-1.5 text-xs' %> gap-1.5">
+            <a href="/signup" class="<%= isSignupPath ? 'pro-btn-primary pro-btn-xs' : 'pro-btn-secondary pro-btn-xs' %> gap-1.5">
               <img
                 src="<%= isSignupPath ? '/icons/signup-white.svg' : '/icons/signup-black.svg' %>"
                 alt=""
@@ -191,7 +191,7 @@
 </nav>
 
 <% /* Mobile Bottom Navigation Bar */ %>
-<div class="fixed bottom-0 left-0 right-0 z-[60] border-t border-slate-200 bg-white px-2 py-2 shadow-[0_-4px_20px_rgba(15,23,42,0.08)] lg:hidden">
+<div data-mobile-bottom-nav class="fixed bottom-0 left-0 right-0 z-[60] border-t border-slate-200 bg-white px-2 py-2 shadow-[0_-4px_20px_rgba(15,23,42,0.08)] lg:hidden">
   <div class="flex items-center justify-around">
     <% /* Home */ %>
     <a href="<%= currentBasePath %>" class="flex flex-col items-center gap-0.5 rounded-lg px-3 py-1.5 transition <%= currentPathname === currentBasePath || currentPathname === '/' ? 'text-cyan-700' : 'text-slate-500 hover:text-slate-700' %>">
@@ -230,13 +230,4 @@
   </div>
 </div>
 
-<% /* Add padding to body for mobile bottom nav */ %>
-<style>
-  @media (max-width: 1023px) {
-    body {
-      padding-bottom: 4rem;
-    }
-  }
-</style>
-
-<script src="/javascripts/nav.js"></script>
+<script src="<%= assetPath('/javascripts/nav.js') %>"></script>

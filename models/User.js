@@ -37,24 +37,13 @@ var userSchema = new mongoose.Schema(
       type: Date,
       default: null,
     },
-    createdAt: {
-      type: Date,
-      default: Date.now,
-    },
-    updatedAt: {
-      type: Date,
-      default: Date.now,
-    },
   },
   {
     versionKey: false,
     minimize: false,
+    timestamps: true,
   }
 );
-
-userSchema.pre('save', function () {
-  this.updatedAt = new Date();
-});
 
 userSchema.index({ updatedAt: -1 });
 

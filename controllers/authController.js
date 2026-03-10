@@ -1,6 +1,28 @@
 var adminAuth = require('../lib/adminAuth');
 var fs = require('fs');
 var path = require('path');
+var minAdminPasswordLength = 8;
+var maxAdminPasswordLength = 128;
+var adminPasswordPattern = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]+$/;
+
+function isAjaxRequest(req) {
+  var requestedWithHeader = String(req && req.headers ? req.headers['x-requested-with'] || '' : '');
+  var acceptHeader = String(req && req.headers ? req.headers.accept || '' : '').toLowerCase();
+
+  return Boolean(
+    (req && req.xhr) ||
+    requestedWithHeader === 'XMLHttpRequest' ||
+    acceptHeader.indexOf('application/json') !== -1
+  );
+}
+
+function sendPasswordUpdateError(res, isAjax, errorCode, statusCode, message) {
+  if (isAjax) {
+    return res.status(statusCode).json({ success: false, message: message });
+  }
+
+  return res.redirect('/admin/profile?error=' + encodeURIComponent(errorCode));
+}
 
 function renderAdminLogin(req, res) {
   var legacyNextPath = adminAuth.getSafeAdminNextPath(req.query.next);
@@ -84,7 +106,10 @@ async function handleAdminLogin(req, res) {
 
   adminAuth.setAuthCookie(res, username);
   adminAuth.clearLoginState(res);
-  return res.redirect(nextPath);
+  // Add login success status to show toast notification
+  var redirectUrl = new URL(nextPath, 'http://localhost');
+  redirectUrl.searchParams.set('status', 'login-success');
+  return res.redirect(redirectUrl.pathname + redirectUrl.search);
 }
 
 async function handleAdminLogout(req, res) {
@@ -95,7 +120,9 @@ async function handleAdminLogout(req, res) {
 
 async function renderAdminProfile(req, res) {
   var authConfig = adminAuth.getAuthConfig();
-  var isAjax = req.xhr || req.headers['x-requested-with'] === 'XMLHttpRequest' || req.headers.accept === 'application/json';
+  var isAjax = isAjaxRequest(req);
+  var errorCode = String(req.query.error || '').trim();
+  var errorMessage = '';
 
   if (isAjax) {
     return res.json({
@@ -104,27 +131,62 @@ async function renderAdminProfile(req, res) {
     });
   }
 
+  if (errorCode === 'invalid-current-password') {
+    errorMessage = 'Current password is incorrect.';
+  }
+
+  if (errorCode === 'invalid-new-password') {
+    errorMessage = 'New password must be 8-128 characters and include uppercase, lowercase, number, and special character.';
+  }
+
+  if (errorCode === 'password-mismatch') {
+    errorMessage = 'New password and confirm password do not match.';
+  }
+
+  if (errorCode === 'password-update-failed') {
+    errorMessage = 'Failed to update password. Please try again.';
+  }
+
   return res.render('admin-profile', {
     title: 'Admin Profile | BhutanDevi Trade and Suppliers',
     username: authConfig.username,
     statusMessage: req.query.status === 'password-updated' ? 'Password updated successfully. Please log in again with your new password.' : '',
-    errorMessage: req.query.error === 'invalid-current-password' ? 'Current password is incorrect.' :
-      req.query.error === 'password-update-failed' ? 'Failed to update password. Please try again.' : '',
+    errorMessage: errorMessage,
   });
 }
 
 async function handleAdminUpdatePassword(req, res) {
   var currentPassword = String(req.body.currentPassword || '');
   var newPassword = String(req.body.newPassword || '');
+  var confirmPassword = String(req.body.confirmPassword || '');
   var authConfig = adminAuth.getAuthConfig();
-  var isAjax = req.xhr || req.headers['x-requested-with'] === 'XMLHttpRequest' || req.headers.accept === 'application/json';
+  var isAjax = isAjaxRequest(req);
+
+  if (!currentPassword || currentPassword.length > maxAdminPasswordLength) {
+    return sendPasswordUpdateError(res, isAjax, 'invalid-current-password', 400, 'Current password is required');
+  }
+
+  if (
+    newPassword.length < minAdminPasswordLength ||
+    newPassword.length > maxAdminPasswordLength ||
+    !adminPasswordPattern.test(newPassword)
+  ) {
+    return sendPasswordUpdateError(
+      res,
+      isAjax,
+      'invalid-new-password',
+      400,
+      'New password must be 8-128 characters and include uppercase, lowercase, number, and special character'
+    );
+  }
+
+  if (confirmPassword !== newPassword) {
+    return sendPasswordUpdateError(res, isAjax, 'password-mismatch', 400, 'New password and confirm password do not match');
+  }
 
   // Validate current password
   if (!adminAuth.validateCredentials(authConfig.username, currentPassword)) {
-    if (isAjax) {
-      return res.status(401).json({ success: false, message: 'Current password is incorrect' });
-    }
-    return res.redirect('/admin/profile?error=invalid-current-password');
+    return sendPasswordUpdateError(res, isAjax, 'invalid-current-password', 401, 'Current password is incorrect');
   }
 
   // Update password in environment (this will require server restart to take effect)
@@ -162,10 +224,7 @@ async function handleAdminUpdatePassword(req, res) {
     return res.redirect('/admin/profile?status=password-updated');
   } catch (error) {
     console.error('Failed to update admin password:', error);
-    if (isAjax) {
-      return res.status(500).json({ success: false, message: 'Failed to update password. Please try again.' });
-    }
-    return res.redirect('/admin/profile?error=password-update-failed');
+    return sendPasswordUpdateError(res, isAjax, 'password-update-failed', 500, 'Failed to update password. Please try again.');
   }
 }
 

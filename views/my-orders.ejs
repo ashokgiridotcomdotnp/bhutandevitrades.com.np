@@ -7,7 +7,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;700;800&display=swap" rel="stylesheet" />
     <title><%= title %></title>
-    <link rel="stylesheet" href="/stylesheets/style.css" />
+    <link rel="stylesheet" href="<%= assetPath('/stylesheets/style.css') %>" />
   </head>
   <body class="text-slate-900">
     <%- include('helpers/nav', { title: 'BhutanDevi Trade and Suppliers', q, activeCategory, hasSidebar: true, topNavCategories, searchSuggestions, basePath, currentPath, currentUser, showUserAuthActions }) %>
@@ -162,7 +162,7 @@
 
                 <% if (productId) { %>
                 <div class="mt-auto pt-3">
-                  <a href="/order/<%= encodeURIComponent(productId) %>" class="pro-btn-secondary px-3 py-1.5 text-xs">Order Again</a>
+                  <a href="/order/<%= encodeURIComponent(productId) %>" class="pro-btn-secondary pro-btn-xs">Order Again</a>
                 </div>
                 <% } %>
               </article>

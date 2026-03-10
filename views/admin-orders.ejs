@@ -7,7 +7,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;700;800&display=swap" rel="stylesheet" />
     <title><%= title %></title>
-    <link rel="stylesheet" href="/stylesheets/style.css" />
+    <link rel="stylesheet" href="<%= assetPath('/stylesheets/style.css') %>" />
   </head>
   <body class="text-slate-900">
     <main class="app-shell py-6 pro-page-enter">
@@ -78,10 +78,10 @@
           </div>
 
           <div class="ml-auto flex flex-wrap items-center gap-2">
-            <a href="/admin" class="pro-btn-secondary px-3 py-1.5 text-sm">Dashboard</a>
-            <a href="/" class="pro-btn-secondary px-3 py-1.5 text-sm">Storefront</a>
+            <a href="/admin" class="pro-btn-secondary pro-btn-sm">Dashboard</a>
+            <a href="/" class="pro-btn-secondary pro-btn-sm">Storefront</a>
             <form action="/admin/logout" method="post">
-              <button type="submit" class="pro-btn-secondary gap-1.5 px-3 py-1.5 text-sm">
+              <button type="submit" class="pro-btn-secondary pro-btn-sm gap-1.5">
                 <img src="/icons/logout.svg" alt="" aria-hidden="true" class="shrink-0" style="width: 14px; height: 14px;" />
                 <span>Logout</span>
               </button>
@@ -134,7 +134,7 @@
           <div class="flex flex-wrap items-center gap-2" role="tablist" aria-label="Order request status tabs">
             <a
               href="<%= buildOrdersPageHref(1, 'pending') %>"
-              class="<%= selectedOrderView === 'pending' ? 'pro-btn-primary' : 'pro-btn-secondary' %> px-3 py-1.5 text-sm"
+              class="<%= selectedOrderView === 'pending' ? 'pro-btn-primary' : 'pro-btn-secondary' %> pro-btn-sm"
               data-orders-nav-link
               aria-pressed="<%= selectedOrderView === 'pending' ? 'true' : 'false' %>"
             >
@@ -143,7 +143,7 @@
             </a>
             <a
               href="<%= buildOrdersPageHref(1, 'accepted') %>"
-              class="<%= selectedOrderView === 'accepted' ? 'pro-btn-primary' : 'pro-btn-secondary' %> px-3 py-1.5 text-sm"
+              class="<%= selectedOrderView === 'accepted' ? 'pro-btn-primary' : 'pro-btn-secondary' %> pro-btn-sm"
               data-orders-nav-link
               aria-pressed="<%= selectedOrderView === 'accepted' ? 'true' : 'false' %>"
             >
@@ -249,20 +249,20 @@
                   <td class="border border-slate-200 px-3 py-2">
                     <div class="flex flex-wrap items-center gap-2">
                       <% if (productId) { %>
-                      <a href="/products/<%= encodeURIComponent(productId) %>" class="pro-btn-secondary px-2.5 py-1 text-xs">Open</a>
+                      <a href="/products/<%= encodeURIComponent(productId) %>" class="pro-btn-secondary pro-btn-xs pro-btn-action">Open</a>
                       <% } else { %>
-                      <span class="pro-btn-secondary pointer-events-none px-2.5 py-1 text-xs opacity-50" aria-disabled="true">Open</span>
+                      <span class="pro-btn-secondary pro-btn-xs pro-btn-action pointer-events-none opacity-50" aria-disabled="true">Open</span>
                       <% } %>
                       <form action="/admin/orders/accept" method="post" data-orders-nav-form>
                         <input type="hidden" name="orderId" value="<%= orderId %>" />
                         <input type="hidden" name="redirectTo" value="<%= ordersPagePath %>" data-order-redirect-input />
                         <input type="hidden" name="adminMessage" value="" />
-                        <button type="submit" class="pro-btn-primary px-2.5 py-1 text-xs">Accept</button>
+                        <button type="submit" class="pro-btn-primary pro-btn-xs pro-btn-action">Accept</button>
                       </form>
                       <form action="/admin/orders/delete" method="post" data-orders-nav-form onsubmit="return window.confirm('Delete this order request?');">
                         <input type="hidden" name="orderId" value="<%= orderId %>" />
                         <input type="hidden" name="redirectTo" value="<%= ordersPagePath %>" data-order-redirect-input />
-                        <button type="submit" class="pro-btn-danger-muted px-2.5 py-1 text-xs">Delete</button>
+                        <button type="submit" class="pro-btn-danger-muted pro-btn-xs pro-btn-action">Delete</button>
                       </form>
                     </div>
                   </td>
@@ -277,7 +277,7 @@
           <div class="mt-3 flex flex-wrap items-center justify-between gap-2">
             <a
               href="<%= buildOrdersPageHref(selectedOrdersCurrentPage - 1, 'pending') %>"
-              class="pro-btn-secondary px-3 py-1.5 text-xs <%= selectedOrdersCurrentPage <= 1 ? 'pointer-events-none opacity-50' : '' %>"
+              class="pro-btn-secondary pro-btn-xs <%= selectedOrdersCurrentPage <= 1 ? 'pointer-events-none opacity-50' : '' %>"
               aria-disabled="<%= selectedOrdersCurrentPage <= 1 ? 'true' : 'false' %>"
               data-orders-nav-link
             >
@@ -290,7 +290,7 @@
 
             <a
               href="<%= buildOrdersPageHref(selectedOrdersCurrentPage + 1, 'pending') %>"
-              class="pro-btn-secondary px-3 py-1.5 text-xs <%= selectedOrdersCurrentPage >= selectedOrdersTotalPages ? 'pointer-events-none opacity-50' : '' %>"
+              class="pro-btn-secondary pro-btn-xs <%= selectedOrdersCurrentPage >= selectedOrdersTotalPages ? 'pointer-events-none opacity-50' : '' %>"
               aria-disabled="<%= selectedOrdersCurrentPage >= selectedOrdersTotalPages ? 'true' : 'false' %>"
               data-orders-nav-link
             >
@@ -370,9 +370,9 @@
                   <td class="border border-slate-200 px-3 py-2">
                     <div class="flex flex-wrap items-center gap-2">
                       <% if (productIdAccepted) { %>
-                      <a href="/products/<%= encodeURIComponent(productIdAccepted) %>" class="pro-btn-secondary px-2.5 py-1 text-xs">Open</a>
+                      <a href="/products/<%= encodeURIComponent(productIdAccepted) %>" class="pro-btn-secondary pro-btn-xs pro-btn-action">Open</a>
                       <% } else { %>
-                      <span class="pro-btn-secondary pointer-events-none px-2.5 py-1 text-xs opacity-50" aria-disabled="true">Open</span>
+                      <span class="pro-btn-secondary pro-btn-xs pro-btn-action pointer-events-none opacity-50" aria-disabled="true">Open</span>
                       <% } %>
                       <span class="inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-semibold <%= isAdminEmailSent ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-amber-200 bg-amber-50 text-amber-700' %>">
                         <%= isAdminEmailSent ? 'Email Sent' : 'Email Not Sent' %>
@@ -380,7 +380,7 @@
                       <form action="/admin/orders/delete" method="post" data-orders-nav-form onsubmit="return window.confirm('Delete this order request?');">
                         <input type="hidden" name="orderId" value="<%= orderIdAccepted %>" />
                         <input type="hidden" name="redirectTo" value="<%= ordersPagePath %>" data-order-redirect-input />
-                        <button type="submit" class="pro-btn-danger-muted px-2.5 py-1 text-xs">Delete</button>
+                        <button type="submit" class="pro-btn-danger-muted pro-btn-xs pro-btn-action">Delete</button>
                       </form>
                     </div>
                   </td>
@@ -395,7 +395,7 @@
           <div class="mt-3 flex flex-wrap items-center justify-between gap-2">
             <a
               href="<%= buildOrdersPageHref(selectedOrdersCurrentPage - 1, 'accepted') %>"
-              class="pro-btn-secondary px-3 py-1.5 text-xs <%= selectedOrdersCurrentPage <= 1 ? 'pointer-events-none opacity-50' : '' %>"
+              class="pro-btn-secondary pro-btn-xs <%= selectedOrdersCurrentPage <= 1 ? 'pointer-events-none opacity-50' : '' %>"
               aria-disabled="<%= selectedOrdersCurrentPage <= 1 ? 'true' : 'false' %>"
               data-orders-nav-link
             >
@@ -408,7 +408,7 @@
 
             <a
               href="<%= buildOrdersPageHref(selectedOrdersCurrentPage + 1, 'accepted') %>"
-              class="pro-btn-secondary px-3 py-1.5 text-xs <%= selectedOrdersCurrentPage >= selectedOrdersTotalPages ? 'pointer-events-none opacity-50' : '' %>"
+              class="pro-btn-secondary pro-btn-xs <%= selectedOrdersCurrentPage >= selectedOrdersTotalPages ? 'pointer-events-none opacity-50' : '' %>"
               aria-disabled="<%= selectedOrdersCurrentPage >= selectedOrdersTotalPages ? 'true' : 'false' %>"
               data-orders-nav-link
             >
@@ -423,8 +423,9 @@
     </main>
 
     <%- include('helpers/loading') %>
-    <script src="/javascripts/loading.js"></script>
-    <script src="/javascripts/admin-orders.js"></script>
-    <script src="/javascripts/flash-alert.js"></script>
+    <%- include('helpers/toaster') %>
+    <script src="<%= assetPath('/javascripts/loading.js') %>"></script>
+    <script src="<%= assetPath('/javascripts/admin-orders.js') %>"></script>
+    <script src="<%= assetPath('/javascripts/flash-alert.js') %>"></script>
   </body>
 </html>

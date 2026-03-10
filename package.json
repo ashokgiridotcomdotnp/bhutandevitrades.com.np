@@ -5,6 +5,8 @@
   "scripts": {
     "build:css": "tailwindcss -i ./src/styles/tailwind.css -o ./public/stylesheets/style.css --minify",
     "watch:css": "tailwindcss -i ./src/styles/tailwind.css -o ./public/stylesheets/style.css --watch",
+    "migrate:catalog:dry": "node ./scripts/migrate-catalog-admin-state.js --dry-run",
+    "migrate:catalog": "node ./scripts/migrate-catalog-admin-state.js",
     "prestart": "npm run build:css",
     "start": "nodemon ./bin/www"
   },
@@ -19,6 +21,7 @@
     "express": "~4.16.1",
     "express-rate-limit": "^8.2.1",
     "express-validator": "^7.3.1",
+    "flowbite": "^4.0.1",
     "helmet": "^8.1.0",
     "http-errors": "~1.6.3",
     "mongoose": "^9.2.1",

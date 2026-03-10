@@ -24,7 +24,10 @@
   var availableStockQuantity = parseAvailableStockQuantity(form.getAttribute('data-order-stock-quantity'));
 
   function parsePositiveNumber(value) {
-    var cleanValue = String(value || '').trim();
+    var cleanValue = String(value || '')
+      .replace(/,/g, '')
+      .replace(/[^0-9.]/g, '')
+      .trim();
     var parsedValue = Number(cleanValue);
 
     if (!Number.isFinite(parsedValue) || parsedValue <= 0) {

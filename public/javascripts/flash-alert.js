@@ -4,6 +4,9 @@
   var TOAST_DURATION_ERROR = 4500;
   var TOAST_DURATION_WARNING = 4000;
   var TOAST_ROOT_ID = 'bd-toast-root';
+  var TOAST_TEMPLATE_ID = 'bd-toast-template';
+  var TOAST_ROOT_CLASSNAME = 'bd-toast-root';
+  var TOAST_ITEM_CLASSNAME = 'bd-toast-item';
 
   function getToastRoot() {
     var existingRoot = document.getElementById(TOAST_ROOT_ID);
@@ -14,7 +17,7 @@
 
     var root = document.createElement('div');
     root.id = TOAST_ROOT_ID;
-    root.className = 'bd-toast-root';
+    root.className = TOAST_ROOT_CLASSNAME;
     document.body.appendChild(root);
     return root;
   }
@@ -31,6 +34,16 @@
         toast.parentNode.removeChild(toast);
       }
     }, 180);
+  }
+
+  function getToastTemplate() {
+    var template = document.getElementById(TOAST_TEMPLATE_ID);
+
+    if (!template || !template.content || !template.content.firstElementChild) {
+      return null;
+    }
+
+    return template;
   }
 
   function extractAlertMessage(alert) {
@@ -118,16 +131,30 @@
     return 'M5 11.917 9.724 16.5 19 7.5';
   }
 
-  function getToastIconClassName(type) {
+  function getToastIconWrapClassName(type) {
+    var baseClass = 'bd-toast-icon-wrap';
+
     if (type === 'error') {
-      return 'inline-flex items-center justify-center shrink-0 w-7 h-7 text-fg-danger bg-danger-soft rounded';
+      return baseClass + ' bd-toast-icon-wrap--error';
     }
 
     if (type === 'warning') {
-      return 'inline-flex items-center justify-center shrink-0 w-7 h-7 text-fg-warning bg-warning-soft rounded';
+      return baseClass + ' bd-toast-icon-wrap--warning';
     }
 
-    return 'inline-flex items-center justify-center shrink-0 w-7 h-7 text-fg-success bg-success-soft rounded';
+    return baseClass + ' bd-toast-icon-wrap--success';
+  }
+
+  function getToastItemTypeClassName(type) {
+    if (type === 'error') {
+      return 'bd-toast-item--error';
+    }
+
+    if (type === 'warning') {
+      return 'bd-toast-item--warning';
+    }
+
+    return 'bd-toast-item--success';
   }
 
   function getToastIconLabel(type) {
@@ -139,14 +166,16 @@
       return 'Warning icon';
     }
 
-    return 'Check icon';
+    return 'Success icon';
   }
 
-  function createSvg(pathValue) {
+  function createSvg(pathValue, className) {
     var svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
     var path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
 
-    svg.setAttribute('class', 'w-5 h-5');
+    if (className) {
+      svg.setAttribute('class', className);
+    }
     svg.setAttribute('aria-hidden', 'true');
     svg.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
     svg.setAttribute('width', '24');
@@ -165,40 +194,80 @@
   }
 
   function createToast(toastId, type, message) {
-    var toast = document.createElement('div');
-    var iconWrap = document.createElement('div');
-    var iconSrText = document.createElement('span');
-    var messageWrap = document.createElement('div');
-    var button = document.createElement('button');
-    var buttonSrText = document.createElement('span');
-    var closeSvg = createSvg('M6 18 17.94 6M18 18 6.06 6');
+    var template = getToastTemplate();
+    var toast = null;
+    var iconWrap = null;
+    var iconPath = null;
+    var iconSrText = null;
+    var messageWrap = null;
+    var button = null;
+    var buttonSrText = null;
+    var closeSvg = null;
 
+    if (template) {
+      toast = template.content.firstElementChild.cloneNode(true);
+    } else {
+      toast = document.createElement('div');
+      iconWrap = document.createElement('div');
+      iconSrText = document.createElement('span');
+      messageWrap = document.createElement('div');
+      button = document.createElement('button');
+      buttonSrText = document.createElement('span');
+      closeSvg = createSvg('M6 18 17.94 6M18 18 6.06 6', 'bd-toast-close-icon');
+
+      toast.className = TOAST_ITEM_CLASSNAME;
+      toast.setAttribute('role', 'alert');
+
+      iconWrap.className = getToastIconWrapClassName(type);
+      iconWrap.setAttribute('data-toast-icon-wrap', '');
+      iconWrap.appendChild(createSvg(getToastIconPath(type), 'bd-toast-icon-svg'));
+      iconPath = iconWrap.querySelector('path');
+
+      if (iconPath) {
+        iconPath.setAttribute('data-toast-icon-path', '');
+      }
+
+      iconSrText.className = 'sr-only';
+      iconSrText.setAttribute('data-toast-icon-label', '');
+      iconWrap.appendChild(iconSrText);
+      toast.appendChild(iconWrap);
+
+      messageWrap.className = 'bd-toast-message';
+      messageWrap.setAttribute('data-toast-message', '');
+      toast.appendChild(messageWrap);
+
+      button.type = 'button';
+      button.className = 'bd-toast-close';
+      button.setAttribute('data-toast-close', '');
+      button.setAttribute('aria-label', 'Close');
+
+      buttonSrText.className = 'sr-only';
+      buttonSrText.textContent = 'Close';
+      button.appendChild(buttonSrText);
+      button.appendChild(closeSvg);
+      toast.appendChild(button);
+    }
+
+    toast.className = TOAST_ITEM_CLASSNAME + ' ' + getToastItemTypeClassName(type);
     toast.id = toastId;
-    toast.className = 'bd-toast-item flex items-center w-full max-w-sm p-4 text-body bg-neutral-primary-soft rounded-base shadow-xs border border-default';
     toast.setAttribute('role', 'alert');
 
-    iconWrap.className = getToastIconClassName(type);
-    iconWrap.appendChild(createSvg(getToastIconPath(type)));
+    iconWrap = toast.querySelector('[data-toast-icon-wrap]');
+    iconPath = toast.querySelector('[data-toast-icon-path]');
+    iconSrText = toast.querySelector('[data-toast-icon-label]');
+    messageWrap = toast.querySelector('[data-toast-message]');
+    button = toast.querySelector('[data-toast-close]');
 
-    iconSrText.className = 'sr-only';
+    if (!iconWrap || !iconPath || !iconSrText || !messageWrap || !button) {
+      return null;
+    }
+
+    iconWrap.className = getToastIconWrapClassName(type);
+    iconPath.setAttribute('d', getToastIconPath(type));
     iconSrText.textContent = getToastIconLabel(type);
-    iconWrap.appendChild(iconSrText);
-    toast.appendChild(iconWrap);
-
-    messageWrap.className = 'ms-3 text-sm font-normal';
     messageWrap.textContent = message;
-    toast.appendChild(messageWrap);
-
-    button.type = 'button';
-    button.className = 'ms-auto flex items-center justify-center text-body hover:text-heading bg-transparent box-border border border-transparent hover:bg-neutral-secondary-medium focus:ring-4 focus:ring-neutral-tertiary font-medium leading-5 rounded text-sm h-8 w-8 focus:outline-none';
     button.setAttribute('data-dismiss-target', '#' + toastId);
     button.setAttribute('aria-label', 'Close');
-
-    buttonSrText.className = 'sr-only';
-    buttonSrText.textContent = 'Close';
-    button.appendChild(buttonSrText);
-    button.appendChild(closeSvg);
-    toast.appendChild(button);
 
     return toast;
   }
@@ -238,13 +307,26 @@
 
     toastId = 'toast-' + type + '-' + Date.now() + '-' + Math.floor(Math.random() * 1000);
     toast = createToast(toastId, type, message);
-    closeButton = toast.querySelector('button[data-dismiss-target]');
-    closeButton.addEventListener('click', function () {
-      removeToast(toast);
-    });
+
+    if (!toast) {
+      return;
+    }
+
+    closeButton = toast.querySelector('[data-toast-close]');
+
+    if (!closeButton) {
+      closeButton = toast.querySelector('button[data-dismiss-target]');
+    }
+
+    if (closeButton) {
+      closeButton.addEventListener('click', function () {
+        removeToast(toast);
+      });
+    }
 
     toastRoot.appendChild(toast);
     window.requestAnimationFrame(function () {
+      toast.classList.remove('is-leaving');
       toast.classList.add('is-visible');
     });
 

@@ -7,7 +7,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;700;800&display=swap" rel="stylesheet" />
     <title><%= title %></title>
-    <link rel="stylesheet" href="/stylesheets/style.css" />
+    <link rel="stylesheet" href="<%= assetPath('/stylesheets/style.css') %>" />
   </head>
   <body class="text-slate-900">
     <%- include('helpers/nav', { title: 'BhutanDevi Trade and Suppliers', q, activeCategory, hasSidebar: true, topNavCategories, searchSuggestions, basePath, currentPath, currentUser, showUserAuthActions }) %>
@@ -141,6 +141,7 @@
       </div>
     </main>
     <%- include('helpers/footer', { basePath, currentPath, categoryGroups, currentUser }) %>
-    <script src="/javascripts/flash-alert.js"></script>
+    <%- include('helpers/toaster') %>
+    <script src="<%= assetPath('/javascripts/flash-alert.js') %>"></script>
   </body>
 </html>

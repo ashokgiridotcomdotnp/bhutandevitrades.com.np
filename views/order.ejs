@@ -7,7 +7,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;700;800&display=swap" rel="stylesheet" />
     <title><%= title %></title>
-    <link rel="stylesheet" href="/stylesheets/style.css" />
+    <link rel="stylesheet" href="<%= assetPath('/stylesheets/style.css') %>" />
   </head>
   <body class="text-slate-900">
     <%- include('helpers/nav', { title: 'BhutanDevi Trade and Suppliers', q, activeCategory, hasSidebar: true, topNavCategories, searchSuggestions, basePath, currentPath, currentUser, showUserAuthActions }) %>
@@ -19,7 +19,10 @@
         <section class="min-w-0 pro-page-enter">
           <%
             function extractNumericPrice(value) {
-              var cleanValue = String(value || '').trim();
+              var cleanValue = String(value || '')
+                .replace(/,/g, '')
+                .replace(/[^0-9.]/g, '')
+                .trim();
               var parsedValue = Number(cleanValue);
 
               if (!Number.isFinite(parsedValue) || parsedValue <= 0) {
@@ -73,6 +76,8 @@
             var hasKnownStockQuantity = availableStockQuantity !== null;
             var isOutOfStock = hasKnownStockQuantity && availableStockQuantity < 1;
             var quantityInputMax = hasKnownStockQuantity && availableStockQuantity > 0 ? availableStockQuantity : 999;
+            var defaultOrderQuantity = 1;
+            var defaultOrderTotal = unitPriceValue > 0 ? (defaultOrderQuantity * unitPriceValue) : 0;
           %>
 
           <article class="pro-panel p-4 sm:p-6 pro-stagger">
@@ -138,7 +143,7 @@
                       min="1"
                       max="<%= quantityInputMax %>"
                       step="1"
-                      value="1"
+                      value="<%= defaultOrderQuantity %>"
                       required
                       class="pro-input"
                       data-order-quantity
@@ -159,7 +164,7 @@
 
                 <div class="rounded-xl border border-cyan-200 bg-cyan-50 px-3 py-2">
                   <p class="text-xs font-semibold uppercase tracking-wide text-cyan-800">Order Total</p>
-                  <p class="text-2xl font-extrabold tracking-tight text-cyan-900" data-order-total><%= unitPriceValue > 0 ? ('NPR ' + formatNprAmount(unitPriceValue)) : 'Contact for price' %></p>
+                  <p class="text-2xl font-extrabold tracking-tight text-cyan-900" data-order-total><%= defaultOrderTotal > 0 ? ('NPR ' + formatNprAmount(defaultOrderTotal)) : 'Contact for price' %></p>
                 </div>
 
                 <div class="grid gap-3 sm:grid-cols-2">
@@ -210,7 +215,7 @@
                 <div class="grid grid-cols-1 gap-2 border-t border-slate-200 pt-3 sm:flex sm:flex-wrap sm:items-center sm:justify-end">
                   <a
                     href="<%= callHref %>"
-                    class="pro-btn-secondary w-full gap-1.5 px-3 py-2 text-xs sm:w-auto sm:py-1.5 <%= hasStoreContactNumber ? '' : 'pointer-events-none opacity-50' %>"
+                    class="pro-btn-secondary pro-btn-xs w-full gap-1.5 sm:w-auto <%= hasStoreContactNumber ? '' : 'pointer-events-none opacity-50' %>"
                     aria-disabled="<%= hasStoreContactNumber ? 'false' : 'true' %>"
                   >
                     <img src="/icons/phone.svg" alt="" aria-hidden="true" class="shrink-0" style="width: 14px; height: 14px;" />
@@ -218,7 +223,7 @@
                   </a>
                   <button
                     type="submit"
-                    class="pro-btn-secondary w-full gap-1.5 px-3 py-2 text-xs sm:w-auto sm:py-1.5 <%= isOutOfStock ? 'cursor-not-allowed opacity-50' : '' %>"
+                    class="pro-btn-secondary pro-btn-xs w-full gap-1.5 sm:w-auto <%= isOutOfStock ? 'cursor-not-allowed opacity-50' : '' %>"
                     data-order-submit
                     data-order-method="email"
                     <%= isOutOfStock ? 'disabled aria-disabled=\"true\"' : '' %>
@@ -228,7 +233,7 @@
                   </button>
                   <button
                     type="submit"
-                    class="pro-btn-primary w-full gap-1.5 px-3 py-2 text-xs sm:w-auto sm:py-1.5 <%= isOutOfStock ? 'cursor-not-allowed opacity-50' : '' %>"
+                    class="pro-btn-primary pro-btn-xs w-full gap-1.5 sm:w-auto <%= isOutOfStock ? 'cursor-not-allowed opacity-50' : '' %>"
                     data-order-submit
                     data-order-method="whatsapp"
                     <%= isOutOfStock ? 'disabled aria-disabled=\"true\"' : '' %>
@@ -244,7 +249,8 @@
       </div>
     </main>
     <%- include('helpers/footer', { basePath, currentPath, categoryGroups, currentUser }) %>
-    <script src="/javascripts/flash-alert.js"></script>
-    <script src="/javascripts/order-page.js"></script>
+    <%- include('helpers/toaster') %>
+    <script src="<%= assetPath('/javascripts/flash-alert.js') %>"></script>
+    <script src="<%= assetPath('/javascripts/order-page.js') %>"></script>
   </body>
 </html>

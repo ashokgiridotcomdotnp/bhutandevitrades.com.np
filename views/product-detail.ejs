@@ -7,7 +7,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;700;800&display=swap" rel="stylesheet" />
     <title><%= title %></title>
-    <link rel="stylesheet" href="/stylesheets/style.css" />
+    <link rel="stylesheet" href="<%= assetPath('/stylesheets/style.css') %>" />
   </head>
   <body class="text-slate-900">
     <%- include('helpers/nav', { title: 'BhutanDevi Trade and Suppliers', q, activeCategory, hasSidebar: true, topNavCategories, searchSuggestions, basePath, currentPath, currentUser, showUserAuthActions }) %>
@@ -97,8 +97,8 @@
 
               <div class="grid gap-3 sm:grid-cols-2">
                 <div class="rounded-xl border border-slate-200 bg-white p-3">
-                  <p class="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Section</p>
-                  <p class="mt-1 text-sm font-bold text-slate-800"><%= sectionTitle %></p>
+                  <p class="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Sold Stock</p>
+                  <p class="mt-1 text-sm font-bold text-slate-800"><%= Number.isFinite(Number(soldStockCount)) ? (Math.max(0, Math.floor(Number(soldStockCount))) + ' sold') : '0 sold' %></p>
                 </div>
                 <div class="rounded-xl border border-slate-200 bg-white p-3">
                   <p class="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Stock</p>
@@ -107,13 +107,13 @@
               </div>
 
               <div class="grid grid-cols-1 gap-2 pt-1 sm:flex sm:flex-wrap sm:items-center">
-                <a href="<%= whatsappInquiryHref %>" target="_blank" rel="noopener noreferrer" class="pro-btn-secondary w-full gap-1.5 px-3 py-2 text-xs sm:w-auto sm:py-1.5">
+                <a href="<%= whatsappInquiryHref %>" target="_blank" rel="noopener noreferrer" class="pro-btn-secondary pro-btn-xs w-full gap-1.5 sm:w-auto">
                   <img src="/icons/whatsapp.svg" alt="" aria-hidden="true" class="shrink-0" style="width: 14px; height: 14px;" />
                   <span>WhatsApp</span>
                 </a>
                 <a
                   href="<%= callHref %>"
-                  class="pro-btn-secondary w-full gap-1.5 px-3 py-2 text-xs sm:w-auto sm:py-1.5 <%= hasStoreContactNumber ? '' : 'pointer-events-none opacity-50' %>"
+                  class="pro-btn-secondary pro-btn-xs w-full gap-1.5 sm:w-auto <%= hasStoreContactNumber ? '' : 'pointer-events-none opacity-50' %>"
                   aria-disabled="<%= hasStoreContactNumber ? 'false' : 'true' %>"
                 >
                   <img src="/icons/phone.svg" alt="" aria-hidden="true" class="shrink-0" style="width: 14px; height: 14px;" />
@@ -122,14 +122,14 @@
                 <% if (canPlaceOrder) { %>
                 <a
                   href="<%= orderActionHref %>"
-                  class="pro-btn-primary w-full gap-1.5 px-3 py-2 text-xs sm:w-auto sm:py-1.5 <%= canOrderItem ? '' : 'pointer-events-none opacity-50' %>"
+                  class="pro-btn-primary pro-btn-xs w-full gap-1.5 sm:w-auto <%= canOrderItem ? '' : 'pointer-events-none opacity-50' %>"
                   aria-disabled="<%= canOrderItem ? 'false' : 'true' %>"
                 >
                   <img src="/icons/order.svg" alt="" aria-hidden="true" class="shrink-0" style="width: 14px; height: 14px;" />
                   <span><%= hasStockQuantity ? 'Order' : 'Out of stock' %></span>
                 </a>
                 <% } else { %>
-                <a href="<%= loginToOrderHref %>" class="pro-btn-primary w-full gap-1.5 px-3 py-2 text-xs sm:w-auto sm:py-1.5">
+                <a href="<%= loginToOrderHref %>" class="pro-btn-primary pro-btn-xs w-full gap-1.5 sm:w-auto">
                   <img src="/icons/login-white.svg" alt="" aria-hidden="true" class="shrink-0" style="width: 14px; height: 14px;" />
                   <span>Login to Order</span>
                 </a>
@@ -143,6 +143,6 @@
       </div>
     </main>
     <%- include('helpers/footer', { basePath, currentPath, categoryGroups, currentUser }) %>
-    <script src="/javascripts/home.js"></script>
+    <script src="<%= assetPath('/javascripts/home.js') %>"></script>
   </body>
 </html>

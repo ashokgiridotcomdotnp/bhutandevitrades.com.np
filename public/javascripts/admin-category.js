@@ -31,6 +31,17 @@
   var addFormPriceOriginal = document.querySelector('[data-add-form-price-original]');
   var addFormPriceFinal = document.querySelector('[data-add-form-price-final]');
   var createProductForm = document.getElementById('category-product-create-form');
+  var categoryManageForm = document.querySelector('[data-category-manage-form]');
+  var managedProductsRoot = document.querySelector('[data-managed-products-root]');
+  var managedCategoryName = managedProductsRoot
+    ? String(managedProductsRoot.getAttribute('data-managed-category-name') || '').trim()
+    : '';
+  var managedProductCountStat = document.querySelector('[data-managed-product-count-stat]');
+  var managedProductCountBadge = document.querySelector('[data-managed-product-count-badge]');
+  var managedProductsEmptyState = document.querySelector('[data-managed-products-empty]');
+  var managedProductsTable = document.querySelector('[data-managed-products-table]');
+  var managedProductsPagination = document.querySelector('[data-managed-products-pagination]');
+  var managedTotalProductCount = 0;
   var hasDeleteModal = Boolean(deleteAlert && deleteAlertTitle && deleteAlertMessage && deleteAlertCancel && deleteAlertConfirm);
 
   function clearAdminFlashQueryParams() {
@@ -56,12 +67,41 @@
 
   function bindFileInputLabel(input) {
     var inputId = input && input.id ? input.id : '';
-    var label = inputId ? document.querySelector('[data-file-name-for="' + inputId + '"]') : null;
     var preview = inputId ? document.querySelector('[data-image-preview-for="' + inputId + '"]') : null;
+    var fileName = inputId ? document.querySelector('[data-file-name-for="' + inputId + '"]') : null;
+    var defaultFileName = fileName
+      ? String(fileName.getAttribute('data-file-default-text') || fileName.textContent || 'No file selected').trim()
+      : '';
+    var defaultPreviewSrc = preview
+      ? String(preview.getAttribute('data-image-preview-default-src') || preview.getAttribute('src') || '').trim()
+      : '';
     var objectUrl = '';
 
-    if (!inputId || !label) {
+    if (!inputId || (!preview && !fileName)) {
       return;
+    }
+
+    function syncFileNameLabel(label) {
+      if (!fileName) {
+        return;
+      }
+
+      fileName.textContent = String(label || defaultFileName || 'No file selected').trim();
+    }
+
+    function syncDefaultPreview() {
+      if (!preview) {
+        return;
+      }
+
+      if (defaultPreviewSrc) {
+        preview.src = defaultPreviewSrc;
+        preview.classList.remove('hidden');
+        return;
+      }
+
+      preview.src = '';
+      preview.classList.add('hidden');
     }
 
     function clearPreview() {
@@ -70,23 +110,25 @@
         objectUrl = '';
       }
 
-      if (preview) {
-        preview.src = '';
-        preview.classList.add('hidden');
-      }
+      syncDefaultPreview();
+      syncFileNameLabel(defaultFileName);
     }
 
     function syncFileName() {
-      var defaultText = label.getAttribute('data-file-default-text') || 'No photo chosen';
       var selectedFile = input.files && input.files.length ? input.files[0] : null;
-      var fileName = selectedFile ? selectedFile.name : '';
-      label.textContent = fileName || defaultText;
+
+      if (!selectedFile) {
+        clearPreview();
+        return;
+      }
+
+      syncFileNameLabel(selectedFile.name);
 
       if (!preview) {
         return;
       }
 
-      if (!selectedFile || !selectedFile.type || selectedFile.type.indexOf('image/') !== 0) {
+      if (!selectedFile.type || selectedFile.type.indexOf('image/') !== 0) {
         clearPreview();
         return;
       }
@@ -113,6 +155,11 @@
     }
 
     return parsedValue;
+  }
+
+  function parseCountText(value) {
+    var matchedValue = String(value || '').match(/\d+/);
+    return matchedValue ? Math.max(0, parseInt(matchedValue[0], 10) || 0) : 0;
   }
 
   function formatNpr(value) {
@@ -279,6 +326,18 @@
     };
   }
 
+  function closeOtherEditRows(activeCardId) {
+    document.querySelectorAll('[data-edit-form]').forEach(function (form) {
+      var formCardId = form ? form.getAttribute('data-edit-form') : '';
+
+      if (!formCardId || formCardId === activeCardId) {
+        return;
+      }
+
+      toggleEdit(formCardId, false);
+    });
+  }
+
   function toggleEdit(cardId, isEditMode) {
     var card = getCardElements(cardId);
     if (!card.form || !card.view) {
@@ -286,6 +345,7 @@
     }
 
     if (isEditMode) {
+      closeOtherEditRows(cardId);
       card.view.classList.add('hidden');
       if (card.editRow) {
         card.editRow.classList.remove('hidden');
@@ -443,6 +503,255 @@
     });
   }
 
+  function syncManagedProductsState(nextTotalCount) {
+    var visibleCount = document.querySelectorAll('[data-view-panel]').length;
+    var hasManagedProducts = visibleCount > 0;
+
+    if (Number.isFinite(nextTotalCount)) {
+      managedTotalProductCount = Math.max(0, nextTotalCount);
+    }
+
+    if (managedProductCountStat) {
+      managedProductCountStat.textContent = String(managedTotalProductCount);
+    }
+
+    if (managedProductCountBadge) {
+      managedProductCountBadge.textContent = managedTotalProductCount + ' product' + (managedTotalProductCount === 1 ? '' : 's');
+    }
+
+    if (managedProductsEmptyState) {
+      managedProductsEmptyState.classList.toggle('hidden', hasManagedProducts);
+    }
+
+    if (managedProductsTable) {
+      managedProductsTable.classList.toggle('hidden', !hasManagedProducts);
+    }
+  }
+
+  managedTotalProductCount = managedProductCountStat
+    ? parseCountText(managedProductCountStat.textContent)
+    : (managedProductCountBadge ? parseCountText(managedProductCountBadge.textContent) : document.querySelectorAll('[data-view-panel]').length);
+
+  function updateProductViewRow(productId, product) {
+    var row = document.querySelector('[data-view-panel="' + productId + '"]');
+    var editRow = document.querySelector('[data-edit-row="' + productId + '"]');
+    var normalizedManagedCategoryName = String(managedCategoryName || '').trim().toLowerCase();
+    var normalizedProductCategory = String(product && product.type || '').trim().toLowerCase();
+    var originalPriceNode = null;
+    var finalPriceNode = null;
+    var discountNode = null;
+    var imageNode = null;
+    var stockValue = '';
+    var hasDiscount = false;
+
+    if (!row || !product) {
+      return;
+    }
+
+    if (normalizedManagedCategoryName && normalizedProductCategory && normalizedManagedCategoryName !== normalizedProductCategory) {
+      row.remove();
+      if (editRow) {
+        editRow.remove();
+      }
+      syncManagedProductsState(managedTotalProductCount - 1);
+      return;
+    }
+
+    row.querySelectorAll('[data-product-name-text]').forEach(function (node) {
+      node.textContent = product.name || 'Untitled Product';
+    });
+    row.querySelectorAll('[data-product-category-text]').forEach(function (node) {
+      node.textContent = product.type || '';
+    });
+    row.querySelectorAll('[data-product-spec-text]').forEach(function (node) {
+      node.textContent = product.spec || 'No description';
+    });
+
+    stockValue = product.quantity || product.quantity === 0 ? String(product.quantity) : '-';
+    row.querySelectorAll('[data-product-stock-text]').forEach(function (node) {
+      node.textContent = stockValue;
+    });
+
+    row.querySelectorAll('[data-product-image]').forEach(function (node) {
+      node.src = product.image || '';
+      node.alt = product.name || 'Product image';
+    });
+
+    row.querySelectorAll('[data-delete-trigger]').forEach(function (node) {
+      node.setAttribute('data-product-name', product.name || '');
+    });
+
+    originalPriceNode = row.querySelector('[data-product-original-price-text]');
+    finalPriceNode = row.querySelector('[data-product-final-price-text]');
+    discountNode = row.querySelector('[data-product-discount-text]');
+    hasDiscount = Boolean(product.originalPrice && product.originalPrice !== product.price);
+
+    if (originalPriceNode) {
+      originalPriceNode.textContent = hasDiscount ? String(product.originalPrice || '') : '';
+      originalPriceNode.classList.toggle('hidden', !hasDiscount);
+    }
+
+    if (finalPriceNode) {
+      finalPriceNode.textContent = product.price || '';
+    }
+
+    if (discountNode) {
+      if (product.discountPercent) {
+        discountNode.textContent = 'Discount: ' + product.discountPercent + '%';
+        discountNode.classList.remove('hidden');
+      } else {
+        discountNode.textContent = '';
+        discountNode.classList.add('hidden');
+      }
+    }
+
+    if (editRow) {
+      var currentImageInput = editRow.querySelector('input[name="currentImagePath"]');
+      imageNode = editRow.querySelector('[data-image-preview-default-src]');
+      if (imageNode) {
+        imageNode.setAttribute('data-image-preview-default-src', product.image || '');
+        imageNode.src = product.image || '';
+        imageNode.alt = product.name || 'Product image';
+      }
+      if (currentImageInput) {
+        currentImageInput.value = product.image || '';
+      }
+    }
+
+    syncManagedProductsState();
+    toggleEdit(productId, false);
+  }
+
+  async function submitCategoryManageFormAsync(form) {
+    var response = null;
+    var result = null;
+    var formData = null;
+    var urlEncodedData = null;
+
+    if (!form || form.getAttribute('data-is-submitting') === '1') {
+      return;
+    }
+
+    if (typeof form.reportValidity === 'function' && !form.reportValidity()) {
+      return;
+    }
+
+    form.setAttribute('data-is-submitting', '1');
+    setSubmitButtonState(form, true, null);
+    setLoadingOverlay(true);
+
+    formData = new FormData(form);
+    urlEncodedData = new URLSearchParams(formData).toString();
+
+    try {
+      response = await fetch(form.action, {
+        method: 'POST',
+        body: urlEncodedData,
+        credentials: 'same-origin',
+        headers: {
+          'X-Requested-With': 'XMLHttpRequest',
+          'Accept': 'application/json',
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+      });
+
+      if (response.url && response.url.indexOf('/admin/login') !== -1) {
+        window.location.href = '/admin/login';
+        return;
+      }
+
+      result = await response.json();
+
+      if (!result.success) {
+        showToast('error', result.message || 'Failed to save category');
+        return;
+      }
+
+      showToast('success', result.message || 'Category saved successfully');
+
+      setTimeout(function () {
+        var redirectPath = result && result.redirectPath ? String(result.redirectPath).trim() : '';
+
+        if (redirectPath) {
+          window.location.assign(redirectPath);
+          return;
+        }
+
+        window.location.reload();
+      }, 700);
+    } catch (error) {
+      showToast('error', 'Failed to save category. Please try again.');
+    } finally {
+      form.removeAttribute('data-is-submitting');
+      setSubmitButtonState(form, false, null);
+      setLoadingOverlay(false);
+    }
+  }
+
+  function addProductToTable(product) {
+    var tbody = document.querySelector('table tbody');
+    if (!tbody || !product) {
+      return;
+    }
+
+    var hasDiscount = product.originalPrice && product.originalPrice !== product.price;
+    var stockValue = product.quantity || product.quantity === 0 ? product.quantity : '-';
+    var rowId = product.id || '';
+    var row = document.createElement('tr');
+    row.className = 'align-top bg-white';
+    row.setAttribute('data-view-panel', rowId);
+
+    var priceHtml = '';
+    if (hasDiscount) {
+      priceHtml += '<p class="text-xs font-semibold text-red-600 line-through">' + (product.originalPrice || '') + '</p>';
+    }
+    priceHtml += '<p class="font-semibold text-emerald-700">' + (product.price || '') + '</p>';
+    if (product.discountPercent) {
+      priceHtml += '<p class="mt-1 text-xs font-semibold text-slate-600">Discount: ' + product.discountPercent + '%</p>';
+    }
+
+    row.innerHTML =
+      '<td class="px-3 py-3">' +
+      '<p class="text-base font-bold text-slate-900">' + (product.name || '') + '</p>' +
+      '<p class="mt-1 font-mono text-xs text-slate-500">ID: ' + rowId + '</p>' +
+      '</td>' +
+      '<td class="px-3 py-3 text-slate-800">' + (product.type || '') + '</td>' +
+      '<td class="px-3 py-3 text-slate-700">' + (product.spec || '') + '</td>' +
+      '<td class="px-3 py-3 text-slate-800">' + priceHtml + '</td>' +
+      '<td class="px-3 py-3 font-semibold text-slate-800">' + stockValue + '</td>' +
+      '<td class="px-3 py-3">' +
+      '<img src="' + (product.image || '') + '" alt="' + (product.name || '') + '" class="h-16 w-24 rounded-md border border-slate-200 bg-white object-cover" loading="lazy" />' +
+      '</td>' +
+      '<td class="px-3 py-3">' +
+      '<div class="flex items-center justify-end gap-1.5">' +
+      '<button type="button" title="Edit item" data-edit-toggle="' + rowId + '" class="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-blue-300 bg-blue-50 text-blue-700 hover:bg-blue-100">&#9998;</button>' +
+      '<button type="button" title="Delete item" data-delete-trigger="' + rowId + '" data-product-name="' + (product.name || '') + '" class="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-red-300 bg-red-50 text-red-700 hover:bg-red-100">&#128465;</button>' +
+      '</div>' +
+      '</td>';
+
+    // Insert at the beginning of the tbody
+    tbody.insertBefore(row, tbody.firstChild);
+
+    // Add event listeners for the new buttons
+    var editBtn = row.querySelector('[data-edit-toggle]');
+    var deleteBtn = row.querySelector('[data-delete-trigger]');
+
+    if (editBtn) {
+      editBtn.addEventListener('click', function () {
+        toggleEdit(rowId, true);
+      });
+    }
+
+    if (deleteBtn) {
+      deleteBtn.addEventListener('click', function () {
+        var form = document.querySelector('[data-delete-form="' + rowId + '"]');
+        if (form) {
+          showDeleteAlert(form, 'Delete Product', 'Delete "' + (product.name || 'this product') + '"? This action cannot be undone.');
+        }
+      });
+    }
+  }
+
   async function submitProductFormWithoutReload(form, activeSubmitter, options) {
     var response = null;
     var result = null;
@@ -504,7 +813,7 @@
       showToast('success', message);
 
       if (options && typeof options.onSuccess === 'function') {
-        options.onSuccess(form);
+        options.onSuccess(form, result);
       }
     } catch (error) {
       showToast('error', errorFallbackMessage);
@@ -531,6 +840,7 @@
   document.querySelectorAll('[data-file-input]').forEach(bindFileInputLabel);
   syncAddSubcategoryInputMode();
   syncAddFormPricePreview();
+  syncManagedProductsState();
   clearAdminFlashQueryParams();
 
   if (statusTooltip) {
@@ -547,39 +857,6 @@
     addFormDiscountInput.addEventListener('input', syncAddFormPricePreview);
   }
 
-  var helmetCoverageSelect = document.querySelector('[data-helmet-coverage-select]');
-  var helmetCoverageButtons = Array.prototype.slice.call(document.querySelectorAll('[data-helmet-coverage-option]'));
-
-  function syncHelmetCoverageButtons() {
-    if (!helmetCoverageSelect || !helmetCoverageButtons.length) {
-      return;
-    }
-
-    var selectedValue = String(helmetCoverageSelect.value || '').trim();
-    helmetCoverageButtons.forEach(function (button) {
-      var optionValue = button.getAttribute('data-helmet-coverage-option');
-      var isActive = optionValue === selectedValue;
-
-      button.classList.toggle('bg-blue-600', isActive);
-      button.classList.toggle('text-white', isActive);
-      button.classList.toggle('shadow-sm', isActive);
-      button.classList.toggle('text-slate-700', !isActive);
-    });
-  }
-
-  if (helmetCoverageSelect && helmetCoverageButtons.length) {
-    helmetCoverageButtons.forEach(function (button) {
-      button.addEventListener('click', function () {
-        var optionValue = button.getAttribute('data-helmet-coverage-option') || '';
-        helmetCoverageSelect.value = optionValue;
-        syncHelmetCoverageButtons();
-      });
-    });
-
-    helmetCoverageSelect.addEventListener('change', syncHelmetCoverageButtons);
-    syncHelmetCoverageButtons();
-  }
-
   if (createProductForm) {
     createProductForm.setAttribute('data-skip-global-loading', 'true');
     createProductForm.addEventListener('submit', function (event) {
@@ -591,17 +868,36 @@
       submitProductFormWithoutReload(createProductForm, submitter, {
         successFallbackMessage: 'Product saved successfully.',
         errorFallbackMessage: 'Could not save product right now. Please try again.',
-        onSuccess: function () {
+        onSuccess: function (form, result) {
           createProductForm.reset();
           syncAddSubcategoryInputMode();
           syncAddFormPricePreview();
           clearFormFileInputs(createProductForm);
-          if (helmetCoverageSelect) {
-            helmetCoverageSelect.value = '';
-            syncHelmetCoverageButtons();
+          // Add the new product to the table
+          if (result && result.product) {
+            addProductToTable(result.product);
           }
         },
       });
+    });
+
+    // Handle clear button
+    var clearFormBtn = createProductForm.querySelector('[data-clear-form]');
+    if (clearFormBtn) {
+      clearFormBtn.addEventListener('click', function () {
+        createProductForm.reset();
+        syncAddSubcategoryInputMode();
+        syncAddFormPricePreview();
+        clearFormFileInputs(createProductForm);
+      });
+    }
+  }
+
+  if (categoryManageForm) {
+    categoryManageForm.setAttribute('data-skip-global-loading', 'true');
+    categoryManageForm.addEventListener('submit', function (event) {
+      event.preventDefault();
+      submitCategoryManageFormAsync(categoryManageForm);
     });
   }
 
@@ -616,8 +912,11 @@
       submitProductFormWithoutReload(editForm, submitter, {
         successFallbackMessage: 'Product updated successfully.',
         errorFallbackMessage: 'Could not update product right now. Please try again.',
-        onSuccess: function () {
+        onSuccess: function (form, result) {
           clearFormFileInputs(editForm);
+          if (result && result.productId && result.product) {
+            updateProductViewRow(result.productId, result.product);
+          }
         },
       });
     });
@@ -669,12 +968,15 @@
     setLoadingOverlay(true);
 
     try {
+      var urlEncodedData = new URLSearchParams(new FormData(form)).toString();
       response = await fetch(form.action, {
         method: 'POST',
-        body: new FormData(form),
+        body: urlEncodedData,
         credentials: 'same-origin',
         headers: {
           'X-Requested-With': 'XMLHttpRequest',
+          'Accept': 'application/json',
+          'Content-Type': 'application/x-www-form-urlencoded',
         },
       });
 
@@ -686,13 +988,15 @@
       result = await response.json();
 
       if (result.success) {
-        showToast('success', result.message || 'Deleted successfully');
+        var deletedProductId = form.querySelector('input[name="productId"]')?.value;
+        var deletedCategoryName = form.querySelector('input[name="categoryName"]')?.value;
+        var deleteMessage = deletedCategoryName ? 'Category deleted successfully' : (deletedProductId ? 'Product deleted successfully' : 'Deleted successfully');
+        showToast('success', result.message || deleteMessage);
         // Remove the deleted item from DOM
-        productId = form.querySelector('input[name="productId"]')?.value;
-        categoryName = form.querySelector('input[name="categoryName"]')?.value;
+        productId = deletedProductId;
+        categoryName = deletedCategoryName;
 
         if (productId) {
-          // Find and remove the row
           var viewRow = document.querySelector('[data-view-panel="' + productId + '"]');
           var editRow = document.querySelector('[data-edit-row="' + productId + '"]');
           if (viewRow) {
@@ -701,10 +1005,10 @@
           if (editRow) {
             editRow.remove();
           }
+          syncManagedProductsState(managedTotalProductCount - 1);
         }
 
         if (categoryName) {
-          // Redirect to admin dashboard after deleting category
           setTimeout(function () {
             window.location.href = '/admin';
           }, 800);

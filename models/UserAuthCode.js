@@ -1,4 +1,5 @@
 var mongoose = require('mongoose');
+var allowedAuthCodePurposes = ['signup', 'password-reset'];
 
 var userAuthCodeSchema = new mongoose.Schema(
   {
@@ -11,7 +12,7 @@ var userAuthCodeSchema = new mongoose.Schema(
     purpose: {
       type: String,
       required: true,
-      enum: ['login', 'signup', 'password-reset'],
+      enum: allowedAuthCodePurposes,
     },
     codeHash: {
       type: String,

@@ -1,3 +1,4 @@
+var mongoose = require('mongoose');
 var fs = require('fs');
 var catalogService = require('../services/catalogService');
 var database = require('../lib/db');
@@ -23,6 +24,7 @@ var adminRefreshCooldownMs = Number.isFinite(parsedAdminRefreshCooldownMs) && pa
   : 15000;
 var isAdminRefreshInProgress = false;
 var lastAdminRefreshAt = 0;
+var adminMutationQueue = Promise.resolve();
 
 function toCategorySlug(value) {
   return catalogService.normalizeForSearch(value).replace(/\s+/g, '-');
@@ -34,6 +36,17 @@ function buildCategoryAdminPath(categoryName) {
     return defaultAdminPath;
   }
   return '/admin/categories/' + categorySlug;
+}
+
+function buildAdminProductsPagePath(page) {
+  var parsedPage = Number(page);
+  var safePage = Number.isFinite(parsedPage) && parsedPage > 0 ? Math.floor(parsedPage) : 1;
+
+  if (safePage <= 1) {
+    return '/admin/products';
+  }
+
+  return '/admin/products?page=' + safePage;
 }
 
 function getSafeRedirectPath(req, fallbackPath) {
@@ -185,34 +198,117 @@ function hasDuplicateProductName(categoryName, productName, productSections, pro
   });
 }
 
-function normalizeHelmetCoverage(value) {
-  var normalizedCoverage = catalogService.normalizeForSearch(value);
-
-  if (normalizedCoverage === 'half') {
-    return 'Half';
-  }
-
-  if (normalizedCoverage === 'full') {
-    return 'Full';
-  }
-
-  return '';
-}
-
-function buildProductSpec(categoryName, rawSpec, rawHelmetCoverage) {
+function hasDuplicateCategoryName(categoryName, categoryBoards, originalCategoryName) {
   var categoryKey = catalogService.normalizeForSearch(categoryName);
-  var specText = catalogService.toTrimmedString(rawSpec);
-  var helmetCoverage = normalizeHelmetCoverage(rawHelmetCoverage);
+  var originalCategoryKey = catalogService.normalizeForSearch(originalCategoryName);
 
-  if (categoryKey === 'helmet' && helmetCoverage) {
-    if (specText) {
-      return 'Type: ' + helmetCoverage + ' | ' + specText;
+  if (!categoryKey) {
+    return false;
+  }
+
+  return (categoryBoards || []).some(function (board) {
+    var boardKey = catalogService.normalizeForSearch(board && board.name);
+
+    if (!boardKey || boardKey !== categoryKey) {
+      return false;
     }
 
-    return 'Type: ' + helmetCoverage;
+    if (originalCategoryKey && boardKey === originalCategoryKey) {
+      return false;
+    }
+
+    return true;
+  });
+}
+
+function buildAdminCategoryRecordsByKey(adminData) {
+  var categoryRecordsByKey = Object.create(null);
+
+  if (!adminData || !Array.isArray(adminData.categories)) {
+    return categoryRecordsByKey;
   }
 
-  return specText || 'N/A';
+  adminData.categories.forEach(function (category) {
+    var categoryName = normalizeSingleLineText(category && category.name);
+    var categoryKey = toCategorySlug(categoryName);
+
+    if (!categoryKey || categoryRecordsByKey[categoryKey]) {
+      return;
+    }
+
+    categoryRecordsByKey[categoryKey] = {
+      name: categoryName,
+      description: normalizeMultilineText(category && category.description),
+      items: sanitizeCategoryItems(category && category.items),
+    };
+  });
+
+  return categoryRecordsByKey;
+}
+
+function resolveCategorySaveRedirectPath(categoryName, redirectPath, shouldReplaceCategoryItems) {
+  var safeRedirectPath = catalogService.toTrimmedString(redirectPath) || defaultAdminPath;
+
+  if (shouldReplaceCategoryItems && safeRedirectPath.indexOf('/admin/categories') === 0) {
+    return buildCategoryAdminPath(categoryName);
+  }
+
+  return safeRedirectPath;
+}
+
+function isAjaxRequest(req) {
+  var acceptHeader = String(req && req.headers ? req.headers.accept || '' : '').toLowerCase();
+  var requestedWithHeader = String(req && req.headers ? req.headers['x-requested-with'] || '' : '');
+
+  return Boolean(
+    (req && req.xhr) ||
+    requestedWithHeader === 'XMLHttpRequest' ||
+    acceptHeader.indexOf('application/json') !== -1
+  );
+}
+
+function runAdminMutation(task) {
+  var queuedTask = adminMutationQueue.then(function () {
+    return Promise.resolve().then(task);
+  });
+
+  adminMutationQueue = queuedTask.catch(function () {
+    return undefined;
+  });
+
+  return queuedTask;
+}
+
+function removeProductNameFromAdminCategory(adminData, categoryName, productName) {
+  var categoryKey = catalogService.normalizeForSearch(categoryName);
+  var productNameKey = catalogService.normalizeForSearch(productName);
+
+  if (!categoryKey || !productNameKey || !adminData || !Array.isArray(adminData.categories)) {
+    return;
+  }
+
+  adminData.categories.forEach(function (category) {
+    if (catalogService.normalizeForSearch(category && category.name) !== categoryKey) {
+      return;
+    }
+
+    if (!Array.isArray(category.items)) {
+      return;
+    }
+
+    category.items = category.items.filter(function (itemName) {
+      return catalogService.normalizeForSearch(itemName) !== productNameKey;
+    });
+  });
+}
+
+function buildProductSpec(categoryName, rawSpec) {
+  var specText = catalogService.toTrimmedString(rawSpec);
+  if (/^n\/?a$/i.test(specText)) {
+    return '';
+  }
+
+  return specText;
 }
 
 function parseNonNegativeNumber(value) {
@@ -308,6 +404,18 @@ function findCategoryBoardBySlug(categorySlug, categoryBoards) {
 
   return (categoryBoards || []).find(function (board) {
     return catalogService.normalizeForSearch(board && board.name) === normalizedSlug;
+  }) || null;
+}
+
+function findCategoryBoardByName(categoryName, categoryBoards) {
+  var normalizedName = catalogService.normalizeForSearch(categoryName);
+
+  if (!normalizedName) {
+    return null;
+  }
+
+  return (categoryBoards || []).find(function (board) {
+    return catalogService.normalizeForSearch(board && board.name) === normalizedName;
   }) || null;
 }
 
@@ -416,6 +524,70 @@ function buildAdminProductOrderById(adminData) {
   return orderById;
 }
 
+function buildAdminProductRows(categoryBoards, adminData) {
+  var rows = [];
+  var safeBoards = Array.isArray(categoryBoards) ? categoryBoards : [];
+  var productOrderById = buildAdminProductOrderById(adminData);
+
+  safeBoards.forEach(function (board) {
+    var boardName = catalogService.toTrimmedString(board && board.name);
+    var boardItems = Array.isArray(board && board.items) ? board.items : [];
+
+    boardItems.forEach(function (item) {
+      var productId = catalogService.toTrimmedString(item && item.id);
+
+      if (!productId) {
+        return;
+      }
+
+      rows.push({
+        id: productId,
+        categoryName: boardName,
+        name: catalogService.toTrimmedString(item && item.name),
+        spec: catalogService.toTrimmedString(item && item.spec),
+        price: catalogService.toTrimmedString(item && item.price) || 'Contact for price',
+        quantity: parseStoredStockQuantity(item && item.quantity),
+        image: catalogService.normalizeAssetPath(item && item.image),
+        addedOrder: Number(productOrderById[productId]) || 0,
+      });
+    });
+  });
+
+  rows.sort(function (left, right) {
+    return (
+      (Number(right.addedOrder) - Number(left.addedOrder)) ||
+      String(left.categoryName || '').localeCompare(String(right.categoryName || '')) ||
+      String(left.name || '').localeCompare(String(right.name || ''))
+    );
+  });
+
+  return rows;
+}
+
+function paginateAdminProductRows(productRows, requestedPage, pageSize) {
+  var rows = Array.isArray(productRows) ? productRows : [];
+  var parsedPageSize = Number(pageSize);
+  var safePageSize = Number.isFinite(parsedPageSize) && parsedPageSize > 0 ? Math.floor(parsedPageSize) : adminProductOverviewPageSize;
+  var totalPages = Math.max(1, Math.ceil(rows.length / safePageSize));
+  var parsedPage = Number(requestedPage);
+  var safePage = Number.isFinite(parsedPage) && parsedPage > 0 ? Math.floor(parsedPage) : 1;
+  var startIndex = 0;
+
+  if (safePage > totalPages) {
+    safePage = totalPages;
+  }
+
+  startIndex = (safePage - 1) * safePageSize;
+
+  return {
+    rows: rows.slice(startIndex, startIndex + safePageSize),
+    page: safePage,
+    totalPages: totalPages,
+    pageSize: safePageSize,
+    totalCount: rows.length,
+  };
+}
+
 function buildAdminOrderAcceptedEmailText(orderRecord, adminMessage) {
   var productName = catalogService.toTrimmedString(orderRecord && orderRecord.productName) || 'Product';
   var productType = catalogService.toTrimmedString(orderRecord && orderRecord.productType) || 'Category';
@@ -487,7 +659,7 @@ async function loadAdminOrdersForDashboard(options) {
   var orders = [];
   var loadError = '';
   var selectedFilter = {
-    adminStatus: { $ne: 'accepted' },
+    adminStatus: mongoose.trusted({ $ne: 'accepted' }),
   };
   var selectedCount = 0;
   var skipCount = 0;
@@ -505,7 +677,7 @@ async function loadAdminOrdersForDashboard(options) {
       };
     }
 
-    counts.pending = await Order.countDocuments({ adminStatus: { $ne: 'accepted' } });
+    counts.pending = await Order.countDocuments({ adminStatus: mongoose.trusted({ $ne: 'accepted' }) });
     counts.accepted = await Order.countDocuments({ adminStatus: 'accepted' });
     counts.total = counts.pending + counts.accepted;
 
@@ -517,7 +689,7 @@ async function loadAdminOrdersForDashboard(options) {
 
     selectedFilter = resolvedView === 'accepted'
       ? { adminStatus: 'accepted' }
-      : { adminStatus: { $ne: 'accepted' } };
+      : { adminStatus: mongoose.trusted({ $ne: 'accepted' }) };
     selectedCount = resolvedView === 'accepted' ? counts.accepted : counts.pending;
     totalPages = Math.max(1, Math.ceil(selectedCount / safePageSize));
     page = Math.min(requestedPage, totalPages);
@@ -565,7 +737,6 @@ function renderAdminPage(req, res) {
   var catalog = catalogService.getCatalogContext();
   var status = catalogService.toTrimmedString(req.query.status);
   var error = catalogService.toTrimmedString(req.query.error);
-  var productOverviewPage = parsePositiveInteger(req.query.productsPage, 1);
   var adminData = catalogService.getAdminData();
   var categoryBoards = catalogService.buildAdminCategoryBoards(
     catalog.categoryGroups,
@@ -580,14 +751,69 @@ function renderAdminPage(req, res) {
     statusMessage: catalogService.getAdminStatusMessage(status),
     errorMessage: catalogService.getAdminErrorMessage(error),
     categoryBoards: categoryBoards,
+    adminCategoryRecords: buildAdminCategoryRecordsByKey(adminData),
     dashboardStats: buildDashboardStats(categoryBoards, adminData),
-    recentAdminProducts: buildRecentAdminProducts(adminData),
-    adminProductOrderById: buildAdminProductOrderById(adminData),
-    productOverviewPage: productOverviewPage,
-    productOverviewPageSize: adminProductOverviewPageSize,
     topNavCategories: catalog.categoryGroups,
     searchSuggestions: catalogService.buildSearchSuggestions(catalog.categoryGroups, catalog.productSections),
     basePath: '/',
+  });
+}
+
+async function renderAdminProductsPage(req, res) {
+  var catalog = catalogService.getCatalogContext();
+  var status = catalogService.toTrimmedString(req.query.status);
+  var error = catalogService.toTrimmedString(req.query.error);
+  var requestedPage = parsePositiveInteger(req.query.page, 1);
+  var adminData = catalogService.getAdminData();
+  var categoryBoards = catalogService.buildAdminCategoryBoards(
+    catalog.categoryGroups,
+    catalog.productSections,
+    catalog.categoryKeywordMap
+  );
+  var productRows = buildAdminProductRows(categoryBoards, adminData);
+  // Sort product overview A -> Z by product name to match admin-category listing
+  productRows.sort(function (a, b) {
+    return String(a.name || '').localeCompare(String(b.name || ''));
+  });
+  var pagination = paginateAdminProductRows(productRows, requestedPage, adminProductOverviewPageSize);
+
+  // Attach sold counts for products on the current page (sum of accepted orders)
+  try {
+    var pageRows = Array.isArray(pagination.rows) ? pagination.rows : [];
+    var productIds = pageRows.map(function (r) { return catalogService.toTrimmedString(r && r.id); }).filter(Boolean);
+
+    if (productIds.length && await ensureDatabaseConnection()) {
+      var soldGroups = await Order.aggregate([
+        { $match: { productId: { $in: productIds }, adminStatus: 'accepted' } },
+        { $group: { _id: '$productId', sold: { $sum: '$quantity' } } },
+      ]).allowDiskUse(true);
+
+      var soldById = {};
+      (soldGroups || []).forEach(function (grp) {
+        if (grp && grp._id) {
+          soldById[String(grp._id)] = Number.isFinite(Number(grp.sold)) ? Number(grp.sold) : 0;
+        }
+      });
+
+      pageRows.forEach(function (r) {
+        var pid = catalogService.toTrimmedString(r && r.id);
+        r.sold = soldById[pid] || 0;
+      });
+    }
+  } catch (err) {
+    console.error('Failed to attach sold counts for admin products page:', err && err.message ? err.message : err);
+  }
+
+  return res.render('admin-products', {
+    title: 'Products | Admin Panel | BhutanDevi Trade and Suppliers',
+    statusMessage: catalogService.getAdminStatusMessage(status),
+    errorMessage: catalogService.getAdminErrorMessage(error),
+    productRows: pagination.rows,
+    totalProductCount: pagination.totalCount,
+    adminProductsPage: pagination.page,
+    adminProductsTotalPages: pagination.totalPages,
+    adminProductsPagePath: buildAdminProductsPagePath(pagination.page),
+    dashboardStats: buildDashboardStats(categoryBoards, adminData),
   });
 }
 
@@ -625,21 +851,55 @@ async function renderAdminOrdersPage(req, res) {
   });
 }
 
-function renderAdminCategoryPage(req, res) {
+async function renderAdminCategoryPage(req, res) {
   var categorySlug = catalogService.toTrimmedString(req.params.categorySlug);
   var catalog = catalogService.getCatalogContext();
   var status = catalogService.toTrimmedString(req.query.status);
   var error = catalogService.toTrimmedString(req.query.error);
   var categoryItemsPage = parsePositiveInteger(req.query.itemsPage, 1);
+  var adminData = catalogService.getAdminData() || {};
   var categoryBoards = catalogService.buildAdminCategoryBoards(
     catalog.categoryGroups,
     catalog.productSections,
     catalog.categoryKeywordMap
   );
   var categoryBoard = findCategoryBoardBySlug(categorySlug, categoryBoards);
+  var categoryRecord = null;
 
   if (!categoryBoard) {
     return res.redirect(buildErrorRedirect(defaultAdminPath, 'category-not-found'));
+  }
+
+  if (Array.isArray(adminData.categories)) {
+    categoryRecord = adminData.categories.find(function (category) {
+      return catalogService.normalizeForSearch(category && category.name) === catalogService.normalizeForSearch(categoryBoard.name);
+    }) || null;
+  }
+
+  // Attach sold counts (sum of quantities for accepted orders) to each product item when possible.
+  try {
+    var productIds = Array.isArray(categoryBoard.items) ? categoryBoard.items.map(function (it) { return catalogService.toTrimmedString(it && it.id); }).filter(Boolean) : [];
+
+    if (productIds.length && await ensureDatabaseConnection()) {
+      var soldGroups = await Order.aggregate([
+        { $match: { productId: { $in: productIds }, adminStatus: 'accepted' } },
+        { $group: { _id: '$productId', sold: { $sum: '$quantity' } } },
+      ]).allowDiskUse(true);
+
+      var soldById = {};
+      (soldGroups || []).forEach(function (grp) {
+        if (grp && grp._id) {
+          soldById[String(grp._id)] = Number.isFinite(Number(grp.sold)) ? Number(grp.sold) : 0;
+        }
+      });
+
+      (categoryBoard.items || []).forEach(function (it) {
+        var pid = catalogService.toTrimmedString(it && it.id);
+        it.sold = soldById[pid] || 0;
+      });
+    }
+  } catch (err) {
+    console.error('Failed to attach sold counts for admin category page:', err && err.message ? err.message : err);
   }
 
   return res.render('admin-category', {
@@ -649,6 +909,7 @@ function renderAdminCategoryPage(req, res) {
     statusMessage: catalogService.getAdminStatusMessage(status),
     errorMessage: catalogService.getAdminErrorMessage(error),
     categoryBoard: categoryBoard,
+    categoryRecord: categoryRecord,
     categoryBoards: categoryBoards,
     categoryPagePath: buildCategoryAdminPath(categoryBoard.name),
     categoryItemsPage: categoryItemsPage,
@@ -659,15 +920,18 @@ function renderAdminCategoryPage(req, res) {
   });
 }
 
+function redirectAdminCategoryRoot(req, res) {
+  return res.redirect(defaultAdminPath);
+}
+
 async function saveProductPrice(req, res) {
   var productId = catalogService.toTrimmedString(req.body.productId);
   var parsedPrice = parseNonNegativeNumber(req.body.productPrice);
   var productPrice = Number.isFinite(parsedPrice) ? formatNprAmount(parsedPrice) : '';
-  var catalog = catalogService.getCatalogContext();
-  var adminData = catalogService.getAdminData();
   var redirectPath = getSafeRedirectPath(req, defaultAdminPath);
   var hasMongoConfiguration = Boolean(String(process.env.MONGODB_URI || '').trim());
-  var isAjax = req.xhr || req.headers['x-requested-with'] === 'XMLHttpRequest' || req.headers.accept === 'application/json';
+  var isAjax = isAjaxRequest(req);
+  var mutationResult = null;
 
   if (hasMongoConfiguration && !await ensureDatabaseConnection()) {
     if (isAjax) {
@@ -690,20 +954,48 @@ async function saveProductPrice(req, res) {
     return res.redirect(buildErrorRedirect(redirectPath, 'product-price-required'));
   }
 
-  if (!catalogService.findProductById(productId, catalog.productSections)) {
-    if (isAjax) {
-      return res.status(404).json({ success: false, error: 'product-not-found', message: 'Product not found' });
-    }
-    return res.redirect(buildErrorRedirect(redirectPath, 'product-not-found'));
-  }
+  mutationResult = await runAdminMutation(async function () {
+    var latestCatalog = catalogService.getCatalogContext();
+    var latestAdminData = catalogService.getAdminData();
 
-  adminData.priceOverrides[productId] = productPrice;
-
-  if (!await catalogService.saveAdminData()) {
-    if (isAjax) {
-      return res.status(500).json({ success: false, error: 'save-failed', message: 'Failed to save price' });
+    if (!catalogService.findProductById(productId, latestCatalog.productSections)) {
+      return {
+        ok: false,
+        errorCode: 'product-not-found',
+        message: 'Product not found',
+        statusCode: 404,
+      };
     }
-    return res.redirect(buildErrorRedirect(redirectPath, 'save-failed'));
+
+    if (!latestAdminData.priceOverrides || typeof latestAdminData.priceOverrides !== 'object') {
+      latestAdminData.priceOverrides = {};
+    }
+
+    latestAdminData.priceOverrides[productId] = productPrice;
+
+    if (!await catalogService.saveAdminData()) {
+      return {
+        ok: false,
+        errorCode: 'save-failed',
+        message: 'Failed to save price',
+        statusCode: 500,
+      };
+    }
+
+    return {
+      ok: true,
+    };
+  });
+
+  if (!mutationResult || !mutationResult.ok) {
+    if (isAjax) {
+      return res.status(mutationResult && mutationResult.statusCode ? mutationResult.statusCode : 500).json({
+        success: false,
+        error: mutationResult && mutationResult.errorCode ? mutationResult.errorCode : 'save-failed',
+        message: mutationResult && mutationResult.message ? mutationResult.message : 'Failed to save price',
+      });
+    }
+    return res.redirect(buildErrorRedirect(redirectPath, mutationResult && mutationResult.errorCode ? mutationResult.errorCode : 'save-failed'));
   }
 
   if (isAjax) {
@@ -716,7 +1008,8 @@ function saveProductImage(req, res) {
   catalogService.imageUpload.single('productImageFile')(req, res, async function (uploadError) {
     var redirectPath = getSafeRedirectPath(req, defaultAdminPath);
     var hasMongoConfiguration = Boolean(String(process.env.MONGODB_URI || '').trim());
-    var isAjax = req.xhr || req.headers['x-requested-with'] === 'XMLHttpRequest' || req.headers.accept === 'application/json';
+    var isAjax = isAjaxRequest(req);
+    var mutationResult = null;
 
     if (uploadError) {
       var errorCode = 'save-failed';
@@ -750,8 +1043,6 @@ function saveProductImage(req, res) {
 
     var productId = catalogService.toTrimmedString(req.body.productId);
     var uploadedImagePath = await catalogService.optimizeUploadedImage(req.file);
-    var catalog = catalogService.getCatalogContext();
-    var adminData = catalogService.getAdminData();
 
     if (!productId || !isValidEntityId(productId)) {
       if (isAjax) {
@@ -767,20 +1058,48 @@ function saveProductImage(req, res) {
       return res.redirect(buildErrorRedirect(redirectPath, 'cloudinary-upload-failed'));
     }
 
-    if (!catalogService.findProductById(productId, catalog.productSections)) {
-      if (isAjax) {
-        return res.status(404).json({ success: false, error: 'product-not-found', message: 'Product not found' });
-      }
-      return res.redirect(buildErrorRedirect(redirectPath, 'product-not-found'));
-    }
+    mutationResult = await runAdminMutation(async function () {
+      var latestCatalog = catalogService.getCatalogContext();
+      var latestAdminData = catalogService.getAdminData();
 
-    adminData.imageOverrides[productId] = uploadedImagePath;
-
-    if (!await catalogService.saveAdminData()) {
-      if (isAjax) {
-        return res.status(500).json({ success: false, error: 'save-failed', message: 'Failed to save image' });
+      if (!catalogService.findProductById(productId, latestCatalog.productSections)) {
+        return {
+          ok: false,
+          errorCode: 'product-not-found',
+          message: 'Product not found',
+          statusCode: 404,
+        };
       }
-      return res.redirect(buildErrorRedirect(redirectPath, 'save-failed'));
+
+      if (!latestAdminData.imageOverrides || typeof latestAdminData.imageOverrides !== 'object') {
+        latestAdminData.imageOverrides = {};
+      }
+
+      latestAdminData.imageOverrides[productId] = uploadedImagePath;
+
+      if (!await catalogService.saveAdminData()) {
+        return {
+          ok: false,
+          errorCode: 'save-failed',
+          message: 'Failed to save image',
+          statusCode: 500,
+        };
+      }
+
+      return {
+        ok: true,
+      };
+    });
+
+    if (!mutationResult || !mutationResult.ok) {
+      if (isAjax) {
+        return res.status(mutationResult && mutationResult.statusCode ? mutationResult.statusCode : 500).json({
+          success: false,
+          error: mutationResult && mutationResult.errorCode ? mutationResult.errorCode : 'save-failed',
+          message: mutationResult && mutationResult.message ? mutationResult.message : 'Failed to save image',
+        });
+      }
+      return res.redirect(buildErrorRedirect(redirectPath, mutationResult && mutationResult.errorCode ? mutationResult.errorCode : 'save-failed'));
     }
 
     if (isAjax) {
@@ -794,7 +1113,8 @@ function editProduct(req, res) {
   catalogService.imageUpload.single('productImageFile')(req, res, async function (uploadError) {
     var redirectPath = getSafeRedirectPath(req, defaultAdminPath);
     var hasMongoConfiguration = Boolean(String(process.env.MONGODB_URI || '').trim());
-    var isAjax = req.xhr || req.headers['x-requested-with'] === 'XMLHttpRequest' || req.headers.accept === 'application/json';
+    var isAjax = isAjaxRequest(req);
+    var mutationResult = null;
 
     function sendErrorResponse(errorCode, message, statusCode) {
       if (isAjax) {
@@ -821,23 +1141,15 @@ function editProduct(req, res) {
     }
 
     var productId = catalogService.toTrimmedString(req.body.productId);
-    var productCategory = normalizeSingleLineText(req.body.productCategory);
+    var requestedProductCategory = normalizeSingleLineText(req.body.productCategory);
     var productName = normalizeSingleLineText(req.body.productName);
     var rawProductSpec = normalizeMultilineText(req.body.productSpec);
-    var productSpec = buildProductSpec(
-      productCategory,
-      rawProductSpec,
-      req.body.productHelmetCoverage
-    );
+    var productSpec = buildProductSpec(requestedProductCategory, rawProductSpec);
     var productPricing = resolveProductPricing(req.body.productPrice, req.body.productDiscountPercent);
     var productPrice = productPricing.price;
     var productQuantity = normalizeProductQuantity(req.body.productQuantity);
     var currentImagePath = catalogService.normalizeAssetPath(req.body.currentImagePath);
     var uploadedImagePath = '';
-    var catalog = catalogService.getCatalogContext();
-    var productMatch = catalogService.findProductById(productId, catalog.productSections);
-    var adminData = catalogService.getAdminData();
-    var resolvedImagePath = '';
 
     if (req.file) {
       uploadedImagePath = await catalogService.optimizeUploadedImage(req.file);
@@ -850,7 +1162,7 @@ function editProduct(req, res) {
       return sendErrorResponse('product-id-required', 'Product ID required', 400);
     }
 
-    if (!productCategory || !isWithinLength(productCategory, maxCategoryNameLength)) {
+    if (!requestedProductCategory || !isWithinLength(requestedProductCategory, maxCategoryNameLength)) {
       return sendErrorResponse('product-category-required', 'Product category required', 400);
     }
 
@@ -870,57 +1182,167 @@ function editProduct(req, res) {
       return sendErrorResponse('invalid-input', 'Invalid quantity', 400);
     }
 
-    if (!productMatch) {
-      return sendErrorResponse('product-not-found', 'Product not found', 404);
-    }
+    mutationResult = await runAdminMutation(async function () {
+      var latestCatalog = catalogService.getCatalogContext();
+      var latestProductMatch = catalogService.findProductById(productId, latestCatalog.productSections);
+      var latestCategoryBoards = catalogService.buildAdminCategoryBoards(
+        latestCatalog.categoryGroups,
+        latestCatalog.productSections,
+        latestCatalog.categoryKeywordMap
+      );
+      var matchedCategoryBoard = findCategoryBoardByName(requestedProductCategory, latestCategoryBoards);
+      var adminData = catalogService.getAdminData();
+      var resolvedImagePath = '';
+      var resolvedCategoryName = '';
+      var previousCategoryName = '';
+      var previousProductName = '';
+      var updatedProduct = null;
+      var hasAdminProductEntry = false;
 
-    if (hasDuplicateProductName(productCategory, productName, catalog.productSections, productId)) {
-      return sendErrorResponse('duplicate-product', 'Product already exists', 409);
-    }
+      if (!latestProductMatch || !latestProductMatch.item) {
+        return {
+          ok: false,
+          errorCode: 'product-not-found',
+          message: 'Product not found',
+          statusCode: 404,
+        };
+      }
 
-    resolvedImagePath =
-      uploadedImagePath ||
-      currentImagePath ||
-      catalogService.normalizeAssetPath(productMatch.item.image);
+      if (!matchedCategoryBoard) {
+        matchedCategoryBoard = findCategoryBoardByName(latestProductMatch.item.type, latestCategoryBoards);
+      }
 
-    if (!adminData.productOverrides || typeof adminData.productOverrides !== 'object') {
-      adminData.productOverrides = {};
-    }
+      if (!matchedCategoryBoard) {
+        return {
+          ok: false,
+          errorCode: 'category-not-found',
+          message: 'Category not found',
+          statusCode: 404,
+        };
+      }
 
-    var updatedProduct = {
-      type: productCategory,
-      name: productName,
-      spec: productSpec,
-      price: productPrice,
-      originalPrice: productPricing.originalPrice,
-      discountPercent: productPricing.discountPercent ? String(productPricing.discountPercent) : '',
-      quantity: productQuantity,
-      image: resolvedImagePath,
-    };
-    adminData.productOverrides[productId] = updatedProduct;
+      resolvedCategoryName = matchedCategoryBoard.name;
+      previousCategoryName = normalizeSingleLineText(latestProductMatch.item.type);
+      previousProductName = normalizeSingleLineText(latestProductMatch.item.name);
 
-    catalogService.upsertAdminCategory(productCategory, '', [productName]);
+      if (hasDuplicateProductName(resolvedCategoryName, productName, latestCatalog.productSections, productId)) {
+        return {
+          ok: false,
+          errorCode: 'duplicate-product',
+          message: 'Product already exists',
+          statusCode: 409,
+        };
+      }
 
-    if (adminData.priceOverrides && typeof adminData.priceOverrides === 'object') {
-      delete adminData.priceOverrides[productId];
-    }
+      resolvedImagePath =
+        uploadedImagePath ||
+        currentImagePath ||
+        catalogService.normalizeAssetPath(latestProductMatch.item.image);
 
-    if (adminData.imageOverrides && typeof adminData.imageOverrides === 'object') {
-      delete adminData.imageOverrides[productId];
-    }
+      if (!Array.isArray(adminData.products)) {
+        adminData.products = [];
+      }
 
-    if (Array.isArray(adminData.deletedProductIds)) {
-      adminData.deletedProductIds = adminData.deletedProductIds.filter(function (id) {
-        return id !== productId;
+      if (!adminData.productOverrides || typeof adminData.productOverrides !== 'object') {
+        adminData.productOverrides = {};
+      }
+
+      updatedProduct = {
+        type: resolvedCategoryName,
+        name: productName,
+        spec: productSpec,
+        price: productPrice,
+        originalPrice: productPricing.originalPrice,
+        discountPercent: productPricing.discountPercent ? String(productPricing.discountPercent) : '',
+        quantity: productQuantity,
+        image: resolvedImagePath,
+      };
+
+      adminData.products.forEach(function (product) {
+        if (catalogService.toTrimmedString(product && product.id) !== productId) {
+          return;
+        }
+
+        product.type = updatedProduct.type;
+        product.name = updatedProduct.name;
+        product.spec = updatedProduct.spec;
+        product.price = updatedProduct.price;
+        product.originalPrice = updatedProduct.originalPrice;
+        product.discountPercent = updatedProduct.discountPercent;
+        product.quantity = updatedProduct.quantity;
+        product.image = updatedProduct.image;
+        product.images = catalogService.normalizeImageList([updatedProduct.image], updatedProduct.image);
+        hasAdminProductEntry = true;
       });
-    }
 
-    if (!await catalogService.saveAdminData()) {
-      return sendErrorResponse('save-failed', 'Failed to update product', 500);
+      if (hasAdminProductEntry) {
+        delete adminData.productOverrides[productId];
+      } else {
+        adminData.productOverrides[productId] = updatedProduct;
+      }
+
+      catalogService.upsertAdminCategory(resolvedCategoryName, '', [productName]);
+
+      if (
+        previousCategoryName &&
+        previousProductName &&
+        (
+          catalogService.normalizeForSearch(previousCategoryName) !== catalogService.normalizeForSearch(resolvedCategoryName) ||
+          catalogService.normalizeForSearch(previousProductName) !== catalogService.normalizeForSearch(productName)
+        )
+      ) {
+        removeProductNameFromAdminCategory(adminData, previousCategoryName, previousProductName);
+      }
+
+      if (adminData.priceOverrides && typeof adminData.priceOverrides === 'object') {
+        delete adminData.priceOverrides[productId];
+      }
+
+      if (adminData.imageOverrides && typeof adminData.imageOverrides === 'object') {
+        delete adminData.imageOverrides[productId];
+      }
+
+      if (Array.isArray(adminData.deletedProductIds)) {
+        adminData.deletedProductIds = adminData.deletedProductIds.filter(function (id) {
+          return id !== productId;
+        });
+      }
+
+      if (!await catalogService.saveAdminData()) {
+        return {
+          ok: false,
+          errorCode: 'save-failed',
+          message: 'Failed to update product',
+          statusCode: 500,
+        };
+      }
+
+      return {
+        ok: true,
+        productId: productId,
+        product: updatedProduct,
+      };
+    });
+
+    if (!mutationResult || !mutationResult.ok) {
+      if (uploadedImagePath) {
+        await catalogService.cleanupLocalImageAsset(uploadedImagePath);
+      }
+
+      return sendErrorResponse(
+        mutationResult && mutationResult.errorCode ? mutationResult.errorCode : 'save-failed',
+        mutationResult && mutationResult.message ? mutationResult.message : 'Failed to update product',
+        mutationResult && mutationResult.statusCode ? mutationResult.statusCode : 500
+      );
     }
 
     if (isAjax) {
-      return res.json({ success: true, message: 'Product updated successfully', productId: productId, product: updatedProduct });
+      return res.json({
+        success: true,
+        message: 'Product updated successfully',
+        productId: mutationResult.productId,
+        product: mutationResult.product,
+      });
     }
     return res.redirect(buildStatusRedirect(redirectPath, 'product-updated'));
   });
@@ -928,15 +1350,10 @@ function editProduct(req, res) {
 
 async function deleteProduct(req, res) {
   var productId = catalogService.toTrimmedString(req.body.productId);
-  var catalog = catalogService.getCatalogContext();
-  var productMatch = catalogService.findProductById(productId, catalog.productSections);
-  var adminData = catalogService.getAdminData();
-  var hasAdminProduct = false;
-  var deletedProductNameKey = '';
-  var deletedCategoryKey = '';
   var redirectPath = getSafeRedirectPath(req, defaultAdminPath);
   var hasMongoConfiguration = Boolean(String(process.env.MONGODB_URI || '').trim());
-  var isAjax = req.xhr || req.headers['x-requested-with'] === 'XMLHttpRequest' || req.headers.accept === 'application/json';
+  var isAjax = isAjaxRequest(req);
+  var mutationResult = null;
 
   if (hasMongoConfiguration && !await ensureDatabaseConnection()) {
     if (isAjax) {
@@ -952,99 +1369,117 @@ async function deleteProduct(req, res) {
     return res.redirect(buildErrorRedirect(redirectPath, 'product-id-required'));
   }
 
-  if (!productMatch) {
-    if (isAjax) {
-      return res.status(404).json({ success: false, error: 'product-not-found', message: 'Product not found' });
-    }
-    return res.redirect(buildErrorRedirect(redirectPath, 'product-not-found'));
-  }
-
-  deletedProductNameKey = catalogService.normalizeForSearch(productMatch.item.name);
-  deletedCategoryKey = catalogService.normalizeForSearch(productMatch.item.type);
-
-  if (Array.isArray(adminData.products)) {
+  mutationResult = await runAdminMutation(async function () {
+    var latestCatalog = catalogService.getCatalogContext();
+    var latestProductMatch = catalogService.findProductById(productId, latestCatalog.productSections);
+    var adminData = catalogService.getAdminData();
+    var hasAdminProduct = false;
+    var deletedProductNameKey = '';
+    var deletedCategoryKey = '';
     var nextAdminProducts = [];
-    adminData.products.forEach(function (product) {
-      if (product.id === productId) {
-        hasAdminProduct = true;
-        return;
-      }
-      nextAdminProducts.push(product);
-    });
-    adminData.products = nextAdminProducts;
-  }
 
-  if (!hasAdminProduct) {
-    if (!Array.isArray(adminData.deletedProductIds)) {
-      adminData.deletedProductIds = [];
+    if (!latestProductMatch || !latestProductMatch.item) {
+      return {
+        ok: false,
+        errorCode: 'product-not-found',
+        message: 'Product not found',
+        statusCode: 404,
+      };
     }
 
-    if (adminData.deletedProductIds.indexOf(productId) === -1) {
-      adminData.deletedProductIds.push(productId);
-      adminData.deletedProductIds = catalogService.normalizeList(adminData.deletedProductIds);
-    }
-  }
+    deletedProductNameKey = catalogService.normalizeForSearch(latestProductMatch.item.name);
+    deletedCategoryKey = catalogService.normalizeForSearch(latestProductMatch.item.type);
 
-  if (adminData.productOverrides && typeof adminData.productOverrides === 'object') {
-    delete adminData.productOverrides[productId];
-  }
-
-  if (adminData.priceOverrides && typeof adminData.priceOverrides === 'object') {
-    delete adminData.priceOverrides[productId];
-  }
-
-  if (adminData.imageOverrides && typeof adminData.imageOverrides === 'object') {
-    delete adminData.imageOverrides[productId];
-  }
-
-  if (Array.isArray(adminData.categories) && deletedProductNameKey) {
-    adminData.categories.forEach(function (category) {
-      var categoryKey = catalogService.normalizeForSearch(category.name);
-      if (deletedCategoryKey && categoryKey !== deletedCategoryKey) {
-        return;
-      }
-
-      if (!Array.isArray(category.items)) {
-        return;
-      }
-
-      category.items = category.items.filter(function (itemName) {
-        return catalogService.normalizeForSearch(itemName) !== deletedProductNameKey;
+    if (Array.isArray(adminData.products)) {
+      adminData.products.forEach(function (product) {
+        if (catalogService.toTrimmedString(product && product.id) === productId) {
+          hasAdminProduct = true;
+          return;
+        }
+        nextAdminProducts.push(product);
       });
-    });
-  }
-
-  if (!await catalogService.saveAdminData()) {
-    if (isAjax) {
-      return res.status(500).json({ success: false, error: 'save-failed', message: 'Failed to delete product' });
+      adminData.products = nextAdminProducts;
     }
-    return res.redirect(buildErrorRedirect(redirectPath, 'save-failed'));
+
+    if (!hasAdminProduct) {
+      if (!Array.isArray(adminData.deletedProductIds)) {
+        adminData.deletedProductIds = [];
+      }
+
+      if (adminData.deletedProductIds.indexOf(productId) === -1) {
+        adminData.deletedProductIds.push(productId);
+        adminData.deletedProductIds = catalogService.normalizeList(adminData.deletedProductIds);
+      }
+    }
+
+    if (adminData.productOverrides && typeof adminData.productOverrides === 'object') {
+      delete adminData.productOverrides[productId];
+    }
+
+    if (adminData.priceOverrides && typeof adminData.priceOverrides === 'object') {
+      delete adminData.priceOverrides[productId];
+    }
+
+    if (adminData.imageOverrides && typeof adminData.imageOverrides === 'object') {
+      delete adminData.imageOverrides[productId];
+    }
+
+    if (Array.isArray(adminData.categories) && deletedProductNameKey) {
+      adminData.categories.forEach(function (category) {
+        var categoryKey = catalogService.normalizeForSearch(category && category.name);
+        if (deletedCategoryKey && categoryKey !== deletedCategoryKey) {
+          return;
+        }
+
+        if (!Array.isArray(category && category.items)) {
+          return;
+        }
+
+        category.items = category.items.filter(function (itemName) {
+          return catalogService.normalizeForSearch(itemName) !== deletedProductNameKey;
+        });
+      });
+    }
+
+    if (!await catalogService.saveAdminData()) {
+      return {
+        ok: false,
+        errorCode: 'save-failed',
+        message: 'Failed to delete product',
+        statusCode: 500,
+      };
+    }
+
+    return {
+      ok: true,
+      productId: productId,
+    };
+  });
+
+  if (!mutationResult || !mutationResult.ok) {
+    if (isAjax) {
+      return res.status(mutationResult && mutationResult.statusCode ? mutationResult.statusCode : 500).json({
+        success: false,
+        error: mutationResult && mutationResult.errorCode ? mutationResult.errorCode : 'save-failed',
+        message: mutationResult && mutationResult.message ? mutationResult.message : 'Failed to delete product',
+      });
+    }
+    return res.redirect(buildErrorRedirect(redirectPath, mutationResult && mutationResult.errorCode ? mutationResult.errorCode : 'save-failed'));
   }
 
   if (isAjax) {
-    return res.json({ success: true, message: 'Product deleted successfully', productId: productId });
+    return res.json({ success: true, message: 'Product deleted successfully', productId: mutationResult.productId });
   }
   return res.redirect(buildStatusRedirect(redirectPath, 'product-deleted'));
 }
 
 async function deleteCategory(req, res) {
   var categoryName = normalizeSingleLineText(req.body.categoryName);
-  var catalog = catalogService.getCatalogContext();
-  var categoryBoards = catalogService.buildAdminCategoryBoards(
-    catalog.categoryGroups,
-    catalog.productSections,
-    catalog.categoryKeywordMap
-  );
-  var adminData = catalogService.getAdminData();
   var categoryKey = catalogService.normalizeForSearch(categoryName);
-  var matchedBoard = null;
-  var matchedCategoryName = '';
-  var matchedCategoryKey = '';
-  var deletedProductIdsByKey = Object.create(null);
-  var deletedProductIds = [];
   var redirectPath = getSafeRedirectPath(req, defaultAdminPath);
   var hasMongoConfiguration = Boolean(String(process.env.MONGODB_URI || '').trim());
-  var isAjax = req.xhr || req.headers['x-requested-with'] === 'XMLHttpRequest' || req.headers.accept === 'application/json';
+  var isAjax = isAjaxRequest(req);
+  var mutationResult = null;
 
   if (hasMongoConfiguration && !await ensureDatabaseConnection()) {
     if (isAjax) {
@@ -1060,108 +1495,148 @@ async function deleteCategory(req, res) {
     return res.redirect(buildErrorRedirect(redirectPath, 'category-name-required'));
   }
 
-  matchedBoard = categoryBoards.find(function (board) {
-    return catalogService.normalizeForSearch(board.name) === categoryKey;
-  }) || null;
+  mutationResult = await runAdminMutation(async function () {
+    var latestCatalog = catalogService.getCatalogContext();
+    var latestCategoryBoards = catalogService.buildAdminCategoryBoards(
+      latestCatalog.categoryGroups,
+      latestCatalog.productSections,
+      latestCatalog.categoryKeywordMap
+    );
+    var adminData = catalogService.getAdminData();
+    var matchedBoard = latestCategoryBoards.find(function (board) {
+      return catalogService.normalizeForSearch(board && board.name) === categoryKey;
+    }) || null;
+    var matchedCategoryName = '';
+    var matchedCategoryKey = '';
+    var deletedProductIdsByKey = Object.create(null);
+    var deletedProductIds = [];
 
-  if (!matchedBoard) {
-    if (isAjax) {
-      return res.status(404).json({ success: false, error: 'category-not-found', message: 'Category not found' });
+    if (!matchedBoard) {
+      return {
+        ok: false,
+        errorCode: 'category-not-found',
+        message: 'Category not found',
+        statusCode: 404,
+      };
     }
-    return res.redirect(buildErrorRedirect(redirectPath, 'category-not-found'));
-  }
 
-  matchedCategoryName = matchedBoard.name;
-  matchedCategoryKey = catalogService.normalizeForSearch(matchedCategoryName);
+    matchedCategoryName = matchedBoard.name;
+    matchedCategoryKey = catalogService.normalizeForSearch(matchedCategoryName);
 
-  if (!Array.isArray(adminData.deletedCategoryNames)) {
-    adminData.deletedCategoryNames = [];
-  }
-
-  if (!catalogService.isDeletedCategory(matchedCategoryName)) {
-    adminData.deletedCategoryNames.push(matchedCategoryName);
-    adminData.deletedCategoryNames = catalogService.normalizeList(adminData.deletedCategoryNames);
-  }
-
-  if (Array.isArray(adminData.categories)) {
-    adminData.categories = adminData.categories.filter(function (category) {
-      return catalogService.normalizeForSearch(category.name) !== matchedCategoryKey;
-    });
-  }
-
-  (matchedBoard.items || []).forEach(function (item) {
-    if (item && item.id) {
-      deletedProductIdsByKey[item.id] = true;
+    if (!Array.isArray(adminData.deletedCategoryNames)) {
+      adminData.deletedCategoryNames = [];
     }
-  });
 
-  if (Array.isArray(adminData.products)) {
-    adminData.products.forEach(function (product) {
-      var productOverride = catalogService.getProductOverrideEntry(product.id);
-      var effectiveCategoryName =
-        catalogService.toTrimmedString(productOverride.type) ||
-        catalogService.toTrimmedString(product.type);
-      if (catalogService.normalizeForSearch(effectiveCategoryName) === matchedCategoryKey) {
-        deletedProductIdsByKey[product.id] = true;
+    if (!catalogService.isDeletedCategory(matchedCategoryName)) {
+      adminData.deletedCategoryNames.push(matchedCategoryName);
+      adminData.deletedCategoryNames = catalogService.normalizeList(adminData.deletedCategoryNames);
+    }
+
+    if (Array.isArray(adminData.categories)) {
+      adminData.categories = adminData.categories.filter(function (category) {
+        return catalogService.normalizeForSearch(category && category.name) !== matchedCategoryKey;
+      });
+    }
+
+    (matchedBoard.items || []).forEach(function (item) {
+      if (item && item.id) {
+        deletedProductIdsByKey[item.id] = true;
       }
     });
-  }
 
-  deletedProductIds = Object.keys(deletedProductIdsByKey);
+    if (Array.isArray(adminData.products)) {
+      adminData.products.forEach(function (product) {
+        var productOverride = catalogService.getProductOverrideEntry(product && product.id);
+        var effectiveCategoryName =
+          catalogService.toTrimmedString(productOverride.type) ||
+          catalogService.toTrimmedString(product && product.type);
 
-  if (Array.isArray(adminData.products) && deletedProductIds.length > 0) {
-    adminData.products = adminData.products.filter(function (product) {
-      return !deletedProductIdsByKey[product.id];
-    });
-  }
-
-  if (!Array.isArray(adminData.deletedProductIds)) {
-    adminData.deletedProductIds = [];
-  }
-
-  if (deletedProductIds.length > 0) {
-    adminData.deletedProductIds = catalogService.normalizeList(adminData.deletedProductIds.concat(deletedProductIds));
-  }
-
-  if (adminData.productOverrides && typeof adminData.productOverrides === 'object') {
-    deletedProductIds.forEach(function (productId) {
-      delete adminData.productOverrides[productId];
-    });
-  }
-
-  if (adminData.priceOverrides && typeof adminData.priceOverrides === 'object') {
-    deletedProductIds.forEach(function (productId) {
-      delete adminData.priceOverrides[productId];
-    });
-  }
-
-  if (adminData.imageOverrides && typeof adminData.imageOverrides === 'object') {
-    deletedProductIds.forEach(function (productId) {
-      delete adminData.imageOverrides[productId];
-    });
-  }
-
-  if (!await catalogService.saveAdminData()) {
-    if (isAjax) {
-      return res.status(500).json({ success: false, error: 'save-failed', message: 'Failed to delete category' });
+        if (catalogService.normalizeForSearch(effectiveCategoryName) === matchedCategoryKey) {
+          deletedProductIdsByKey[product.id] = true;
+        }
+      });
     }
-    return res.redirect(buildErrorRedirect(redirectPath, 'save-failed'));
+
+    deletedProductIds = Object.keys(deletedProductIdsByKey);
+
+    if (Array.isArray(adminData.products) && deletedProductIds.length > 0) {
+      adminData.products = adminData.products.filter(function (product) {
+        return !deletedProductIdsByKey[product.id];
+      });
+    }
+
+    if (!Array.isArray(adminData.deletedProductIds)) {
+      adminData.deletedProductIds = [];
+    }
+
+    if (deletedProductIds.length > 0) {
+      adminData.deletedProductIds = catalogService.normalizeList(adminData.deletedProductIds.concat(deletedProductIds));
+    }
+
+    if (adminData.productOverrides && typeof adminData.productOverrides === 'object') {
+      deletedProductIds.forEach(function (productId) {
+        delete adminData.productOverrides[productId];
+      });
+    }
+
+    if (adminData.priceOverrides && typeof adminData.priceOverrides === 'object') {
+      deletedProductIds.forEach(function (productId) {
+        delete adminData.priceOverrides[productId];
+      });
+    }
+
+    if (adminData.imageOverrides && typeof adminData.imageOverrides === 'object') {
+      deletedProductIds.forEach(function (productId) {
+        delete adminData.imageOverrides[productId];
+      });
+    }
+
+    if (!await catalogService.saveAdminData()) {
+      return {
+        ok: false,
+        errorCode: 'save-failed',
+        message: 'Failed to delete category',
+        statusCode: 500,
+      };
+    }
+
+    return {
+      ok: true,
+      categoryName: matchedCategoryName,
+    };
+  });
+
+  if (!mutationResult || !mutationResult.ok) {
+    if (isAjax) {
+      return res.status(mutationResult && mutationResult.statusCode ? mutationResult.statusCode : 500).json({
+        success: false,
+        error: mutationResult && mutationResult.errorCode ? mutationResult.errorCode : 'save-failed',
+        message: mutationResult && mutationResult.message ? mutationResult.message : 'Failed to delete category',
+      });
+    }
+    return res.redirect(buildErrorRedirect(redirectPath, mutationResult && mutationResult.errorCode ? mutationResult.errorCode : 'save-failed'));
   }
 
   if (isAjax) {
-    return res.json({ success: true, message: 'Category deleted successfully', categoryName: matchedCategoryName });
+    return res.json({ success: true, message: 'Category deleted successfully', categoryName: mutationResult.categoryName });
   }
   return res.redirect(buildStatusRedirect(defaultAdminPath, 'category-deleted'));
 }
 
 async function saveCategory(req, res) {
+  var requestBody = req && req.body && typeof req.body === 'object' ? req.body : {};
   var categoryName = normalizeSingleLineText(req.body.categoryName);
+  var originalCategoryName = normalizeSingleLineText(req.body.originalCategoryName);
   var categoryDescription = normalizeMultilineText(req.body.categoryDescription);
   var parsedCategoryItems = catalogService.parseCommaSeparatedList(req.body.categoryItems);
   var categoryItems = sanitizeCategoryItems(req.body.categoryItems);
+  var shouldReplaceCategoryItems = /^(1|true|yes|on)$/i.test(catalogService.toTrimmedString(req.body.replaceCategoryItems));
+  var shouldUpdateDescription = Object.prototype.hasOwnProperty.call(requestBody, 'categoryDescription');
   var redirectPath = getSafeRedirectPath(req, defaultAdminPath);
   var hasMongoConfiguration = Boolean(String(process.env.MONGODB_URI || '').trim());
-  var isAjax = req.xhr || req.headers['x-requested-with'] === 'XMLHttpRequest' || req.headers.accept === 'application/json';
+  var isAjax = isAjaxRequest(req);
+  var mutationResult = null;
+  var successRedirectPath = redirectPath;
 
   if (hasMongoConfiguration && !await ensureDatabaseConnection()) {
     if (isAjax) {
@@ -1177,7 +1652,11 @@ async function saveCategory(req, res) {
     return res.redirect(buildErrorRedirect(redirectPath, 'category-name-required'));
   }
 
-  if (!isWithinLength(categoryName, maxCategoryNameLength) || !isWithinLength(categoryDescription, maxCategoryDescriptionLength)) {
+  if (
+    !isWithinLength(categoryName, maxCategoryNameLength) ||
+    !isWithinLength(originalCategoryName, maxCategoryNameLength) ||
+    !isWithinLength(categoryDescription, maxCategoryDescriptionLength)
+  ) {
     if (isAjax) {
       return res.status(400).json({ success: false, error: 'invalid-input', message: 'Invalid input' });
     }
@@ -1191,19 +1670,105 @@ async function saveCategory(req, res) {
     return res.redirect(buildErrorRedirect(redirectPath, 'invalid-input'));
   }
 
-  catalogService.upsertAdminCategory(categoryName, categoryDescription, categoryItems);
+  mutationResult = await runAdminMutation(async function () {
+    var latestCatalog = catalogService.getCatalogContext();
+    var latestCategoryBoards = catalogService.buildAdminCategoryBoards(
+      latestCatalog.categoryGroups,
+      latestCatalog.productSections,
+      latestCatalog.categoryKeywordMap
+    );
+    var matchedOriginalCategory = null;
+    var redirectCategorySlug = '';
+    var resolvedOriginalCategoryName = originalCategoryName;
 
-  if (!await catalogService.saveAdminData()) {
-    if (isAjax) {
-      return res.status(500).json({ success: false, error: 'save-failed', message: 'Failed to save category' });
+    if (resolvedOriginalCategoryName) {
+      matchedOriginalCategory = findCategoryBoardByName(resolvedOriginalCategoryName, latestCategoryBoards);
+
+      if (!matchedOriginalCategory) {
+        redirectCategorySlug = catalogService.toTrimmedString(redirectPath).replace(/^\/admin\/categories\/([^/?#]+).*$/i, '$1');
+        if (redirectCategorySlug && redirectCategorySlug !== redirectPath) {
+          try {
+            matchedOriginalCategory = findCategoryBoardBySlug(decodeURIComponent(redirectCategorySlug), latestCategoryBoards);
+          } catch (decodeError) {
+            matchedOriginalCategory = findCategoryBoardBySlug(redirectCategorySlug, latestCategoryBoards);
+          }
+        }
+      }
+
+      resolvedOriginalCategoryName = matchedOriginalCategory ? matchedOriginalCategory.name : '';
     }
-    return res.redirect(buildErrorRedirect(redirectPath, 'save-failed'));
+
+    if (hasDuplicateCategoryName(categoryName, latestCategoryBoards, resolvedOriginalCategoryName)) {
+      return {
+        ok: false,
+        errorCode: 'duplicate-category',
+        message: 'Category already exists',
+        statusCode: 409,
+      };
+    }
+
+    catalogService.upsertAdminCategory(
+      categoryName,
+      categoryDescription,
+      categoryItems,
+      {
+        originalName: resolvedOriginalCategoryName,
+        updateDescription: shouldUpdateDescription,
+        replaceItems: shouldReplaceCategoryItems,
+      }
+    );
+
+    if (!await catalogService.saveAdminData()) {
+      return {
+        ok: false,
+        errorCode: 'save-failed',
+        message: 'Failed to save category',
+        statusCode: 500,
+      };
+    }
+
+    return {
+      ok: true,
+      categoryName: categoryName,
+      originalCategoryName: resolvedOriginalCategoryName,
+      categoryItems: categoryItems,
+    };
+  });
+
+  if (!mutationResult || !mutationResult.ok) {
+    if (isAjax) {
+      return res.status(mutationResult && mutationResult.statusCode ? mutationResult.statusCode : 500).json({
+        success: false,
+        error: mutationResult && mutationResult.errorCode ? mutationResult.errorCode : 'save-failed',
+        message: mutationResult && mutationResult.message ? mutationResult.message : 'Failed to save category',
+      });
+    }
+    return res.redirect(buildErrorRedirect(redirectPath, mutationResult && mutationResult.errorCode ? mutationResult.errorCode : 'save-failed'));
   }
 
   if (isAjax) {
-    return res.json({ success: true, message: 'Category saved successfully', categoryName: categoryName });
+    successRedirectPath = resolveCategorySaveRedirectPath(
+      mutationResult.categoryName,
+      redirectPath,
+      shouldReplaceCategoryItems
+    );
+    return res.json({
+      success: true,
+      message: 'Category saved successfully',
+      categoryName: mutationResult.categoryName,
+      originalCategoryName: mutationResult.originalCategoryName || '',
+      categoryItems: Array.isArray(mutationResult.categoryItems) ? mutationResult.categoryItems : [],
+      redirectPath: successRedirectPath,
+    });
   }
-  return res.redirect(buildStatusRedirect(redirectPath, 'category-saved'));
+
+  successRedirectPath = resolveCategorySaveRedirectPath(
+    mutationResult.categoryName,
+    redirectPath,
+    shouldReplaceCategoryItems
+  );
+
+  return res.redirect(buildStatusRedirect(successRedirectPath, 'category-saved'));
 }
 
 async function acceptOrderRequest(req, res) {
@@ -1212,7 +1777,7 @@ async function acceptOrderRequest(req, res) {
   var adminMessage = normalizeMultilineText(requestBody.adminMessage);
   var redirectPath = getSafeRedirectPath(req, defaultAdminOrdersPath);
   var hasMongoConfiguration = Boolean(String(process.env.MONGODB_URI || '').trim());
-  var isAjax = req.xhr || req.headers['x-requested-with'] === 'XMLHttpRequest' || req.headers.accept === 'application/json';
+  var isAjax = isAjaxRequest(req);
   var orderRecord = null;
   var orderStatus = '';
   var orderProductId = '';
@@ -1389,7 +1954,7 @@ async function deleteOrderRequest(req, res) {
   var requestBody = req && req.body && typeof req.body === 'object' ? req.body : {};
   var orderId = catalogService.toTrimmedString(requestBody.orderId);
   var redirectPath = getSafeRedirectPath(req, defaultAdminOrdersPath);
-  var isAjax = req.xhr || req.headers['x-requested-with'] === 'XMLHttpRequest' || req.headers.accept === 'application/json';
+  var isAjax = isAjaxRequest(req);
   var deletedOrder = null;
 
   function sendErrorResponse(errorCode, message, statusCode) {
@@ -1433,7 +1998,8 @@ function saveProduct(req, res) {
     var redirectPath = getSafeRedirectPath(req, defaultAdminPath);
     var hasMongoConfiguration = Boolean(String(process.env.MONGODB_URI || '').trim());
     var hasDatabaseConnection = true;
-    var isAjax = req.xhr || req.headers['x-requested-with'] === 'XMLHttpRequest' || req.headers.accept === 'application/json';
+    var isAjax = isAjaxRequest(req);
+    var mutationResult = null;
 
     function sendErrorResponse(errorCode, message, statusCode) {
       if (isAjax) {
@@ -1487,19 +2053,12 @@ function saveProduct(req, res) {
     var rawProductSpec = normalizeMultilineText(req.body.productSpec);
     var productSpec = buildProductSpec(
       categoryName,
-      rawProductSpec,
-      req.body.productHelmetCoverage
+      rawProductSpec
     );
     var productPricing = resolveProductPricing(req.body.productPrice, req.body.productDiscountPercent);
     var productPrice = productPricing.price || 'Contact for price';
     var productQuantity = normalizeProductQuantity(req.body.productQuantity);
-    var catalog = catalogService.getCatalogContext();
-    var productId = catalogService.buildUniqueProductId(categoryName, productName, catalog.productSections);
-    var adminData = catalogService.getAdminData();
     var uploadedImagePath = '';
-    var primaryImage = '';
-    var primaryImages = [];
-    var createdProductEntry = null;
 
     if (!categoryName || !isWithinLength(categoryName, maxCategoryNameLength)) {
       await cleanupRejectedUploadFile();
@@ -1526,53 +2085,116 @@ function saveProduct(req, res) {
       return sendErrorResponse('invalid-input', 'Invalid quantity', 400);
     }
 
-    if (hasDuplicateProductName(categoryName, productName, catalog.productSections)) {
-      await cleanupRejectedUploadFile();
-      return sendErrorResponse('duplicate-product', 'Product already exists', 409);
-    }
-
     uploadedImagePath = await catalogService.optimizeUploadedImage(req.file);
-    primaryImage = uploadedImagePath || '';
-    primaryImages = catalogService.normalizeImageList([primaryImage], primaryImage);
 
     if (!uploadedImagePath) {
       return sendErrorResponse('cloudinary-upload-failed', 'Image upload failed', 500);
     }
 
-    catalogService.upsertAdminCategory(categoryName, '', [productName]);
+    mutationResult = await runAdminMutation(async function () {
+      var latestCatalog = catalogService.getCatalogContext();
+      var latestCategoryBoards = catalogService.buildAdminCategoryBoards(
+        latestCatalog.categoryGroups,
+        latestCatalog.productSections,
+        latestCatalog.categoryKeywordMap
+      );
+      var matchedCategoryBoard = findCategoryBoardByName(categoryName, latestCategoryBoards);
+      var resolvedCategoryName = '';
+      var productId = '';
+      var adminData = catalogService.getAdminData();
+      var createdProductEntry = null;
+      var primaryImage = uploadedImagePath;
+      var primaryImages = catalogService.normalizeImageList([primaryImage], primaryImage);
 
-    if (Array.isArray(adminData.deletedProductIds)) {
-      adminData.deletedProductIds = adminData.deletedProductIds.filter(function (id) {
-        return id !== productId;
-      });
-    }
+      if (!matchedCategoryBoard) {
+        return {
+          ok: false,
+          errorCode: 'category-not-found',
+          message: 'Category not found',
+          statusCode: 404,
+        };
+      }
 
-    createdProductEntry = {
-      id: productId,
-      type: categoryName,
-      name: productName,
-      spec: productSpec,
-      price: productPrice,
-      originalPrice: productPricing.originalPrice,
-      discountPercent: productPricing.discountPercent ? String(productPricing.discountPercent) : '',
-      quantity: productQuantity,
-      image: primaryImage,
-      images: primaryImages,
-    };
-    adminData.products.push(createdProductEntry);
+      resolvedCategoryName = matchedCategoryBoard.name;
 
-    if (!await catalogService.saveAdminData()) {
-      if (hasMongoConfiguration) {
+      if (hasDuplicateProductName(resolvedCategoryName, productName, latestCatalog.productSections)) {
+        return {
+          ok: false,
+          errorCode: 'duplicate-product',
+          message: 'Product already exists',
+          statusCode: 409,
+        };
+      }
+
+      productId = catalogService.buildUniqueProductId(resolvedCategoryName, productName, latestCatalog.productSections);
+
+      if (!Array.isArray(adminData.products)) {
+        adminData.products = [];
+      }
+
+      catalogService.upsertAdminCategory(resolvedCategoryName, '', [productName]);
+
+      if (Array.isArray(adminData.deletedProductIds)) {
+        adminData.deletedProductIds = adminData.deletedProductIds.filter(function (id) {
+          return id !== productId;
+        });
+      }
+
+      createdProductEntry = {
+        id: productId,
+        type: resolvedCategoryName,
+        name: productName,
+        spec: productSpec,
+        price: productPrice,
+        originalPrice: productPricing.originalPrice,
+        discountPercent: productPricing.discountPercent ? String(productPricing.discountPercent) : '',
+        quantity: productQuantity,
+        image: primaryImage,
+        images: primaryImages,
+      };
+
+      adminData.products.push(createdProductEntry);
+
+      if (!await catalogService.saveAdminData()) {
+        return {
+          ok: false,
+          errorCode: 'save-failed',
+          message: 'Failed to save product',
+          statusCode: 500,
+        };
+      }
+
+      return {
+        ok: true,
+        product: createdProductEntry,
+      };
+    });
+
+    if (!mutationResult || !mutationResult.ok) {
+      if (uploadedImagePath) {
+        await catalogService.cleanupLocalImageAsset(uploadedImagePath);
+      }
+
+      if (
+        mutationResult &&
+        mutationResult.errorCode === 'save-failed' &&
+        hasMongoConfiguration
+      ) {
         hasDatabaseConnection = await ensureDatabaseConnection();
         if (!hasDatabaseConnection) {
           return sendErrorResponse('db-unavailable', 'Database unavailable', 503);
         }
       }
-      return sendErrorResponse('save-failed', 'Failed to save product', 500);
+
+      return sendErrorResponse(
+        mutationResult && mutationResult.errorCode ? mutationResult.errorCode : 'save-failed',
+        mutationResult && mutationResult.message ? mutationResult.message : 'Failed to save product',
+        mutationResult && mutationResult.statusCode ? mutationResult.statusCode : 500
+      );
     }
 
     if (isAjax) {
-      return res.json({ success: true, message: 'Product saved successfully', product: createdProductEntry });
+      return res.json({ success: true, message: 'Product saved successfully', product: mutationResult.product });
     }
     return res.redirect(buildStatusRedirect(redirectPath, 'product-saved'));
   });
@@ -1586,6 +2208,8 @@ module.exports = {
   editProduct: editProduct,
   refreshAdminDataMiddleware: refreshAdminDataMiddleware,
   renderAdminCategoryPage: renderAdminCategoryPage,
+  renderAdminProductsPage: renderAdminProductsPage,
+  redirectAdminCategoryRoot: redirectAdminCategoryRoot,
   renderAdminOrdersPage: renderAdminOrdersPage,
   renderAdminPage: renderAdminPage,
   saveCategory: saveCategory,

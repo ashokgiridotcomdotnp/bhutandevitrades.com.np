@@ -187,8 +187,11 @@
   }
 
   function initMobileBottomNav() {
+    var mobileBottomNav = document.querySelector('[data-mobile-bottom-nav]');
     var categoriesButton = document.getElementById('mobile-nav-categories');
     var sidebarOpenButton = document.getElementById('mobile-sidebar-open');
+
+    document.body.classList.toggle('has-mobile-bottom-nav', Boolean(mobileBottomNav));
 
     if (!categoriesButton || !sidebarOpenButton) {
       return;

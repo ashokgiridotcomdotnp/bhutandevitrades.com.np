@@ -68,6 +68,7 @@
     var response = null;
     var result = null;
     var orderId = null;
+    var formPayload = null;
 
     if (!form) {
       return;
@@ -76,12 +77,15 @@
     setLoadingOverlay(true);
 
     try {
+      formPayload = new URLSearchParams(new FormData(form));
       response = await fetch(form.action, {
         method: 'POST',
-        body: new FormData(form),
+        body: formPayload,
         credentials: 'same-origin',
         headers: {
           'X-Requested-With': 'XMLHttpRequest',
+          'Accept': 'application/json',
+          'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
         },
       });
 

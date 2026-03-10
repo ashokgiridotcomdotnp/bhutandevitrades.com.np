@@ -11,8 +11,8 @@
           sectionBasedCatalog.push({
             id: item.id || '',
             type: item.type || section.title || 'Product',
-            title: item.name || 'N/A',
-            description: item.spec || 'N/A',
+            title: item.name || '',
+            description: item.spec || '',
             mrp: item.price || 'Contact for price',
             originalMrp: item.originalPrice || '',
             discountPercent: item.discountPercent || '',
@@ -260,17 +260,17 @@
       </a>
 
       <div class="grid grid-cols-2 gap-2 border-t border-slate-200 bg-white px-4 py-3">
-        <a href="<%= productHref %>" class="pro-btn-secondary w-full gap-1.5 px-3 py-2 text-xs sm:py-1.5">
+        <a href="<%= productHref %>" class="pro-btn-secondary pro-btn-xs w-full gap-1.5">
           <img src="/icons/details.svg" alt="" aria-hidden="true" class="shrink-0" style="width: 14px; height: 14px;" />
           <span>Details</span>
         </a>
-        <a href="<%= whatsappInquiryHref %>" target="_blank" rel="noopener noreferrer" class="pro-btn-secondary w-full gap-1.5 px-3 py-2 text-xs sm:py-1.5">
+        <a href="<%= whatsappInquiryHref %>" target="_blank" rel="noopener noreferrer" class="pro-btn-secondary pro-btn-xs w-full gap-1.5">
           <img src="/icons/whatsapp.svg" alt="" aria-hidden="true" class="shrink-0" style="width: 14px; height: 14px;" />
           <span>WhatsApp</span>
         </a>
         <a
           href="<%= callHref %>"
-          class="pro-btn-secondary w-full gap-1.5 px-3 py-2 text-xs sm:py-1.5 <%= hasStoreContactNumber ? '' : 'pointer-events-none opacity-50' %>"
+          class="pro-btn-secondary pro-btn-xs w-full gap-1.5 <%= hasStoreContactNumber ? '' : 'pointer-events-none opacity-50' %>"
           aria-disabled="<%= hasStoreContactNumber ? 'false' : 'true' %>"
         >
           <img src="/icons/phone.svg" alt="" aria-hidden="true" class="shrink-0" style="width: 14px; height: 14px;" />
@@ -279,14 +279,14 @@
         <% if (canPlaceOrder) { %>
         <a
           href="<%= orderActionHref %>"
-          class="pro-btn-primary w-full gap-1.5 px-3 py-2 text-xs sm:py-1.5 <%= canOrderItem ? '' : 'pointer-events-none opacity-50' %>"
+          class="pro-btn-primary pro-btn-xs w-full gap-1.5 <%= canOrderItem ? '' : 'pointer-events-none opacity-50' %>"
           aria-disabled="<%= canOrderItem ? 'false' : 'true' %>"
         >
           <img src="/icons/order.svg" alt="" aria-hidden="true" class="shrink-0" style="width: 14px; height: 14px;" />
           <span><%= hasStockQuantity ? 'Order' : 'Out of stock' %></span>
         </a>
         <% } else { %>
-        <a href="<%= loginToOrderHref %>" class="pro-btn-primary w-full gap-1.5 px-3 py-2 text-xs sm:py-1.5">
+        <a href="<%= loginToOrderHref %>" class="pro-btn-primary pro-btn-xs w-full gap-1.5">
           <img src="/icons/login-white.svg" alt="" aria-hidden="true" class="shrink-0" style="width: 14px; height: 14px;" />
           <span>Login to Order</span>
         </a>
@@ -300,7 +300,7 @@
   <div class="flex flex-wrap items-center justify-between gap-2 pt-1" data-products-pagination>
     <a
       href="<%= buildStorePageHref(currentPage - 1) %>"
-      class="pro-btn-secondary px-3 py-1.5 text-xs <%= currentPage <= 1 ? 'pointer-events-none opacity-50' : '' %>"
+      class="pro-btn-secondary pro-btn-xs <%= currentPage <= 1 ? 'pointer-events-none opacity-50' : '' %>"
       aria-disabled="<%= currentPage <= 1 ? 'true' : 'false' %>"
     >
       Prev
@@ -324,7 +324,7 @@
     <a
       href="<%= buildStorePageHref(currentPage + 1) %>"
       data-pagination-next
-      class="pro-btn-secondary px-3 py-1.5 text-xs <%= currentPage >= totalPages ? 'pointer-events-none opacity-50' : '' %>"
+      class="pro-btn-secondary pro-btn-xs <%= currentPage >= totalPages ? 'pointer-events-none opacity-50' : '' %>"
       aria-disabled="<%= currentPage >= totalPages ? 'true' : 'false' %>"
     >
       Next

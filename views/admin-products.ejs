@@ -9,8 +9,8 @@
     <title><%= title %></title>
     <link rel="stylesheet" href="<%= assetPath('/stylesheets/style.css') %>" />
   </head>
-  <body class="bg-slate-100/80 text-slate-900">
-    <main class="app-shell grid gap-4 py-5 pro-page-enter sm:py-6">
+  <body class="text-slate-900">
+    <main class="app-shell py-6 pro-page-enter">
       <%
         function toAnchor(value) {
           return String(value || '')
@@ -19,133 +19,58 @@
             .replace(/^-+|-+$/g, '');
         }
 
-        function categoryPageHref(categoryName) {
-          return '/admin/categories/' + toAnchor(categoryName);
-        }
-
         function toCount(value) {
           var parsed = Number(value);
           return Number.isFinite(parsed) ? parsed : 0;
         }
 
         function toInputNumberValue(value) {
-          var cleanedValue = String(value || '').replace(/,/g, '').trim();
-          var matchedValue = cleanedValue.match(/-?\d+(\.\d+)?/);
-          return matchedValue ? matchedValue[0] : '';
+          if (value === null || typeof value === 'undefined' || value === '') return '';
+          // coerce to string and strip common formatting/currency characters
+          var s = String(value).trim();
+          // Remove currency symbols and grouping commas, keep digits, dot and minus
+          s = s.replace(/[^0-9.\-]/g, '');
+          if (!s) return '';
+          var n = Number(s);
+          if (!Number.isFinite(n)) return '';
+          // integers: return without decimal; otherwise keep up to 2 decimals
+          if (Math.floor(n) === n) return String(n);
+          return String(Number(n.toFixed(2)));
         }
 
-        var boardItems = Array.isArray(categoryBoard && categoryBoard.items) ? categoryBoard.items : [];
-        var availableBoards = Array.isArray(categoryBoards)
-          ? categoryBoards.filter(function (board) {
-              return board && board.name;
-            })
-          : [];
-        var normalizedCategoryName = toAnchor(categoryBoard && categoryBoard.name);
-        var isHelmetCategory = normalizedCategoryName === 'helmet';
-        var currentCategoryRecord = categoryRecord && typeof categoryRecord === 'object' ? categoryRecord : null;
-        var addProductSubcategoryOptions = [];
-        var seenAddProductSubcategories = {};
-        var managedCategoryDescription = currentCategoryRecord && currentCategoryRecord.description
-          ? String(currentCategoryRecord.description)
-          : '';
+        function buildAdminProductsPageHref(targetPage) {
+          var parsedPage = Number(targetPage);
+          var safePage = Number.isFinite(parsedPage) && parsedPage > 0 ? Math.floor(parsedPage) : 1;
 
-        function addProductSubcategoryOption(value) {
-          var cleanedValue = String(value || '').trim();
-          var key = toAnchor(cleanedValue);
-
-          if (!cleanedValue || !key || seenAddProductSubcategories[key]) {
-            return;
+          if (safePage <= 1) {
+            return '/admin/products';
           }
 
-          seenAddProductSubcategories[key] = true;
-          addProductSubcategoryOptions.push(cleanedValue);
+          return '/admin/products?page=' + safePage;
         }
 
-        boardItems.forEach(function (item) {
-          addProductSubcategoryOption(item && item.name);
-        });
-
-        if (Array.isArray(topNavCategories)) {
-          topNavCategories.forEach(function (group) {
-            if (toAnchor(group && group.name) !== normalizedCategoryName) {
-              return;
-            }
-
-            (group.items || []).forEach(function (itemName) {
-              addProductSubcategoryOption(itemName);
-            });
-          });
-        }
-
-        if (isHelmetCategory && addProductSubcategoryOptions.length === 0) {
-          addProductSubcategoryOption('Vega');
-        }
-
-        addProductSubcategoryOptions.sort(function (left, right) {
-          return left.localeCompare(right);
-        });
-
-        var managedCategoryItems = currentCategoryRecord && Array.isArray(currentCategoryRecord.items)
-          ? currentCategoryRecord.items.slice()
-          : addProductSubcategoryOptions.slice();
-        var managedCategoryItemsText = managedCategoryItems.join(', ');
-
-        var parsedCategoryItemsPageSize = Number(categoryItemsPageSize);
-        var resolvedCategoryItemsPageSize = Number.isFinite(parsedCategoryItemsPageSize) && parsedCategoryItemsPageSize > 0
-          ? Math.floor(parsedCategoryItemsPageSize)
-          : 12;
-        var categoryItemsTotalPages = Math.max(1, Math.ceil(boardItems.length / resolvedCategoryItemsPageSize));
-        var parsedCategoryItemsCurrentPage = Number(categoryItemsPage);
-        var categoryItemsCurrentPage = Number.isFinite(parsedCategoryItemsCurrentPage) && parsedCategoryItemsCurrentPage > 0
-          ? Math.floor(parsedCategoryItemsCurrentPage)
-          : 1;
-
-        if (categoryItemsCurrentPage > categoryItemsTotalPages) {
-          categoryItemsCurrentPage = categoryItemsTotalPages;
-        }
-
-        var categoryItemsStartIndex = (categoryItemsCurrentPage - 1) * resolvedCategoryItemsPageSize;
-        var paginatedBoardItems = boardItems.slice(
-          categoryItemsStartIndex,
-          categoryItemsStartIndex + resolvedCategoryItemsPageSize
-        );
-
-        function buildCategoryItemsPageHref(targetPage) {
-          var safeTargetPage = Number(targetPage);
-
-          if (!Number.isFinite(safeTargetPage) || safeTargetPage < 1) {
-            safeTargetPage = 1;
-          }
-
-          safeTargetPage = Math.floor(safeTargetPage);
-
-          if (safeTargetPage <= 1) {
-            return categoryPagePath;
-          }
-
-          return categoryPagePath + '?itemsPage=' + safeTargetPage;
-        }
-
-        var categoryItemsRedirectPath = buildCategoryItemsPageHref(categoryItemsCurrentPage);
+        var stats = dashboardStats && typeof dashboardStats === 'object' ? dashboardStats : {};
+        var rows = Array.isArray(productRows) ? productRows : [];
+        var currentPage = Number.isFinite(Number(adminProductsPage)) ? Math.max(1, Number(adminProductsPage)) : 1;
+        var totalPages = Number.isFinite(Number(adminProductsTotalPages)) ? Math.max(1, Number(adminProductsTotalPages)) : 1;
+        var currentPagePath = String(adminProductsPagePath || buildAdminProductsPageHref(currentPage));
       %>
 
-      <header class="pro-panel p-5 pro-stagger">
-        <div class="flex flex-wrap items-start gap-4">
-          <div class="min-w-0 flex-1 grid gap-1">
-            <p class="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Category Workspace</p>
-            <h1 class="text-2xl font-extrabold tracking-tight text-slate-900">Manage <%= categoryBoard.name %></h1>
-            <p class="text-sm text-slate-600">Update the category label, description, and item list, then manage products assigned to this board.</p>
+      <header class="mb-4 pro-panel px-5 py-4 pro-stagger">
+        <div class="flex flex-wrap items-start gap-3">
+          <div>
+            <h1 class="text-2xl font-extrabold tracking-tight text-slate-900">Products</h1>
+            <p class="mt-0.5 text-sm text-slate-600">Browse the full product overview outside the dashboard forms.</p>
           </div>
 
-          <nav class="flex w-full flex-wrap items-center gap-2 pt-1 sm:ml-auto sm:w-auto sm:justify-end sm:pt-0" aria-label="Admin navigation">
-            <a href="/admin" class="pro-btn-secondary py-2 pro-btn-sm">Dashboard</a>
-            <a href="/admin/products" class="pro-btn-secondary py-2 pro-btn-sm">Products</a>
-            <a href="/admin/orders" class="pro-btn-secondary py-2 pro-btn-sm">Order Requests</a>
-            <a href="/admin/logout" class="pro-btn-danger-muted pro-btn-sm gap-1.5">
-              <img src="<%= assetPath('/icons/logout.svg') %>" alt="" aria-hidden="true" class="shrink-0" style="width: 14px; height: 14px;" />
+          <div class="ml-auto flex flex-wrap items-center gap-2">
+            <a href="/admin" class="pro-btn-secondary pro-btn-sm">Dashboard</a>
+            <a href="/admin/orders" class="pro-btn-secondary pro-btn-sm">Order Requests</a>
+            <a href="/admin/profile" class="pro-btn-primary pro-btn-sm">Profile</a>
+            <a href="/admin/logout" class="pro-btn-secondary pro-btn-sm gap-1.5">
               <span>Logout</span>
             </a>
-          </nav>
+          </div>
         </div>
       </header>
 
@@ -157,46 +82,39 @@
       <div class="hidden" data-error-alert><%= errorMessage %></div>
       <% } %>
 
-      <section class="grid gap-3 pro-stagger">
-        <section class="pro-panel p-3 sm:p-4">
-          <div class="grid gap-0.5">
-            <p class="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Browse</p>
-            <h2 class="text-lg font-extrabold tracking-tight text-slate-900">Categories</h2>
-            <p class="text-xs text-slate-600">Switch between category workspaces without returning to the dashboard.</p>
-          </div>
+      <section class="mb-4 grid gap-3 sm:grid-cols-3">
+        <article class="pro-panel p-4">
+          <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Products</p>
+          <p class="pt-2 text-3xl font-extrabold text-slate-900" data-product-overview-count><%= toCount(totalProductCount) %> products</p>
+          <p class="pt-1 text-xs text-slate-500"><%= toCount(stats.adminOnlyProducts) %> admin-added</p>
+        </article>
+        <article class="pro-panel p-4">
+          <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Categories</p>
+          <p class="pt-2 text-3xl font-extrabold text-slate-900"><%= toCount(stats.totalCategories) %></p>
+          <p class="pt-1 text-xs text-slate-500">Visible product groups</p>
+        </article>
+        <article class="pro-panel p-4">
+          <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Avg Products</p>
+          <p class="pt-2 text-3xl font-extrabold text-slate-900"><%= toCount(stats.averageProductsPerCategory) %></p>
+          <p class="pt-1 text-xs text-slate-500">Per category</p>
+        </article>
+      </section>
 
-          <nav class="flex gap-2 overflow-x-auto pt-3 pb-1" aria-label="Category workspaces">
-            <% availableBoards.forEach(function (board) { %>
-            <% var isActiveBoard = toAnchor(board.name) === normalizedCategoryName; %>
-            <a
-              href="<%= categoryPageHref(board.name) %>"
-              class="flex min-w-[10rem] shrink-0 items-center justify-between rounded-xl border px-3 py-2 text-sm font-semibold transition <%= isActiveBoard ? 'border-cyan-600 bg-cyan-50 text-cyan-700 shadow-sm' : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50' %>"
-            >
-              <span class="truncate"><%= board.name %></span>
-              <span class="ml-3 rounded-full border border-current/15 px-2 py-0.5 text-[11px] font-bold"><%= toCount((board.items || []).length) %></span>
-            </a>
-            <% }) %>
-          </nav>
-        </section>
-
-        <div class="grid min-w-0 gap-3">
-      
-
-        <section class="pro-panel min-w-0 self-start px-4 pb-4 pt-5 sm:px-4 sm:pb-4 sm:pt-5" data-managed-products-root data-managed-category-name="<%= categoryBoard.name %>">
+      <section class="pro-panel min-w-0 self-start px-4 pb-4 pt-5 sm:px-4 sm:pb-4 sm:pt-5" data-managed-products-root>
           <div class="flex flex-wrap items-start gap-1.5 border-b border-slate-200 pb-3">
             <div class="min-w-0 flex-1 grid gap-0.5">
               <p class="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Inventory</p>
-              <h2 class="text-lg font-extrabold tracking-tight text-slate-900"><%= categoryBoard.name %> Products</h2>
-              <p class="text-xs text-slate-600">Edit price, stock, title, image, and subcategory assignments directly from this table.</p>
+              <h2 class="text-lg font-extrabold tracking-tight text-slate-900">Products</h2>
+              <p class="text-xs text-slate-600">Edit price, stock, title, image, and category assignments directly from this table.</p>
             </div>
 
-            <span class="rounded-full border border-slate-300 bg-slate-50 px-2.5 py-1 text-xs font-semibold text-slate-600" data-managed-product-count-badge><%= toCount(boardItems.length) %> products</span>
+            <span class="rounded-full border border-slate-300 bg-slate-50 px-2.5 py-1 text-xs font-semibold text-slate-600" data-managed-product-count-badge><%= toCount(rows.length) %> products</span>
           </div>
 
-          <% if (!boardItems.length) { %>
-          <div class="pt-4 text-sm text-slate-500" data-managed-products-empty>No products yet in this category. Update the category details here or add products from the dashboard.</div>
+          <% if (!rows.length) { %>
+          <div class="pt-4 text-sm text-slate-500" data-managed-products-empty>No products yet. Add products from the dashboard.</div>
           <% } else { %>
-          <div class="hidden pt-4 text-sm text-slate-500" data-managed-products-empty>No products left in this category.</div>
+          <div class="hidden pt-4 text-sm text-slate-500" data-managed-products-empty>No products left.</div>
           <div class="pt-3" data-managed-products-table>
             <div class="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
               <div class="h-fit">
@@ -238,7 +156,7 @@
                       <td class="px-3 py-3"><div class="h-10 w-24 rounded bg-slate-200 animate-pulse"></div></td>
                       <td class="px-3 py-3"><div class="h-8 w-24 rounded bg-slate-200 animate-pulse"></div></td>
                     </tr>
-                    <% paginatedBoardItems.forEach(function (item) { %>
+                    <% rows.forEach(function (item) { %>
                     <% var editImageInputId = 'edit-image-' + item.id; %>
                     <% var hasItemDiscount = item.originalPrice && item.originalPrice !== item.price; %>
                     <% var editMrpInputValue = toInputNumberValue(item.originalPrice || item.price); %>
@@ -253,7 +171,7 @@
                         </div>
                       </td>
                       <td class="px-3 py-3">
-                        <span class="inline-flex rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-semibold text-slate-700" data-product-category-text><%= item.type %></span>
+                        <span class="inline-flex rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-semibold text-slate-700" data-product-category-text><%= item.categoryName || item.type || 'Other' %></span>
                       </td>
                       <td class="px-3 py-3">
                         <p class="max-w-[20rem] text-sm leading-5 text-slate-700" data-product-spec-text><%= item.spec || 'No description' %></p>
@@ -299,7 +217,7 @@
                           <button
                             type="button"
                             title="Delete item"
-                            data-delete-trigger="<%= item.id %>"
+                            data-delete-product-trigger="<%= item.id %>"
                             data-product-name="<%= item.name %>"
                             class="pro-btn-danger-muted pro-btn-xs pro-btn-action"
                           >
@@ -319,7 +237,7 @@
                         >
                           <input type="hidden" name="productId" value="<%= item.id %>" />
                           <input type="hidden" name="currentImagePath" value="<%= item.image || '' %>" />
-                          <input type="hidden" name="redirectTo" value="<%= categoryItemsRedirectPath %>" />
+                          <input type="hidden" name="redirectTo" value="<%= currentPagePath %>" />
 
                           <div class="grid gap-4 sm:grid-cols-2">
                             <div class="grid gap-1.5">
@@ -327,7 +245,7 @@
                               <input
                                 type="text"
                                 name="productCategory"
-                                value="<%= item.type || categoryBoard.name %>"
+                                value="<%= item.categoryName || item.type || '' %>"
                                 required
                                 class="pro-input"
                               />
@@ -450,9 +368,9 @@
                           </div>
                         </form>
 
-                        <form action="/admin/products/delete" method="post" class="hidden" data-delete-form="<%= item.id %>">
+                        <form action="/admin/products/delete" method="post" class="hidden" data-delete-product-form="<%= item.id %>">
                           <input type="hidden" name="productId" value="<%= item.id %>" />
-                          <input type="hidden" name="redirectTo" value="<%= categoryItemsRedirectPath %>" />
+                          <input type="hidden" name="redirectTo" value="<%= currentPagePath %>" />
                         </form>
                       </td>
                     </tr>
@@ -464,36 +382,36 @@
           </div>
           <% } %>
 
-          <% if (categoryItemsTotalPages > 1) { %>
+          <% if (totalPages > 1) { %>
           <div class="pt-4" data-managed-products-pagination>
             <div class="flex flex-wrap items-center justify-between gap-2 border-t border-slate-200 pt-3">
               <a
-                href="<%= buildCategoryItemsPageHref(categoryItemsCurrentPage - 1) %>"
-                class="pro-btn-secondary pro-btn-xs <%= categoryItemsCurrentPage <= 1 ? 'pointer-events-none opacity-50' : '' %>"
-                aria-disabled="<%= categoryItemsCurrentPage <= 1 ? 'true' : 'false' %>"
+                href="<%= buildAdminProductsPageHref(currentPage - 1) %>"
+                class="pro-btn-secondary pro-btn-xs <%= currentPage <= 1 ? 'pointer-events-none opacity-50' : '' %>"
+                aria-disabled="<%= currentPage <= 1 ? 'true' : 'false' %>"
               >
                 Prev
               </a>
 
               <div class="flex flex-wrap items-center justify-center gap-1.5">
-                <% for (var categoryPageNumber = 1; categoryPageNumber <= categoryItemsTotalPages; categoryPageNumber += 1) { %>
-                <% if (categoryPageNumber === 1 || categoryPageNumber === categoryItemsTotalPages || Math.abs(categoryPageNumber - categoryItemsCurrentPage) <= 1) { %>
+                <% for (var pageNumber = 1; pageNumber <= totalPages; pageNumber += 1) { %>
+                <% if (pageNumber === 1 || pageNumber === totalPages || Math.abs(pageNumber - currentPage) <= 1) { %>
                 <a
-                  href="<%= buildCategoryItemsPageHref(categoryPageNumber) %>"
-                  class="inline-flex min-w-[2.15rem] items-center justify-center rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition <%= categoryPageNumber === categoryItemsCurrentPage ? 'border-cyan-600 bg-cyan-600 text-white' : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-100' %>"
+                  href="<%= buildAdminProductsPageHref(pageNumber) %>"
+                  class="inline-flex min-w-[2.15rem] items-center justify-center rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition <%= pageNumber === currentPage ? 'border-cyan-600 bg-cyan-600 text-white' : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-100' %>"
                 >
-                  <%= categoryPageNumber %>
+                  <%= pageNumber %>
                 </a>
-                <% } else if ((categoryPageNumber === 2 && categoryItemsCurrentPage > 4) || (categoryPageNumber === categoryItemsTotalPages - 1 && categoryItemsCurrentPage < categoryItemsTotalPages - 3)) { %>
+                <% } else if ((pageNumber === 2 && currentPage > 4) || (pageNumber === totalPages - 1 && currentPage < totalPages - 3)) { %>
                 <span class="px-1 text-xs font-semibold text-slate-500">...</span>
                 <% } %>
                 <% } %>
               </div>
 
               <a
-                href="<%= buildCategoryItemsPageHref(categoryItemsCurrentPage + 1) %>"
-                class="pro-btn-secondary pro-btn-xs <%= categoryItemsCurrentPage >= categoryItemsTotalPages ? 'pointer-events-none opacity-50' : '' %>"
-                aria-disabled="<%= categoryItemsCurrentPage >= categoryItemsTotalPages ? 'true' : 'false' %>"
+                href="<%= buildAdminProductsPageHref(currentPage + 1) %>"
+                class="pro-btn-secondary pro-btn-xs <%= currentPage >= totalPages ? 'pointer-events-none opacity-50' : '' %>"
+                aria-disabled="<%= currentPage >= totalPages ? 'true' : 'false' %>"
               >
                 Next
               </a>
@@ -501,14 +419,12 @@
           </div>
           <% } %>
         </section>
-        </div>
-      </section>
     </main>
 
     <div id="delete-alert" class="fixed inset-0 z-50 hidden items-center justify-center bg-slate-900/50 p-4">
       <div class="pro-panel w-full max-w-md p-5">
         <h3 class="text-lg font-bold text-slate-900" id="delete-alert-title">Delete</h3>
-        <p class="pt-2 text-sm text-slate-700" id="delete-alert-message">Are you sure you want to delete this item?</p>
+        <p class="pt-2 text-sm text-slate-700" id="delete-alert-message">Are you sure you want to delete this product?</p>
         <div class="pt-4 flex items-center justify-end gap-2">
           <button
             type="button"
@@ -530,9 +446,43 @@
 
     <%- include('helpers/loading') %>
     <%- include('helpers/toaster') %>
-    <script id="admin-category-page-data" type="application/json"><%- JSON.stringify({ addProductSubcategoryOptions: addProductSubcategoryOptions }).replace(/</g, '\\u003c') %></script>
     <script src="<%= assetPath('/javascripts/loading.js') %>"></script>
     <script src="<%= assetPath('/javascripts/flash-alert.js') %>"></script>
-    <script src="<%= assetPath('/javascripts/admin-category.js') %>"></script>
+    <script src="<%= assetPath('/javascripts/admin.js') %>"></script>
+    <script>
+      (function () {
+        function toggleEdit(id, show) {
+          if (!id) return;
+          var editRow = document.querySelector('[data-edit-row="' + id + '"]');
+          if (!editRow) return;
+
+          // hide other edit rows
+          document.querySelectorAll('[data-edit-row]').forEach(function (r) {
+            if (r !== editRow) {
+              r.classList.add('hidden');
+              var f = r.querySelector('form[data-edit-form]'); if (f) f.classList.add('hidden');
+            }
+          });
+
+          var form = editRow.querySelector('form[data-edit-form]');
+          if (show) {
+            editRow.classList.remove('hidden');
+            if (form) form.classList.remove('hidden');
+            setTimeout(function () { editRow.scrollIntoView({ behavior: 'smooth', block: 'center' }); }, 60);
+          } else {
+            editRow.classList.add('hidden');
+            if (form) form.classList.add('hidden');
+          }
+        }
+
+        document.querySelectorAll('[data-edit-toggle]').forEach(function (btn) {
+          btn.addEventListener('click', function () { toggleEdit(btn.getAttribute('data-edit-toggle'), true); });
+        });
+
+        document.querySelectorAll('[data-edit-cancel]').forEach(function (btn) {
+          btn.addEventListener('click', function () { toggleEdit(btn.getAttribute('data-edit-cancel'), false); });
+        });
+      })();
+    </script>
   </body>
 </html>

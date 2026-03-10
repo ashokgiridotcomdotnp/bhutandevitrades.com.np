@@ -7,7 +7,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;700;800&display=swap" rel="stylesheet" />
     <title><%= title %></title>
-    <link rel="stylesheet" href="/stylesheets/style.css" />
+    <link rel="stylesheet" href="<%= assetPath('/stylesheets/style.css') %>" />
   </head>
   <body class="text-slate-900">
     <main class="app-shell py-6 pro-page-enter">
@@ -153,8 +153,8 @@
 
     <%- include('helpers/loading') %>
     <%- include('helpers/toaster') %>
-    <script src="/javascripts/loading.js"></script>
-    <script src="/javascripts/flash-alert.js"></script>
-    <script src="/javascripts/admin-profile.js"></script>
+    <script src="<%= assetPath('/javascripts/loading.js') %>"></script>
+    <script src="<%= assetPath('/javascripts/flash-alert.js') %>"></script>
+    <script src="<%= assetPath('/javascripts/admin-profile.js') %>"></script>
   </body>
 </html>

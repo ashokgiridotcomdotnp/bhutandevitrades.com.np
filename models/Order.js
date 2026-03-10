@@ -108,26 +108,15 @@ var orderSchema = new mongoose.Schema(
       type: Boolean,
       default: false,
     },
-    createdAt: {
-      type: Date,
-      default: Date.now,
-      index: true,
-    },
-    updatedAt: {
-      type: Date,
-      default: Date.now,
-    },
   },
   {
     versionKey: false,
     minimize: false,
+    timestamps: true,
   }
 );
 
-orderSchema.pre('save', function () {
-  this.updatedAt = new Date();
-});
-
 orderSchema.index({ customerEmail: 1, createdAt: -1 });
+orderSchema.index({ adminStatus: 1, createdAt: -1 });
 
 module.exports = mongoose.models.Order || mongoose.model('Order', orderSchema);

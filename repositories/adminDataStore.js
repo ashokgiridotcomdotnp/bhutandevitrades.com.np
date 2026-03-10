@@ -1,3 +1,4 @@
+var mongoose = require('mongoose');
 var fs = require('fs');
 var path = require('path');
 var database = require('../lib/db');
@@ -6,6 +7,52 @@ var AdminState = require('../models/AdminState');
 var adminDataFilePath = path.join(__dirname, '..', 'data', 'admin-data.json');
 var adminStateDocumentKey = 'catalog-admin-state';
 var legacyAdminStateDocumentKeys = ['catalog-admin-data'];
+var stateFlatFields = [
+  'categories',
+  'products',
+  'deletedProductIds',
+  'deletedCategoryNames',
+  'priceOverrides',
+  'imageOverrides',
+  'productOverrides',
+];
+var stateFlatFieldDefaults = {
+  categories: [],
+  products: [],
+  deletedProductIds: [],
+  deletedCategoryNames: [],
+  priceOverrides: {},
+  imageOverrides: {},
+  productOverrides: {},
+};
+
+function cloneFlatFieldDefaultValue(fieldName) {
+  var defaultValue = stateFlatFieldDefaults[fieldName];
+
+  if (Array.isArray(defaultValue)) {
+    return [];
+  }
+
+  if (defaultValue && typeof defaultValue === 'object') {
+    return {};
+  }
+
+  return defaultValue;
+}
+
+function buildLegacyAdminStateKeyFilter() {
+  if (!Array.isArray(legacyAdminStateDocumentKeys) || legacyAdminStateDocumentKeys.length === 0) {
+    return {};
+  }
+
+  if (legacyAdminStateDocumentKeys.length === 1) {
+    return { key: legacyAdminStateDocumentKeys[0] };
+  }
+
+  return {
+    key: mongoose.trusted({ $in: legacyAdminStateDocumentKeys }),
+  };
+}
 
 function normalizePayload(value, normalizeData, createDefaultData) {
   if (typeof normalizeData === 'function') {
@@ -20,6 +67,8 @@ function normalizePayload(value, normalizeData, createDefaultData) {
 }
 
 function resolveStateValue(state) {
+  var flatState = null;
+
   if (state && state.value && typeof state.value === 'object') {
     return state.value;
   }
@@ -29,7 +78,58 @@ function resolveStateValue(state) {
     return state.payload;
   }
 
+  flatState = resolveFlatStateValue(state);
+  if (flatState) {
+    return flatState;
+  }
+
   return null;
+}
+
+function resolveFlatStateValue(state) {
+  var hasAnyFlatField = false;
+  var result = {};
+
+  if (!state || typeof state !== 'object') {
+    return null;
+  }
+
+  stateFlatFields.forEach(function (fieldName) {
+    if (!Object.prototype.hasOwnProperty.call(state, fieldName)) {
+      return;
+    }
+
+    hasAnyFlatField = true;
+    result[fieldName] = typeof state[fieldName] === 'undefined'
+      ? cloneFlatFieldDefaultValue(fieldName)
+      : state[fieldName];
+  });
+
+  return hasAnyFlatField ? result : null;
+}
+
+function buildFlatStatePayload(normalizedState) {
+  var sourceState = normalizedState && typeof normalizedState === 'object' ? normalizedState : {};
+  var payload = {};
+
+  stateFlatFields.forEach(function (fieldName) {
+    payload[fieldName] = typeof sourceState[fieldName] === 'undefined'
+      ? cloneFlatFieldDefaultValue(fieldName)
+      : sourceState[fieldName];
+  });
+
+  return payload;
+}
+
+function isLegacyNestedState(state) {
+  if (!state || typeof state !== 'object') {
+    return false;
+  }
+
+  return Boolean(
+    (state.value && typeof state.value === 'object') ||
+    (state.payload && typeof state.payload === 'object')
+  );
 }
 
 async function migrateLegacyDocumentKeyIfNeeded(state, normalizedState) {
@@ -38,23 +138,24 @@ async function migrateLegacyDocumentKeyIfNeeded(state, normalizedState) {
   }
 
   try {
+    var flatPayload = buildFlatStatePayload(normalizedState);
+
     await AdminState.findOneAndUpdate(
       { key: adminStateDocumentKey },
       {
-        $set: {
-          value: normalizedState,
-          updatedAt: new Date(),
-        },
+        $set: flatPayload,
         $setOnInsert: {
           key: adminStateDocumentKey,
         },
         $unset: {
+          value: 1,
           payload: 1,
         },
       },
       {
         upsert: true,
         setDefaultsOnInsert: true,
+        runValidators: true,
       }
     );
 
@@ -63,6 +164,37 @@ async function migrateLegacyDocumentKeyIfNeeded(state, normalizedState) {
     }
   } catch (error) {
     console.error('Failed to migrate legacy admin data document key:', error.message);
+  }
+}
+
+async function migrateLegacyNestedStateIfNeeded(state, normalizedState) {
+  if (!state || !state.key || state.key !== adminStateDocumentKey || !isLegacyNestedState(state)) {
+    return;
+  }
+
+  try {
+    var flatPayload = buildFlatStatePayload(normalizedState);
+
+    await AdminState.findOneAndUpdate(
+      { key: adminStateDocumentKey },
+      {
+        $set: flatPayload,
+        $setOnInsert: {
+          key: adminStateDocumentKey,
+        },
+        $unset: {
+          value: 1,
+          payload: 1,
+        },
+      },
+      {
+        upsert: true,
+        setDefaultsOnInsert: true,
+        runValidators: true,
+      }
+    );
+  } catch (error) {
+    console.error('Failed to migrate nested admin state fields:', error.message);
   }
 }
 
@@ -128,7 +260,7 @@ async function loadFromDatabase(normalizeData, createDefaultData) {
     var stateValue = resolveStateValue(state);
 
     if (!stateValue && legacyAdminStateDocumentKeys.length > 0) {
-      var legacyState = await AdminState.findOne({ key: { $in: legacyAdminStateDocumentKeys } })
+      var legacyState = await AdminState.findOne(buildLegacyAdminStateKeyFilter())
         .sort({ updatedAt: -1 })
         .lean();
       var legacyStateValue = resolveStateValue(legacyState);
@@ -145,6 +277,7 @@ async function loadFromDatabase(normalizeData, createDefaultData) {
 
     var normalizedState = normalizePayload(stateValue, normalizeData, createDefaultData);
     await migrateLegacyDocumentKeyIfNeeded(state, normalizedState);
+    await migrateLegacyNestedStateIfNeeded(state, normalizedState);
     return normalizedState;
   } catch (error) {
     console.error('Failed to load admin data from database:', error.message);
@@ -160,29 +293,29 @@ async function saveToDatabase(data, normalizeData, createDefaultData) {
 
   try {
     var normalizedData = normalizePayload(data, normalizeData, createDefaultData);
+    var flatPayload = buildFlatStatePayload(normalizedData);
 
     await AdminState.findOneAndUpdate(
       { key: adminStateDocumentKey },
       {
-        $set: {
-          value: normalizedData,
-          updatedAt: new Date(),
-        },
+        $set: flatPayload,
         $setOnInsert: {
           key: adminStateDocumentKey,
         },
         $unset: {
+          value: 1,
           payload: 1,
         },
       },
       {
         upsert: true,
         setDefaultsOnInsert: true,
+        runValidators: true,
       }
     );
 
     if (legacyAdminStateDocumentKeys.length > 0) {
-      await AdminState.deleteMany({ key: { $in: legacyAdminStateDocumentKeys } });
+      await AdminState.deleteMany(buildLegacyAdminStateKeyFilter());
     }
 
     return true;

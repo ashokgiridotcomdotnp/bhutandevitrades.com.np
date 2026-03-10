@@ -2,17 +2,21 @@ var fs = require('fs');
 var path = require('path');
 var multer = require('multer');
 var sharp = require('sharp');
-var catalogDefaults = require('../data/catalog-defaults');
 var adminDataStore = require('../repositories/adminDataStore');
 var cloudinaryClient = require('../lib/cloudinary');
 
-var defaultProductImagePath = catalogDefaults.defaultProductImagePath;
 var uploadedProductImagesDirPath = path.join(__dirname, '..', 'public', 'uploads', 'products');
 var publicAssetsDirPath = path.join(__dirname, '..', 'public');
-var baseCategoryGroups = catalogDefaults.baseCategoryGroups;
-var baseProductSections = catalogDefaults.baseProductSections;
-var baseCategoryKeywordMap = catalogDefaults.baseCategoryKeywordMap;
-var homeCarouselImages = catalogDefaults.homeCarouselImages;
+var defaultProductImagePath = '';
+var baseCategoryGroups = [];
+var baseProductSections = [];
+var baseCategoryKeywordMap = {};
+var homeCarouselImages = [
+  '/images/productParts/slidePasal.webp',
+  '/images/productParts/slidePasal2.webp',
+  '/images/productParts/slidePasal3.webp',
+  '/images/productParts/helmet1.webp',
+];
 var hasAttemptedDatabaseBootstrap = false;
 var parsedCatalogCacheTtlMs = Number(process.env.CATALOG_CACHE_TTL_MS);
 var catalogCacheTtlMs = Number.isFinite(parsedCatalogCacheTtlMs) && parsedCatalogCacheTtlMs >= 0 ? parsedCatalogCacheTtlMs : 15000;
@@ -213,7 +217,25 @@ function buildProductSearchableText(item, section) {
 }
 
 function toTrimmedString(value) {
-  return String(value || '').trim();
+  if (value === null || typeof value === 'undefined') {
+    return '';
+  }
+
+  return String(value).trim();
+}
+
+function normalizeOptionalDescription(value) {
+  var cleanedValue = toTrimmedString(value);
+
+  if (!cleanedValue) {
+    return '';
+  }
+
+  if (/^n\/?a$/i.test(cleanedValue) || /^not available$/i.test(cleanedValue)) {
+    return '';
+  }
+
+  return cleanedValue;
 }
 
 function parseCommaSeparatedList(value) {
@@ -922,7 +944,7 @@ function ensureAdminCategoryShape(rawCategory) {
 
   return {
     name: categoryName,
-    description: toTrimmedString(rawCategory.description) || 'Added from admin panel',
+    description: normalizeOptionalDescription(rawCategory.description),
     items: normalizeList(rawCategory.items),
   };
 }
@@ -960,7 +982,7 @@ function ensureAdminProductShape(rawProduct) {
     id: buildSlug(rawProduct.id) || buildSlug(type + ' ' + name) || String(Date.now()),
     type: type,
     name: name,
-    spec: toTrimmedString(rawProduct.spec) || 'N/A',
+    spec: normalizeOptionalDescription(rawProduct.spec),
     price: toTrimmedString(rawProduct.price) || 'Contact for price',
     originalPrice: toTrimmedString(rawProduct.originalPrice),
     discountPercent: toTrimmedString(rawProduct.discountPercent),
@@ -968,6 +990,17 @@ function ensureAdminProductShape(rawProduct) {
     image: image,
     images: normalizeImageList(rawProduct.images, image),
   };
+}
+
+function buildCategoryProductNameKey(categoryName, productName) {
+  var categoryKey = normalizeForSearch(categoryName);
+  var productKey = normalizeForSearch(productName);
+
+  if (!categoryKey || !productKey) {
+    return '';
+  }
+
+  return categoryKey + '::' + productKey;
 }
 
 function createDefaultAdminData() {
@@ -984,6 +1017,16 @@ function createDefaultAdminData() {
 
 function normalizeAdminDataShape(rawData) {
   var safeData = createDefaultAdminData();
+  var categoryIndexByKey = Object.create(null);
+  var allProducts = [];
+  var dedupedProducts = [];
+  var seenProductIds = Object.create(null);
+  var seenCategoryProductNames = Object.create(null);
+  var activeProductIdKeys = Object.create(null);
+  var activeCategoryKeys = Object.create(null);
+  var productIndex = 0;
+  var productIdKey = '';
+  var categoryProductKey = '';
 
   if (!rawData || typeof rawData !== 'object') {
     return safeData;
@@ -992,7 +1035,24 @@ function normalizeAdminDataShape(rawData) {
   if (Array.isArray(rawData.categories)) {
     rawData.categories.forEach(function (category) {
       var safeCategory = ensureAdminCategoryShape(category);
+      var safeCategoryKey = '';
+      var existingCategory = null;
       if (safeCategory) {
+        safeCategoryKey = normalizeForSearch(safeCategory.name);
+        if (!safeCategoryKey) {
+          return;
+        }
+
+        if (typeof categoryIndexByKey[safeCategoryKey] === 'number') {
+          existingCategory = safeData.categories[categoryIndexByKey[safeCategoryKey]];
+          if (safeCategory.description) {
+            existingCategory.description = safeCategory.description;
+          }
+          existingCategory.items = mergeUniqueValues(existingCategory.items, safeCategory.items);
+          return;
+        }
+
+        categoryIndexByKey[safeCategoryKey] = safeData.categories.length;
         safeData.categories.push(safeCategory);
       }
     });
@@ -1002,7 +1062,7 @@ function normalizeAdminDataShape(rawData) {
     rawData.products.forEach(function (product) {
       var safeProduct = ensureAdminProductShape(product);
       if (safeProduct) {
-        safeData.products.push(safeProduct);
+        allProducts.push(safeProduct);
       }
     });
   }
@@ -1041,7 +1101,7 @@ function normalizeAdminDataShape(rawData) {
 
       var cleanType = toTrimmedString(rawOverride.type);
       var cleanName = toTrimmedString(rawOverride.name);
-      var cleanSpec = toTrimmedString(rawOverride.spec);
+      var cleanSpec = normalizeOptionalDescription(rawOverride.spec);
       var cleanPrice = toTrimmedString(rawOverride.price);
       var cleanOriginalPrice = toTrimmedString(rawOverride.originalPrice);
       var cleanDiscountPercent = toTrimmedString(rawOverride.discountPercent);
@@ -1086,13 +1146,67 @@ function normalizeAdminDataShape(rawData) {
     });
   }
 
+  for (productIndex = allProducts.length - 1; productIndex >= 0; productIndex -= 1) {
+    var candidateProduct = allProducts[productIndex];
+
+    productIdKey = normalizeForSearch(candidateProduct && candidateProduct.id);
+    categoryProductKey = buildCategoryProductNameKey(
+      candidateProduct && candidateProduct.type,
+      candidateProduct && candidateProduct.name
+    );
+
+    if (
+      (productIdKey && seenProductIds[productIdKey]) ||
+      (categoryProductKey && seenCategoryProductNames[categoryProductKey])
+    ) {
+      continue;
+    }
+
+    if (productIdKey) {
+      seenProductIds[productIdKey] = true;
+      activeProductIdKeys[productIdKey] = true;
+    }
+
+    if (categoryProductKey) {
+      seenCategoryProductNames[categoryProductKey] = true;
+    }
+
+    dedupedProducts.push(candidateProduct);
+  }
+
+  safeData.products = dedupedProducts.reverse();
+
+  safeData.products.forEach(function (product) {
+    var productCategoryKey = normalizeForSearch(product && product.type);
+    if (productCategoryKey) {
+      activeCategoryKeys[productCategoryKey] = true;
+    }
+  });
+
+  safeData.categories.forEach(function (category) {
+    var categoryKey = normalizeForSearch(category && category.name);
+    if (categoryKey) {
+      activeCategoryKeys[categoryKey] = true;
+    }
+  });
+
   if (Array.isArray(rawData.deletedProductIds)) {
-    safeData.deletedProductIds = normalizeList(rawData.deletedProductIds);
+    safeData.deletedProductIds = normalizeList(rawData.deletedProductIds).filter(function (id) {
+      return !activeProductIdKeys[normalizeForSearch(id)];
+    });
   }
 
   if (Array.isArray(rawData.deletedCategoryNames)) {
-    safeData.deletedCategoryNames = normalizeList(rawData.deletedCategoryNames);
+    safeData.deletedCategoryNames = normalizeList(rawData.deletedCategoryNames).filter(function (name) {
+      return !activeCategoryKeys[normalizeForSearch(name)];
+    });
   }
+
+  safeData.deletedProductIds.forEach(function (id) {
+    delete safeData.priceOverrides[id];
+    delete safeData.imageOverrides[id];
+    delete safeData.productOverrides[id];
+  });
 
   return safeData;
 }
@@ -1640,7 +1754,7 @@ function getMergedCategoryGroups() {
 
     mergedCategories.push({
       name: category.name,
-      description: category.description || 'Added from admin panel',
+      description: normalizeOptionalDescription(category.description),
       items: normalizeList(category.items),
     });
     categoryIndexByKey[categoryKey] = mergedCategories.length - 1;
@@ -1667,7 +1781,7 @@ function getMergedCategoryGroups() {
     if (typeof categoryIndex !== 'number') {
       mergedCategories.push({
         name: effectiveCategoryName,
-        description: 'Added from admin panel',
+        description: '',
         items: [],
       });
       categoryIndex = mergedCategories.length - 1;
@@ -1707,7 +1821,7 @@ function getMergedProductSections() {
     }
 
     var effectiveName = toTrimmedString(productOverride.name) || toTrimmedString(product.name);
-    var effectiveSpec = toTrimmedString(productOverride.spec) || toTrimmedString(product.spec);
+    var effectiveSpec = normalizeOptionalDescription(toTrimmedString(productOverride.spec) || toTrimmedString(product.spec));
     var effectivePrice = getEffectivePrice(product.id, overridePrice || product.price);
     var effectiveOriginalPrice = hasOverridePrice
       ? toTrimmedString(productOverride.originalPrice)
@@ -1826,7 +1940,7 @@ function syncCategoryGroupsWithProducts(categoryGroups, productSections, categor
       if (typeof groupIndex !== 'number') {
         syncedGroups.push({
           name: resolvedCategoryName,
-          description: 'Products available',
+          description: '',
           items: [],
         });
         groupIndex = syncedGroups.length - 1;
@@ -2243,19 +2357,84 @@ function findAdminCategoryByName(categoryName) {
   }) || null;
 }
 
-function upsertAdminCategory(categoryName, categoryDescription, categoryItems) {
+function upsertAdminCategory(categoryName, categoryDescription, categoryItems, options) {
   var cleanedName = toTrimmedString(categoryName);
+  var cleanedDescription = toTrimmedString(categoryDescription);
+  var settings = options && typeof options === 'object' ? options : {};
+  var cleanedOriginalName = toTrimmedString(settings.originalName);
+  var shouldUpdateDescription = Boolean(settings.updateDescription);
+  var shouldReplaceItems = Boolean(settings.replaceItems);
+  var targetCategoryKey = normalizeForSearch(cleanedName);
+  var originalCategoryKey = normalizeForSearch(cleanedOriginalName);
+  var existingCategory = null;
+  var originalCategory = null;
+  var categoryIndex = -1;
+  var productOverrideKeys = [];
+  var keyIndex = 0;
+  var overrideKey = '';
+  var overrideEntry = null;
+
   if (!cleanedName) {
     return null;
   }
 
   removeDeletedCategory(cleanedName);
+  if (cleanedOriginalName) {
+    removeDeletedCategory(cleanedOriginalName);
+  }
 
-  var existingCategory = findAdminCategoryByName(cleanedName);
+  existingCategory = findAdminCategoryByName(cleanedName);
+
+  if (originalCategoryKey && originalCategoryKey !== targetCategoryKey) {
+    originalCategory = findAdminCategoryByName(cleanedOriginalName);
+
+    if (originalCategory && existingCategory && originalCategory !== existingCategory) {
+      existingCategory.items = mergeUniqueValues(existingCategory.items, originalCategory.items);
+
+      if (!toTrimmedString(existingCategory.description) && toTrimmedString(originalCategory.description)) {
+        existingCategory.description = toTrimmedString(originalCategory.description);
+      }
+
+      categoryIndex = adminData.categories.indexOf(originalCategory);
+      if (categoryIndex !== -1) {
+        adminData.categories.splice(categoryIndex, 1);
+      }
+    } else if (originalCategory && !existingCategory) {
+      originalCategory.name = cleanedName;
+      existingCategory = originalCategory;
+    }
+
+    if (Array.isArray(adminData.products)) {
+      adminData.products.forEach(function (product) {
+        var productCategoryKey = normalizeForSearch(product && product.type);
+        if (productCategoryKey === originalCategoryKey) {
+          product.type = cleanedName;
+        }
+      });
+    }
+
+    if (adminData.productOverrides && typeof adminData.productOverrides === 'object') {
+      productOverrideKeys = Object.keys(adminData.productOverrides);
+
+      for (keyIndex = 0; keyIndex < productOverrideKeys.length; keyIndex += 1) {
+        overrideKey = productOverrideKeys[keyIndex];
+        overrideEntry = adminData.productOverrides[overrideKey];
+
+        if (!overrideEntry || typeof overrideEntry !== 'object') {
+          continue;
+        }
+
+        if (normalizeForSearch(overrideEntry.type) === originalCategoryKey) {
+          overrideEntry.type = cleanedName;
+        }
+      }
+    }
+  }
+
   if (!existingCategory) {
     existingCategory = {
       name: cleanedName,
-      description: toTrimmedString(categoryDescription) || 'Added from admin panel',
+      description: normalizeOptionalDescription(cleanedDescription),
       items: normalizeList(categoryItems),
     };
     adminData.categories.push(existingCategory);
@@ -2264,11 +2443,13 @@ function upsertAdminCategory(categoryName, categoryDescription, categoryItems) {
 
   existingCategory.name = cleanedName;
 
-  if (toTrimmedString(categoryDescription)) {
-    existingCategory.description = toTrimmedString(categoryDescription);
+  if (shouldUpdateDescription) {
+    existingCategory.description = normalizeOptionalDescription(cleanedDescription);
   }
 
-  if (Array.isArray(categoryItems) && categoryItems.length > 0) {
+  if (shouldReplaceItems) {
+    existingCategory.items = normalizeList(categoryItems);
+  } else if (Array.isArray(categoryItems) && categoryItems.length > 0) {
     existingCategory.items = mergeUniqueValues(existingCategory.items, categoryItems);
   }
 
@@ -2276,6 +2457,10 @@ function upsertAdminCategory(categoryName, categoryDescription, categoryItems) {
 }
 
 function getAdminStatusMessage(statusCode) {
+  if (statusCode === 'login-success') {
+    return 'Welcome! You have successfully logged in.';
+  }
+
   if (statusCode === 'image-saved') {
     return 'Image updated successfully.';
   }
@@ -2398,6 +2583,10 @@ function getAdminErrorMessage(errorCode) {
 
   if (errorCode === 'duplicate-product') {
     return 'A product with the same category and subcategory already exists.';
+  }
+
+  if (errorCode === 'duplicate-category') {
+    return 'A category with the same name already exists.';
   }
 
   return '';

@@ -1,0 +1,502 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;700;800&display=swap" rel="stylesheet" />
+    <title><%= title %></title>
+    <link rel="stylesheet" href="<%= assetPath('/stylesheets/style.css') %>" />
+  </head>
+  <body class="text-slate-900">
+    <%- include('helpers/nav', { title: 'BhutanDevi Trade and Suppliers', q, activeCategory, hasSidebar: false, topNavCategories, searchSuggestions, basePath, currentPath: categoryPagePath, currentUser: null, showUserAuthActions: false }) %>
+
+    <main class="pro-page-enter" style="height: calc(100vh - 56px); overflow: hidden;">
+      <%
+        function toAnchor(value) {
+          return String(value || '')
+            .toLowerCase()
+            .replace(/[^a-z0-9]+/g, '-')
+            .replace(/^-+|-+$/g, '');
+        }
+
+        function categoryPageHref(categoryName) {
+          return '/admin/categories/' + toAnchor(categoryName);
+        }
+
+        function toInputNumberValue(value) {
+          var cleanedValue = String(value || '').replace(/,/g, '').trim();
+          var matchedValue = cleanedValue.match(/-?\d+(\.\d+)?/);
+          return matchedValue ? matchedValue[0] : '';
+        }
+
+        var boardItems = Array.isArray(categoryBoard && categoryBoard.items) ? categoryBoard.items : [];
+        var availableBoards = Array.isArray(categoryBoards)
+          ? categoryBoards.filter(function (board) { return board && board.name; })
+          : [];
+        var normalizedCategoryName = toAnchor(categoryBoard && categoryBoard.name);
+        var isHelmetCategory = normalizedCategoryName === 'helmet';
+        var currentCategoryRecord = categoryRecord && typeof categoryRecord === 'object' ? categoryRecord : null;
+        var addProductSubcategoryOptions = [];
+        var seenAddProductSubcategories = {};
+        var managedCategoryDescription = currentCategoryRecord && currentCategoryRecord.description
+          ? String(currentCategoryRecord.description) : '';
+
+        function addProductSubcategoryOption(value) {
+          var cleanedValue = String(value || '').trim();
+          var key = toAnchor(cleanedValue);
+          if (!cleanedValue || !key || seenAddProductSubcategories[key]) return;
+          seenAddProductSubcategories[key] = true;
+          addProductSubcategoryOptions.push(cleanedValue);
+        }
+
+        boardItems.forEach(function (item) { addProductSubcategoryOption(item && item.name); });
+
+        if (Array.isArray(topNavCategories)) {
+          topNavCategories.forEach(function (group) {
+            if (toAnchor(group && group.name) !== normalizedCategoryName) return;
+            (group.items || []).forEach(function (itemName) { addProductSubcategoryOption(itemName); });
+          });
+        }
+
+        if (isHelmetCategory && addProductSubcategoryOptions.length === 0) {
+          addProductSubcategoryOption('Vega');
+        }
+
+        addProductSubcategoryOptions.sort(function (left, right) { return left.localeCompare(right); });
+
+        var managedCategoryItems = currentCategoryRecord && Array.isArray(currentCategoryRecord.items)
+          ? currentCategoryRecord.items.slice()
+          : addProductSubcategoryOptions.slice();
+        var managedCategoryItemsText = managedCategoryItems.join(', ');
+
+        var parsedCategoryItemsPageSize = Number(categoryItemsPageSize);
+        var resolvedCategoryItemsPageSize = Number.isFinite(parsedCategoryItemsPageSize) && parsedCategoryItemsPageSize > 0
+          ? Math.floor(parsedCategoryItemsPageSize) : 12;
+        var categoryItemsTotalPages = Math.max(1, Math.ceil(boardItems.length / resolvedCategoryItemsPageSize));
+        var parsedCategoryItemsCurrentPage = Number(categoryItemsPage);
+        var categoryItemsCurrentPage = Number.isFinite(parsedCategoryItemsCurrentPage) && parsedCategoryItemsCurrentPage > 0
+          ? Math.floor(parsedCategoryItemsCurrentPage) : 1;
+
+        if (categoryItemsCurrentPage > categoryItemsTotalPages) categoryItemsCurrentPage = categoryItemsTotalPages;
+
+        var categoryItemsStartIndex = (categoryItemsCurrentPage - 1) * resolvedCategoryItemsPageSize;
+        var paginatedBoardItems = boardItems.slice(categoryItemsStartIndex, categoryItemsStartIndex + resolvedCategoryItemsPageSize);
+
+        function buildCategoryItemsPageHref(targetPage) {
+          var safeTargetPage = Number(targetPage);
+          if (!Number.isFinite(safeTargetPage) || safeTargetPage < 1) safeTargetPage = 1;
+          safeTargetPage = Math.floor(safeTargetPage);
+          if (safeTargetPage <= 1) return categoryPagePath;
+          return categoryPagePath + '?itemsPage=' + safeTargetPage;
+        }
+
+        var categoryItemsRedirectPath = buildCategoryItemsPageHref(categoryItemsCurrentPage);
+      %>
+
+      <!-- 3-COLUMN GRID LAYOUT -->
+      <div style="display: grid; grid-template-columns: 220px 320px 1fr; height: 100%; overflow: hidden;">
+
+        <!-- ═══════════════════════════════════════════════ -->
+        <!-- COLUMN 1: SIDEBAR — Category Navigation        -->
+        <!-- ═══════════════════════════════════════════════ -->
+        <aside style="background: #0f172a; color: #e2e8f0; display: flex; flex-direction: column; overflow-y: auto; border-right: 1px solid #1e293b;">
+
+          <!-- Brand header -->
+          <div style="padding: 20px 16px 16px; border-bottom: 1px solid #1e293b;">
+            <div style="display: flex; align-items: center; gap: 10px;">
+              <span style="width: 36px; height: 36px; background: #3b82f6; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 15px; font-weight: 800; color: #fff; flex-shrink: 0;">
+                <%= String(categoryBoard.name || 'C').charAt(0).toUpperCase() %>
+              </span>
+              <div>
+                <p style="font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: #94a3b8;">Category</p>
+                <p style="font-size: 13px; font-weight: 700; color: #f1f5f9; line-height: 1.2;"><%= categoryBoard.name %></p>
+              </div>
+            </div>
+          </div>
+
+          <!-- Nav label -->
+          <div style="padding: 14px 16px 6px;">
+            <p style="font-size: 10px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: #475569;">All Categories</p>
+          </div>
+
+          <!-- Category list -->
+          <nav style="flex: 1; padding: 0 8px 12px;">
+            <% availableBoards.forEach(function(board) { %>
+            <% var isActiveBoard = toAnchor(board.name) === toAnchor(categoryBoard.name); %>
+            <a
+              href="<%= categoryPageHref(board.name) %>"
+              style="display: flex; align-items: center; gap: 9px; padding: 8px 10px; border-radius: 8px; margin-bottom: 2px; text-decoration: none; font-size: 13px; font-weight: 600; transition: background 0.15s;
+                <%= isActiveBoard ? 'background: #1e40af; color: #bfdbfe;' : 'color: #94a3b8;' %>"
+              onmouseover="if(!this.dataset.active)this.style.background='#1e293b'"
+              onmouseout="if(!this.dataset.active)this.style.background='transparent'"
+              <% if (isActiveBoard) { %>data-active="true"<% } %>
+            >
+              <span style="width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; background: <%= isActiveBoard ? '#60a5fa' : '#334155' %>;"></span>
+              <%= board.name %>
+            </a>
+            <% }) %>
+          </nav>
+
+          <!-- Bottom actions -->
+          <div style="border-top: 1px solid #1e293b; padding: 12px 8px;">
+            <a href="/admin" style="display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 8px; color: #94a3b8; font-size: 12px; font-weight: 600; text-decoration: none;" onmouseover="this.style.background='#1e293b'" onmouseout="this.style.background='transparent'">
+              <img src="/icons/logout.svg" alt="" style="width: 13px; height: 13px; opacity: 0.6;" />
+              Dashboard
+            </a>
+            <form action="/admin/logout" method="post">
+              <button type="submit" style="display: flex; align-items: center; gap: 8px; width: 100%; padding: 8px 10px; border-radius: 8px; color: #f87171; font-size: 12px; font-weight: 600; background: transparent; border: none; cursor: pointer;" onmouseover="this.style.background='#1e293b'" onmouseout="this.style.background='transparent'">
+                <img src="/icons/logout.svg" alt="" style="width: 13px; height: 13px; opacity: 0.7;" />
+                Logout
+              </button>
+            </form>
+          </div>
+        </aside>
+
+        <!-- ═══════════════════════════════════════════════ -->
+        <!-- COLUMN 2: CENTER — Manage / Edit Category      -->
+        <!-- ═══════════════════════════════════════════════ -->
+        <section style="background: #f8fafc; border-right: 1px solid #e2e8f0; overflow-y: auto; display: flex; flex-direction: column;">
+
+          <!-- Header -->
+          <div style="background: #fff; border-bottom: 1px solid #e2e8f0; padding: 16px 20px; flex-shrink: 0;">
+            <h1 style="font-size: 17px; font-weight: 800; color: #0f172a; margin: 0;">Manage Category</h1>
+            <p style="font-size: 12px; color: #64748b; margin: 3px 0 0;">Edit label, description & subcategory list</p>
+          </div>
+
+          <% if (statusMessage) { %>
+          <div class="hidden" data-success-alert><%= statusMessage %></div>
+          <% } %>
+          <% if (errorMessage) { %>
+          <div class="hidden" data-error-alert><%= errorMessage %></div>
+          <% } %>
+
+          <!-- Category Form -->
+          <form
+            action="/admin/categories"
+            method="post"
+            style="padding: 20px; flex: 1; display: flex; flex-direction: column; gap: 16px;"
+          >
+            <input type="hidden" name="redirectTo" value="<%= categoryItemsRedirectPath %>" />
+            <input type="hidden" name="originalCategoryName" value="<%= categoryBoard.name %>" />
+            <input type="hidden" name="replaceCategoryItems" value="1" />
+
+            <!-- Category Name -->
+            <div>
+              <label for="category-manage-name" style="display: block; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: #475569; margin-bottom: 6px;">
+                Category Name <span style="color: #ef4444;">*</span>
+              </label>
+              <input
+                id="category-manage-name"
+                type="text"
+                name="categoryName"
+                value="<%= categoryBoard.name %>"
+                required
+                class="pro-input"
+                style="font-size: 13px;"
+              />
+            </div>
+
+            <!-- Description -->
+            <div>
+              <label for="category-manage-description" style="display: block; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: #475569; margin-bottom: 6px;">
+                Description <span style="font-size: 10px; font-weight: 500; color: #94a3b8;">(optional)</span>
+              </label>
+              <textarea
+                id="category-manage-description"
+                name="categoryDescription"
+                rows="3"
+                placeholder="Short description…"
+                class="pro-input"
+                style="font-size: 13px; resize: vertical;"
+              ><%= managedCategoryDescription %></textarea>
+            </div>
+
+            <!-- Subcategories -->
+            <div>
+              <label for="category-manage-items" style="display: block; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: #475569; margin-bottom: 6px;">
+                Subcategories / Items
+              </label>
+              <textarea
+                id="category-manage-items"
+                name="categoryItems"
+                rows="6"
+                placeholder="Comma-separated or one per line"
+                class="pro-input"
+                style="font-size: 12px; resize: vertical;"
+              ><%= managedCategoryItemsText %></textarea>
+              <p style="font-size: 11px; color: #94a3b8; margin-top: 5px;">Replaces the current item list on save.</p>
+            </div>
+
+            <!-- Stats card -->
+            <div style="background: #fff; border: 1px solid #e2e8f0; border-radius: 10px; padding: 12px 14px;">
+              <p style="font-size: 10px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: #94a3b8; margin: 0 0 8px;">Totals</p>
+              <div style="display: flex; gap: 16px;">
+                <div>
+                  <p style="font-size: 18px; font-weight: 800; color: #0f172a; margin: 0;"><%= managedCategoryItems.length %></p>
+                  <p style="font-size: 11px; color: #64748b; margin: 1px 0 0;">configured items</p>
+                </div>
+                <div style="width: 1px; background: #e2e8f0;"></div>
+                <div>
+                  <p style="font-size: 18px; font-weight: 800; color: #0f172a; margin: 0;"><%= boardItems.length %></p>
+                  <p style="font-size: 11px; color: #64748b; margin: 1px 0 0;">products mapped</p>
+                </div>
+              </div>
+            </div>
+
+            <!-- Save -->
+            <div style="display: flex; gap: 8px; padding-bottom: 4px;">
+              <button type="submit" class="pro-btn-primary" style="flex: 1; font-size: 13px;">Save Category</button>
+              <button
+                type="button"
+                data-delete-category-trigger="single-category"
+                data-category-name="<%= categoryBoard.name %>"
+                class="pro-btn-danger-muted"
+                style="font-size: 13px; padding-left: 14px; padding-right: 14px;"
+              >Delete</button>
+            </div>
+          </form>
+
+          <!-- Hidden delete category form -->
+          <form action="/admin/categories/delete" method="post" class="hidden" data-delete-category-form="single-category">
+            <input type="hidden" name="categoryName" value="<%= categoryBoard.name %>" />
+            <input type="hidden" name="redirectTo" value="/admin" />
+          </form>
+        </section>
+
+        <!-- ═══════════════════════════════════════════════ -->
+        <!-- COLUMN 3: RIGHT — Products List + Edit Forms   -->
+        <!-- ═══════════════════════════════════════════════ -->
+        <div style="background: #fff; overflow-y: auto; display: flex; flex-direction: column;">
+
+          <!-- Header -->
+          <div style="border-bottom: 1px solid #e2e8f0; padding: 16px 24px; display: flex; align-items: center; gap: 12px; flex-shrink: 0; background: #fff; position: sticky; top: 0; z-index: 10;">
+            <div>
+              <h2 style="font-size: 17px; font-weight: 800; color: #0f172a; margin: 0;"><%= categoryBoard.name %> Products</h2>
+              <p style="font-size: 12px; color: #64748b; margin: 2px 0 0;"><%= boardItems.length %> products in this category</p>
+            </div>
+            <span style="margin-left: auto; background: #f1f5f9; border: 1px solid #e2e8f0; border-radius: 20px; padding: 3px 10px; font-size: 11px; font-weight: 700; color: #475569;">
+              <%= boardItems.length %> total
+            </span>
+          </div>
+
+          <!-- Products -->
+          <div style="padding: 20px 24px; flex: 1;">
+
+            <% if (boardItems.length === 0) { %>
+            <div style="text-align: center; padding: 60px 20px; color: #94a3b8;">
+              <p style="font-size: 32px; margin: 0 0 10px;">📦</p>
+              <p style="font-size: 14px; font-weight: 600; color: #64748b; margin: 0;">No products yet in this category.</p>
+              <p style="font-size: 12px; margin: 6px 0 0;">Add products from the dashboard.</p>
+            </div>
+            <% } %>
+
+            <% if (boardItems.length) { %>
+            <div style="display: flex; flex-direction: column; gap: 10px;">
+              <% paginatedBoardItems.forEach(function(item) { %>
+              <% var editImageInputId = 'edit-image-' + item.id; %>
+              <% var hasItemDiscount = item.originalPrice && item.originalPrice !== item.price; %>
+              <% var editMrpInputValue = toInputNumberValue(item.originalPrice || item.price); %>
+              <% var editDiscountInputValue = toInputNumberValue(item.discountPercent); %>
+              <% var editQuantityInputValue = toInputNumberValue(item.quantity); %>
+              <% var stockValue = item.quantity || item.quantity === 0 ? item.quantity : '-'; %>
+
+              <!-- Product Card (view mode) -->
+              <div
+                data-view-panel="<%= item.id %>"
+                style="border: 1px solid #e2e8f0; border-radius: 12px; background: #fafafa; overflow: hidden; transition: box-shadow 0.15s;"
+                onmouseover="this.style.boxShadow='0 2px 12px rgba(0,0,0,0.07)'"
+                onmouseout="this.style.boxShadow='none'"
+              >
+                <div style="display: grid; grid-template-columns: 80px 1fr auto; gap: 0; align-items: stretch;">
+                  <!-- Image -->
+                  <div style="padding: 10px; display: flex; align-items: center; justify-content: center;">
+                    <img
+                      src="<%= item.image %>"
+                      alt="<%= item.name %>"
+                      loading="lazy"
+                      style="width: 64px; height: 64px; object-fit: cover; border-radius: 8px; border: 1px solid #e2e8f0; background: #fff;"
+                    />
+                  </div>
+
+                  <!-- Info -->
+                  <div style="padding: 10px 4px 10px 0; min-width: 0;">
+                    <p style="font-size: 13px; font-weight: 700; color: #0f172a; margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;"><%= item.name %></p>
+                    <p style="font-size: 11px; color: #64748b; margin: 2px 0 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;"><%= item.type %></p>
+                    <% if (item.spec) { %>
+                    <p style="font-size: 11px; color: #94a3b8; margin: 2px 0 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;"><%= item.spec %></p>
+                    <% } %>
+                    <div style="display: flex; align-items: center; gap: 8px; margin-top: 5px; flex-wrap: wrap;">
+                      <% if (hasItemDiscount) { %>
+                      <span style="font-size: 11px; color: #ef4444; text-decoration: line-through; font-weight: 600;"><%= item.originalPrice %></span>
+                      <% } %>
+                      <span style="font-size: 13px; font-weight: 700; color: #059669;"><%= item.price %></span>
+                      <% if (item.discountPercent) { %>
+                      <span style="font-size: 10px; background: #dcfce7; color: #16a34a; padding: 1px 6px; border-radius: 20px; font-weight: 700;"><%= item.discountPercent %>% off</span>
+                      <% } %>
+                      <span style="font-size: 10px; background: #f1f5f9; color: #475569; padding: 1px 6px; border-radius: 20px; font-weight: 600;">Qty: <%= stockValue %></span>
+                    </div>
+                  </div>
+
+                  <!-- Actions -->
+                  <div style="display: flex; flex-direction: column; gap: 4px; padding: 10px 12px; justify-content: center; align-items: flex-end;">
+                    <button
+                      type="button"
+                      data-edit-toggle="<%= item.id %>"
+                      style="font-size: 11px; font-weight: 600; padding: 5px 12px; border-radius: 6px; border: 1px solid #cbd5e1; background: #fff; color: #334155; cursor: pointer;"
+                      onmouseover="this.style.background='#f1f5f9'"
+                      onmouseout="this.style.background='#fff'"
+                    >Edit</button>
+                    <button
+                      type="button"
+                      data-delete-trigger="<%= item.id %>"
+                      data-product-name="<%= item.name %>"
+                      style="font-size: 11px; font-weight: 600; padding: 5px 12px; border-radius: 6px; border: 1px solid #fecaca; background: #fff7f7; color: #dc2626; cursor: pointer;"
+                      onmouseover="this.style.background='#fee2e2'"
+                      onmouseout="this.style.background='#fff7f7'"
+                    >Delete</button>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Edit Row (hidden by default) -->
+              <div class="hidden" data-edit-row="<%= item.id %>">
+                <form
+                  action="/admin/products/edit"
+                  method="post"
+                  enctype="multipart/form-data"
+                  class="hidden"
+                  data-edit-form="<%= item.id %>"
+                  style="border: 2px solid #3b82f6; border-radius: 12px; background: #fff; padding: 16px 18px;"
+                >
+                  <input type="hidden" name="productId" value="<%= item.id %>" />
+                  <input type="hidden" name="currentImagePath" value="<%= item.image || '' %>" />
+                  <input type="hidden" name="redirectTo" value="<%= categoryItemsRedirectPath %>" />
+
+                  <p style="font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.08em; color: #3b82f6; margin: 0 0 14px;">Editing: <%= item.name %></p>
+
+                  <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                    <div>
+                      <label style="display: block; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: #64748b; margin-bottom: 4px;">Category</label>
+                      <input type="text" name="productCategory" value="<%= item.type || categoryBoard.name %>" required class="pro-input" style="font-size: 12px;" />
+                    </div>
+                    <div>
+                      <label style="display: block; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: #64748b; margin-bottom: 4px;">Title <span style="color:#ef4444">*</span></label>
+                      <input type="text" name="productName" value="<%= item.name %>" required class="pro-input" style="font-size: 12px;" />
+                    </div>
+                    <div style="grid-column: 1 / -1;">
+                      <label style="display: block; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: #64748b; margin-bottom: 4px;">Description</label>
+                      <input type="text" name="productSpec" value="<%= item.spec %>" placeholder="Optional" class="pro-input" style="font-size: 12px;" />
+                    </div>
+                    <div>
+                      <label style="display: block; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: #64748b; margin-bottom: 4px;">MRP <span style="color:#ef4444">*</span></label>
+                      <input type="number" name="productPrice" value="<%= editMrpInputValue %>" min="0" step="0.01" data-form-mrp-input required class="pro-input" style="font-size: 12px;" />
+                    </div>
+                    <div>
+                      <label style="display: block; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: #64748b; margin-bottom: 4px;">Discount (%)</label>
+                      <input type="number" name="productDiscountPercent" value="<%= editDiscountInputValue || '0' %>" min="0" max="100" step="0.01" data-form-discount-input class="pro-input" style="font-size: 12px;" />
+                    </div>
+                    <div>
+                      <label style="display: block; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: #64748b; margin-bottom: 4px;">Quantity</label>
+                      <input type="number" name="productQuantity" value="<%= editQuantityInputValue %>" min="0" step="1" class="pro-input" style="font-size: 12px;" />
+                    </div>
+                    <div style="display: flex; align-items: flex-end;">
+                      <div class="hidden rounded-lg border border-emerald-200 bg-emerald-50 px-2 py-1.5 w-full" data-form-price-preview>
+                        <p style="font-size: 10px; font-weight: 700; text-transform: uppercase; color: #059669;">Price Preview</p>
+                        <div style="display: flex; align-items: center; gap: 6px; margin-top: 2px;">
+                          <span class="hidden" style="font-size: 11px; color: #ef4444; text-decoration: line-through; font-weight: 600;" data-form-price-original></span>
+                          <span style="font-size: 14px; font-weight: 800; color: #059669;" data-form-price-final></span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- Image upload -->
+                  <div style="margin-top: 12px;">
+                    <label style="display: block; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: #64748b; margin-bottom: 6px;">Product Image</label>
+                    <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                      <input id="<%= editImageInputId %>" type="file" name="productImageFile" accept="image/*" data-file-input class="sr-only" />
+                      <label for="<%= editImageInputId %>" style="font-size: 11px; font-weight: 600; padding: 5px 12px; border-radius: 6px; border: 1px solid #cbd5e1; background: #f8fafc; color: #334155; cursor: pointer;">
+                        Choose Photo
+                      </label>
+                      <span data-file-name-for="<%= editImageInputId %>" data-file-default-text="Keep current photo" style="font-size: 11px; color: #64748b;">Keep current photo</span>
+                    </div>
+                  </div>
+
+                  <!-- Form actions -->
+                  <div style="display: flex; gap: 8px; margin-top: 14px; padding-top: 12px; border-top: 1px solid #f1f5f9;">
+                    <button type="submit" class="pro-btn-primary" style="font-size: 12px; padding: 7px 16px;">Save Changes</button>
+                    <button type="button" data-edit-cancel="<%= item.id %>" class="pro-btn-secondary" style="font-size: 12px; padding: 7px 16px;">Cancel</button>
+                  </div>
+                </form>
+
+                <!-- Delete form (hidden) -->
+                <form action="/admin/products/delete" method="post" class="hidden" data-delete-form="<%= item.id %>">
+                  <input type="hidden" name="productId" value="<%= item.id %>" />
+                  <input type="hidden" name="redirectTo" value="<%= categoryItemsRedirectPath %>" />
+                </form>
+              </div>
+
+              <% }) %>
+            </div>
+            <% } %>
+
+            <!-- Pagination -->
+            <% if (categoryItemsTotalPages > 1) { %>
+            <div style="display: flex; align-items: center; justify-content: space-between; margin-top: 20px; padding-top: 16px; border-top: 1px solid #e2e8f0;">
+              <a
+                href="<%= buildCategoryItemsPageHref(categoryItemsCurrentPage - 1) %>"
+                class="pro-btn-secondary"
+                style="font-size: 12px; padding: 6px 14px; <%= categoryItemsCurrentPage <= 1 ? 'pointer-events: none; opacity: 0.4;' : '' %>"
+              >← Prev</a>
+
+              <div style="display: flex; gap: 4px; align-items: center; flex-wrap: wrap;">
+                <% for (var categoryPageNumber = 1; categoryPageNumber <= categoryItemsTotalPages; categoryPageNumber += 1) { %>
+                <% if (categoryPageNumber === 1 || categoryPageNumber === categoryItemsTotalPages || Math.abs(categoryPageNumber - categoryItemsCurrentPage) <= 1) { %>
+                <a
+                  href="<%= buildCategoryItemsPageHref(categoryPageNumber) %>"
+                  style="min-width: 30px; padding: 4px 8px; border-radius: 6px; text-align: center; font-size: 12px; font-weight: 700; text-decoration: none; border: 1px solid <%= categoryPageNumber === categoryItemsCurrentPage ? '#2563eb' : '#e2e8f0' %>; background: <%= categoryPageNumber === categoryItemsCurrentPage ? '#2563eb' : '#fff' %>; color: <%= categoryPageNumber === categoryItemsCurrentPage ? '#fff' : '#475569' %>;"
+                ><%= categoryPageNumber %></a>
+                <% } else if ((categoryPageNumber === 2 && categoryItemsCurrentPage > 4) || (categoryPageNumber === categoryItemsTotalPages - 1 && categoryItemsCurrentPage < categoryItemsTotalPages - 3)) { %>
+                <span style="color: #94a3b8; font-size: 12px;">…</span>
+                <% } %>
+                <% } %>
+              </div>
+
+              <a
+                href="<%= buildCategoryItemsPageHref(categoryItemsCurrentPage + 1) %>"
+                class="pro-btn-secondary"
+                style="font-size: 12px; padding: 6px 14px; <%= categoryItemsCurrentPage >= categoryItemsTotalPages ? 'pointer-events: none; opacity: 0.4;' : '' %>"
+              >Next →</a>
+            </div>
+            <% } %>
+          </div>
+        </div>
+        <!-- END COLUMN 3 -->
+
+      </div>
+      <!-- END 3-COLUMN GRID -->
+
+    </main>
+
+    <!-- Delete confirmation modal -->
+    <div id="delete-alert" class="fixed inset-0 z-50 hidden items-center justify-center bg-slate-900/50 p-4">
+      <div class="pro-panel w-full max-w-md p-5">
+        <h3 class="text-lg font-bold text-slate-900" id="delete-alert-title">Delete</h3>
+        <p class="mt-2 text-sm text-slate-700" id="delete-alert-message">Are you sure you want to delete this product?</p>
+        <div class="mt-4 flex items-center justify-end gap-2">
+          <button type="button" id="delete-alert-cancel" class="pro-btn-secondary">Cancel</button>
+          <button type="button" id="delete-alert-confirm" class="pro-btn-danger">Delete</button>
+        </div>
+      </div>
+    </div>
+
+    <%- include('helpers/loading') %>
+    <%- include('helpers/toaster') %>
+    <script id="admin-category-page-data" type="application/json"><%- JSON.stringify({ addProductSubcategoryOptions: addProductSubcategoryOptions }).replace(/</g, '\\u003c') %></script>
+    <script src="<%= assetPath('/javascripts/loading.js') %>"></script>
+    <script src="<%= assetPath('/javascripts/flash-alert.js') %>"></script>
+    <script src="<%= assetPath('/javascripts/admin-category.js') %>"></script>
+  </body>
+</html>

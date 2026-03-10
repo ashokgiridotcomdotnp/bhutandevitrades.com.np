@@ -1,13 +1,19 @@
 <%
-  var currentBasePath = basePath === '/home' ? '/home' : '/';
-  var authenticatedUser = currentUser && currentUser.email ? currentUser : null;
+  var resolvedBasePath = typeof basePath === 'string' ? basePath : '/';
+  var currentBasePath = resolvedBasePath === '/home' ? '/home' : '/';
+  var resolvedCurrentUser = typeof currentUser !== 'undefined' ? currentUser : null;
+  var authenticatedUser = resolvedCurrentUser && resolvedCurrentUser.email ? resolvedCurrentUser : null;
+  var resolvedCategoryGroups = typeof categoryGroups !== 'undefined' ? categoryGroups : [];
+  var isCompactFooter = typeof compactFooter !== 'undefined' ? Boolean(compactFooter) : false;
   var categoryNames = [];
   var seenCategoryNames = {};
   var rawStoreWhatsappNumber = typeof storeWhatsappNumber === 'string' ? storeWhatsappNumber : '';
   var normalizedStoreWhatsappNumber = rawStoreWhatsappNumber.replace(/[^0-9]/g, '');
-  var socialFacebookHref = '#';
-  var socialWhatsappHref = normalizedStoreWhatsappNumber ? ('https://wa.me/' + normalizedStoreWhatsappNumber) : 'https://wa.me/';
-  var socialTiktokHref = '#';
+  var rawStoreFacebookHref = typeof storeFacebookHref === 'string' ? storeFacebookHref.trim() : '';
+  var rawStoreTiktokHref = typeof storeTiktokHref === 'string' ? storeTiktokHref.trim() : '';
+  var socialFacebookHref = /^https?:\/\//i.test(rawStoreFacebookHref) ? rawStoreFacebookHref : '';
+  var socialWhatsappHref = normalizedStoreWhatsappNumber ? ('https://wa.me/' + normalizedStoreWhatsappNumber) : '';
+  var socialTiktokHref = /^https?:\/\//i.test(rawStoreTiktokHref) ? rawStoreTiktokHref : '';
 
   function buildCategoryHref(categoryName) {
     var params = [];
@@ -25,8 +31,8 @@
     return currentBasePath + (params.length ? '?' + params.join('&') : '');
   }
 
-  if (Array.isArray(categoryGroups)) {
-    categoryGroups.forEach(function (group) {
+  if (Array.isArray(resolvedCategoryGroups)) {
+    resolvedCategoryGroups.forEach(function (group) {
       var rawName = group && group.name ? String(group.name).trim() : '';
       var normalizedName = rawName.toLowerCase();
 
@@ -44,8 +50,82 @@
   }
 %>
 
-<footer class="bd-footer">
+<footer class="bd-footer <%= isCompactFooter ? 'bd-footer--compact' : '' %>">
   <div class="app-shell bd-footer-wrap">
+    <% if (isCompactFooter) { %>
+    <div class="bd-footer-grid">
+      <section>
+        <h2 class="bd-footer-title">BhutanDevi Trade</h2>
+        <span class="bd-footer-line" aria-hidden="true"></span>
+        <ul class="bd-footer-list">
+          <li><a href="<%= currentBasePath %>">Back to Home</a></li>
+          <li><a href="<%= currentBasePath %>">Browse Products</a></li>
+          <% if (authenticatedUser) { %>
+          <li><a href="/profile">Profile Settings</a></li>
+          <li><a href="/my-orders">My Orders</a></li>
+          <% } else { %>
+          <li><a href="/login">Login</a></li>
+          <li><a href="/signup">Create Account</a></li>
+          <% } %>
+        </ul>
+      </section>
+
+      <section>
+        <h2 class="bd-footer-title">Support</h2>
+        <span class="bd-footer-line" aria-hidden="true"></span>
+        <ul class="bd-footer-list">
+          <li><a href="/forgot-password">Forgot Password</a></li>
+          <li><span>Email support for order issues</span></li>
+          <li><span>Serving riders across Nepal</span></li>
+        </ul>
+      </section>
+
+      <section>
+        <h2 class="bd-footer-title">Contact</h2>
+        <span class="bd-footer-line" aria-hidden="true"></span>
+        <ul class="bd-footer-list">
+          <% if (socialWhatsappHref) { %>
+          <li>
+            <a href="<%= socialWhatsappHref %>" target="_blank" rel="noopener noreferrer" class="bd-footer-social-link">
+              <img src="/icons/whatsapp.svg" alt="" aria-hidden="true" class="bd-footer-social-icon" />
+              <span>WhatsApp</span>
+            </a>
+          </li>
+          <% } else { %>
+          <li><span>WhatsApp support available</span></li>
+          <% } %>
+
+          <li>
+            <% if (socialFacebookHref) { %>
+            <a href="<%= socialFacebookHref %>" target="_blank" rel="noopener noreferrer" class="bd-footer-social-link">
+              <img src="/icons/facebook.svg" alt="" aria-hidden="true" class="bd-footer-social-icon" />
+              <span>Facebook</span>
+            </a>
+            <% } else { %>
+            <span class="bd-footer-social-link">
+              <img src="/icons/facebook.svg" alt="" aria-hidden="true" class="bd-footer-social-icon" />
+              <span>Facebook</span>
+            </span>
+            <% } %>
+          </li>
+
+          <li>
+            <% if (socialTiktokHref) { %>
+            <a href="<%= socialTiktokHref %>" target="_blank" rel="noopener noreferrer" class="bd-footer-social-link">
+              <img src="/icons/tiktok.svg" alt="" aria-hidden="true" class="bd-footer-social-icon" />
+              <span>TikTok</span>
+            </a>
+            <% } else { %>
+            <span class="bd-footer-social-link">
+              <img src="/icons/tiktok.svg" alt="" aria-hidden="true" class="bd-footer-social-icon" />
+              <span>TikTok</span>
+            </span>
+            <% } %>
+          </li>
+        </ul>
+      </section>
+    </div>
+    <% } else { %>
     <div class="bd-footer-grid">
       <section>
         <h2 class="bd-footer-title">BhutanDevi Trade</h2>
@@ -126,30 +206,52 @@
         <span class="bd-footer-line" aria-hidden="true"></span>
         <ul class="bd-footer-list">
           <li>
+            <% if (socialFacebookHref) { %>
             <a href="<%= socialFacebookHref %>" target="_blank" rel="noopener noreferrer" class="bd-footer-social-link">
               <img src="/icons/facebook.svg" alt="" aria-hidden="true" class="bd-footer-social-icon" />
               <span>Facebook</span>
             </a>
+            <% } else { %>
+            <span class="bd-footer-social-link">
+              <img src="/icons/facebook.svg" alt="" aria-hidden="true" class="bd-footer-social-icon" />
+              <span>Facebook</span>
+            </span>
+            <% } %>
           </li>
           <li>
+            <% if (socialWhatsappHref) { %>
             <a href="<%= socialWhatsappHref %>" target="_blank" rel="noopener noreferrer" class="bd-footer-social-link">
               <img src="/icons/whatsapp.svg" alt="" aria-hidden="true" class="bd-footer-social-icon" />
               <span>WhatsApp</span>
             </a>
+            <% } else { %>
+            <span class="bd-footer-social-link">
+              <img src="/icons/whatsapp.svg" alt="" aria-hidden="true" class="bd-footer-social-icon" />
+              <span>WhatsApp</span>
+            </span>
+            <% } %>
           </li>
           <li>
+            <% if (socialTiktokHref) { %>
             <a href="<%= socialTiktokHref %>" target="_blank" rel="noopener noreferrer" class="bd-footer-social-link">
               <img src="/icons/tiktok.svg" alt="" aria-hidden="true" class="bd-footer-social-icon" />
               <span>TikTok</span>
             </a>
+            <% } else { %>
+            <span class="bd-footer-social-link">
+              <img src="/icons/tiktok.svg" alt="" aria-hidden="true" class="bd-footer-social-icon" />
+              <span>TikTok</span>
+            </span>
+            <% } %>
           </li>
         </ul>
       </section>
     </div>
+    <% } %>
 
     <div class="bd-footer-bottom">
       <span class="bd-footer-brand">
-        <img src="/icons/logo.svg" alt="" aria-hidden="true" />
+        <img src="/images/logo.png" alt="" aria-hidden="true" />
         <span>BhutanDevi Trade and Suppliers</span>
       </span>
       <p class="bd-footer-copy">Built for daily riders, garages, and workshops. Copyright © <%= new Date().getFullYear() %> BhutanDevi Trade.</p>
@@ -157,5 +259,5 @@
   </div>
 </footer>
 <%- include('loading') %>
-<script src="/javascripts/loading.js"></script>
-<script src="/javascripts/performance.js"></script>
+<script src="<%= assetPath('/javascripts/loading.js') %>"></script>
+<script src="<%= assetPath('/javascripts/performance.js') %>"></script>
