@@ -3,6 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "scripts": {
+    "build": "npm run build:css",
     "build:css": "tailwindcss -i ./public/stylesheets/tailwind.css -o ./public/stylesheets/style.css --minify",
     "watch:css": "tailwindcss -i ./public/stylesheets/tailwind.css -o ./public/stylesheets/style.css --watch",
     "dev": "nodemon ./bin/www",
@@ -12,7 +13,7 @@
     "start": "node ./bin/www"
   },
   "engines": {
-    "node": ">=18"
+    "node": "20.x"
   },
   "dependencies": {
     "cloudinary": "^2.9.0",
