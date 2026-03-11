@@ -18,11 +18,13 @@ var userSchema = new mongoose.Schema(
       type: String,
       trim: true,
       default: '',
+      select: false,
     },
     passwordSalt: {
       type: String,
       trim: true,
       default: '',
+      select: false,
     },
     authProvider: {
       type: String,

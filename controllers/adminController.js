@@ -1042,7 +1042,7 @@ function saveProductImage(req, res) {
     }
 
     var productId = catalogService.toTrimmedString(req.body.productId);
-    var uploadedImagePath = await catalogService.optimizeUploadedImage(req.file);
+    var uploadedImagePath = await catalogService.optimizeAndPromoteUploadedImage(req.file);
 
     if (!productId || !isValidEntityId(productId)) {
       if (isAjax) {
@@ -1152,7 +1152,7 @@ function editProduct(req, res) {
     var uploadedImagePath = '';
 
     if (req.file) {
-      uploadedImagePath = await catalogService.optimizeUploadedImage(req.file);
+      uploadedImagePath = await catalogService.optimizeAndPromoteUploadedImage(req.file);
       if (!uploadedImagePath) {
         return sendErrorResponse('cloudinary-upload-failed', 'Image upload failed', 500);
       }
@@ -2085,7 +2085,7 @@ function saveProduct(req, res) {
       return sendErrorResponse('invalid-input', 'Invalid quantity', 400);
     }
 
-    uploadedImagePath = await catalogService.optimizeUploadedImage(req.file);
+    uploadedImagePath = await catalogService.optimizeAndPromoteUploadedImage(req.file);
 
     if (!uploadedImagePath) {
       return sendErrorResponse('cloudinary-upload-failed', 'Image upload failed', 500);

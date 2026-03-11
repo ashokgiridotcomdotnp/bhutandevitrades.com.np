@@ -43,6 +43,17 @@ function normalizeEmail(value) {
   return toTrimmedString(value).toLowerCase();
 }
 
+function buildAuthCodeRecordKey(email, purpose) {
+  var normalizedEmail = normalizeEmail(email);
+  var normalizedPurpose = toTrimmedString(purpose).toLowerCase();
+
+  if (!normalizedEmail || !normalizedPurpose) {
+    return '';
+  }
+
+  return normalizedPurpose + ':' + normalizedEmail;
+}
+
 function isValidEmailAddress(email) {
   var normalizedEmail = normalizeEmail(email);
   return normalizedEmail.length <= maxEmailLength && isLikelyEmailAddress(normalizedEmail);
@@ -655,33 +666,69 @@ async function getAcceptedSoldStockCount(productId) {
 }
 
 async function issueAuthCode(email, purpose, name, passwordPayload) {
+  var normalizedEmail = normalizeEmail(email);
+  var normalizedPurpose = toTrimmedString(purpose);
+  var recordKey = buildAuthCodeRecordKey(normalizedEmail, normalizedPurpose);
   var code = generateAuthCode();
-
-  if (!isSupportedAuthCodePurpose(purpose)) {
-    throw new Error('unsupported-auth-code-purpose');
-  }
-
-  await UserAuthCode.deleteMany({
-    email: email,
-    purpose: purpose,
-    usedAt: null,
-  });
-
-  await UserAuthCode.create({
-    email: email,
-    purpose: purpose,
+  var issuedAt = new Date();
+  var updatePayload = {
+    recordKey: recordKey,
+    email: normalizedEmail,
+    purpose: normalizedPurpose,
     name: toTrimmedString(name),
     codeHash: hashAuthCode(code),
     passwordHash: passwordPayload && passwordPayload.hash ? passwordPayload.hash : '',
     passwordSalt: passwordPayload && passwordPayload.salt ? passwordPayload.salt : '',
-    expiresAt: new Date(Date.now() + authCodeTtlMs),
+    expiresAt: new Date(issuedAt.getTime() + authCodeTtlMs),
+    usedAt: null,
+    createdAt: issuedAt,
+  };
+
+  if (!isSupportedAuthCodePurpose(normalizedPurpose) || !recordKey) {
+    throw new Error('unsupported-auth-code-purpose');
+  }
+
+  await UserAuthCode.deleteMany({
+    email: normalizedEmail,
+    purpose: normalizedPurpose,
+    usedAt: null,
   });
+
+  try {
+    await UserAuthCode.findOneAndUpdate(
+      { recordKey: recordKey },
+      { $set: updatePayload },
+      {
+        upsert: true,
+        setDefaultsOnInsert: true,
+        runValidators: true,
+      }
+    );
+  } catch (error) {
+    if (!isDuplicateKeyError(error)) {
+      throw error;
+    }
+
+    await UserAuthCode.findOneAndUpdate(
+      { recordKey: recordKey },
+      { $set: updatePayload },
+      {
+        runValidators: true,
+      }
+    );
+  }
 
   return code;
 }
 
 async function verifyAuthCode(email, purpose, verificationCode) {
-  if (!isSupportedAuthCodePurpose(purpose)) {
+  var normalizedEmail = normalizeEmail(email);
+  var normalizedPurpose = toTrimmedString(purpose);
+  var consumedAt = new Date();
+  var codeRecord = null;
+  var hasActiveCode = false;
+
+  if (!isSupportedAuthCodePurpose(normalizedPurpose)) {
     return {
       ok: false,
       errorCode: 'invalid-code',
@@ -689,31 +736,39 @@ async function verifyAuthCode(email, purpose, verificationCode) {
     };
   }
 
-  var codeRecord = await UserAuthCode.findOne({
-    email: email,
-    purpose: purpose,
-    usedAt: null,
-    expiresAt: mongoose.trusted({ $gt: new Date() }),
-  }).sort({ createdAt: -1 });
+  codeRecord = await UserAuthCode.findOneAndUpdate(
+    {
+      email: normalizedEmail,
+      purpose: normalizedPurpose,
+      usedAt: null,
+      expiresAt: mongoose.trusted({ $gt: consumedAt }),
+      codeHash: hashAuthCode(verificationCode),
+    },
+    {
+      $set: {
+        usedAt: consumedAt,
+      },
+    },
+    {
+      new: true,
+      sort: { createdAt: -1 },
+    }
+  ).select('+passwordHash +passwordSalt');
 
   if (!codeRecord) {
+    hasActiveCode = Boolean(await UserAuthCode.exists({
+      email: normalizedEmail,
+      purpose: normalizedPurpose,
+      usedAt: null,
+      expiresAt: mongoose.trusted({ $gt: consumedAt }),
+    }));
+
     return {
       ok: false,
-      errorCode: 'code-expired',
+      errorCode: hasActiveCode ? 'invalid-code' : 'code-expired',
       record: null,
     };
   }
-
-  if (hashAuthCode(verificationCode) !== codeRecord.codeHash) {
-    return {
-      ok: false,
-      errorCode: 'invalid-code',
-      record: null,
-    };
-  }
-
-  codeRecord.usedAt = new Date();
-  await codeRecord.save();
 
   return {
     ok: true,
@@ -947,10 +1002,12 @@ function setUserSessionAndRedirectHome(res, req, user, statusCode) {
   return redirectToHome(res, req, statusCode);
 }
 
-async function findAuthenticatedUserRecord(authenticatedUser) {
+async function findAuthenticatedUserRecord(authenticatedUser, options) {
   var authUser = authenticatedUser && authenticatedUser.email ? authenticatedUser : null;
   var authUserId = toTrimmedString(authUser ? authUser.id : '');
   var authEmail = normalizeEmail(authUser ? authUser.email : '');
+  var includeSecrets = Boolean(options && options.includeSecrets);
+  var userQuery = null;
   var userRecord = null;
 
   if (!authUser) {
@@ -958,11 +1015,19 @@ async function findAuthenticatedUserRecord(authenticatedUser) {
   }
 
   if (authUserId) {
-    userRecord = await User.findById(authUserId);
+    userQuery = User.findById(authUserId);
+    if (includeSecrets) {
+      userQuery = userQuery.select('+passwordHash +passwordSalt');
+    }
+    userRecord = await userQuery;
   }
 
   if (!userRecord && authEmail) {
-    userRecord = await User.findOne({ email: authEmail });
+    userQuery = User.findOne({ email: authEmail });
+    if (includeSecrets) {
+      userQuery = userQuery.select('+passwordHash +passwordSalt');
+    }
+    userRecord = await userQuery;
   }
 
   return userRecord;
@@ -1529,7 +1594,7 @@ async function handleProfilePasswordUpdate(req, res) {
       return redirectToProfile(res, req, '', 'db-unavailable');
     }
 
-    userRecord = await findAuthenticatedUserRecord(authenticatedUser);
+    userRecord = await findAuthenticatedUserRecord(authenticatedUser, { includeSecrets: true });
 
     if (!userRecord) {
       return redirectToProfile(res, req, '', 'user-not-found');
@@ -1581,7 +1646,7 @@ async function handleLoginSubmit(req, res) {
     return renderLoginPageWithMessage(req, res, '', 'db-unavailable', email);
   }
 
-  user = await User.findOne({ email: email });
+  user = await User.findOne({ email: email }).select('+passwordHash +passwordSalt');
 
   if (!user) {
     return renderLoginPageWithMessage(req, res, '', 'invalid-credentials', email);
@@ -1656,7 +1721,7 @@ async function handleSignupSubmit(req, res) {
     return redirectToSignup(res, req, '', 'db-unavailable');
   }
 
-  existingUser = await User.findOne({ email: email });
+  existingUser = await User.findOne({ email: email }).select('+passwordHash +passwordSalt');
 
   if (existingUser && existingUser.isEmailVerified) {
     return redirectToSignup(res, req, '', 'email-exists');
@@ -1702,7 +1767,12 @@ async function handleSignupSubmit(req, res) {
     }
 
     var authRecord = verificationResult.record;
-    if (!authRecord || !authRecord.passwordHash) {
+    var resolvedPasswordHash = toTrimmedString(authRecord && authRecord.passwordHash)
+      || toTrimmedString(existingUser && existingUser.passwordHash);
+    var resolvedPasswordSalt = toTrimmedString(authRecord && authRecord.passwordSalt)
+      || toTrimmedString(existingUser && existingUser.passwordSalt);
+
+    if (!authRecord || (!resolvedPasswordHash && !existingUser)) {
       return redirectToSignup(res, req, '', 'save-failed');
     }
 
@@ -1710,20 +1780,28 @@ async function handleSignupSubmit(req, res) {
       // This case is unlikely if the initial check passed, but handle it.
       // An unverified user record exists, so we'll verify it now.
       existingUser.name = authRecord.name || name;
-      existingUser.passwordHash = authRecord.passwordHash;
-      existingUser.passwordSalt = authRecord.passwordSalt;
+      if (resolvedPasswordHash) {
+        existingUser.passwordHash = resolvedPasswordHash;
+      }
+      if (resolvedPasswordSalt) {
+        existingUser.passwordSalt = resolvedPasswordSalt;
+      }
       existingUser.isEmailVerified = true;
       existingUser.lastLoginAt = new Date();
       await existingUser.save();
       newUser = existingUser;
     } else {
       // Create the new user *after* OTP verification.
+      if (!resolvedPasswordHash || !resolvedPasswordSalt) {
+        return redirectToSignup(res, req, '', 'save-failed');
+      }
+
       newUser = await User.create({
         email: email,
         name: authRecord.name || name,
         authProvider: 'email-password',
-        passwordHash: authRecord.passwordHash,
-        passwordSalt: authRecord.passwordSalt,
+        passwordHash: resolvedPasswordHash,
+        passwordSalt: resolvedPasswordSalt,
         isEmailVerified: true,
         lastLoginAt: new Date(),
       });

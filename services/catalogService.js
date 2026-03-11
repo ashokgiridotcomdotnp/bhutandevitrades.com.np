@@ -490,6 +490,15 @@ async function uploadImageSourceToCloudinary(sourcePath, fallbackPath) {
     uploadResult = await cloudinaryClient.cloudinary.uploader.upload(sourcePath, {
       folder: cloudinaryUploadFolder,
       resource_type: 'image',
+      format: 'webp',
+      transformation: [
+        {
+          width: 1600,
+          height: 1600,
+          crop: 'limit',
+          quality: 'auto:good',
+        },
+      ],
     });
     secureUrl = uploadResult && uploadResult.secure_url ? String(uploadResult.secure_url).trim() : '';
     uploadUrl = uploadResult && uploadResult.url ? String(uploadResult.url).trim() : '';

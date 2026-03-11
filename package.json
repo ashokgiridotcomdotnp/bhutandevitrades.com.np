@@ -3,12 +3,16 @@
   "version": "0.0.0",
   "private": true,
   "scripts": {
-    "build:css": "tailwindcss -i ./src/styles/tailwind.css -o ./public/stylesheets/style.css --minify",
-    "watch:css": "tailwindcss -i ./src/styles/tailwind.css -o ./public/stylesheets/style.css --watch",
+    "build:css": "tailwindcss -i ./public/stylesheets/tailwind.css -o ./public/stylesheets/style.css --minify",
+    "watch:css": "tailwindcss -i ./public/stylesheets/tailwind.css -o ./public/stylesheets/style.css --watch",
+    "dev": "nodemon ./bin/www",
     "migrate:catalog:dry": "node ./scripts/migrate-catalog-admin-state.js --dry-run",
     "migrate:catalog": "node ./scripts/migrate-catalog-admin-state.js",
     "prestart": "npm run build:css",
-    "start": "nodemon ./bin/www"
+    "start": "node ./bin/www"
+  },
+  "engines": {
+    "node": ">=18"
   },
   "dependencies": {
     "cloudinary": "^2.9.0",

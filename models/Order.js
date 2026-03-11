@@ -118,5 +118,6 @@ var orderSchema = new mongoose.Schema(
 
 orderSchema.index({ customerEmail: 1, createdAt: -1 });
 orderSchema.index({ adminStatus: 1, createdAt: -1 });
+orderSchema.index({ productId: 1, adminStatus: 1, createdAt: -1 });
 
 module.exports = mongoose.models.Order || mongoose.model('Order', orderSchema);

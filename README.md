@@ -65,34 +65,53 @@ Uploads
 .
 ├── app.js
 ├── bin/www
-
 ├── controllers/
 │   ├── adminController.js
+│   ├── authController.js
+│   ├── catalogController.js
 │   └── publicController.js
-
-├── routes/
-│   └── index.js
-
-├── services/
-│   └── catalogService.js
-
-├── models/
-│   └── AdminState.js
-
 ├── data/
 │   └── admin-data.json
-
+├── lib/
+│   ├── adminAuth.js
+│   ├── cloudinary.js
+│   ├── db.js
+│   ├── requestSanitizer.js
+│   ├── userAuth.js
+│   └── validation.js
+├── models/
+│   ├── AdminState.js
+│   ├── Brand.js
+│   ├── Category.js
+│   ├── Order.js
+│   ├── Product.js
+│   ├── User.js
+│   └── UserAuthCode.js
 ├── public/
+│   ├── icons/
+│   ├── images/
+│   ├── javascripts/
+│   ├── stylesheets/
 │   ├── uploads/
 │   │   └── products/
-│   ├── images/
-│   ├── icons/
-│   └── stylesheets/
-
-├── src/styles/
-│   └── tailwind.css
-
+│   └── ...
+├── repositories/
+│   └── adminDataStore.js
+├── routes/
+│   ├── catalog.js
+│   └── index.js
+├── scripts/
+│   └── migrate-catalog-admin-state.js
+├── services/
+│   ├── catalogCrudService.js
+│   ├── catalogService.js
+│   └── resendService.js
+├── public/stylesheets/
+│   ├── tailwind.css
+│   └── style.css
 └── views/
+    ├── helpers/
+    └── ...
 ```
 
 ---

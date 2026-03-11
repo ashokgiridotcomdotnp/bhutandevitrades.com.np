@@ -25,6 +25,10 @@ coverage/
 Thumbs.db
 .vscode/
 .idea/
+.qoder/
 
 # Runtime uploads (admin image uploads)
 public/uploads/
+
+# Generated reports
+data/unused-files-report.json

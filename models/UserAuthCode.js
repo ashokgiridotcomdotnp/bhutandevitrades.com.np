@@ -3,6 +3,12 @@ var allowedAuthCodePurposes = ['signup', 'password-reset'];
 
 var userAuthCodeSchema = new mongoose.Schema(
   {
+    recordKey: {
+      type: String,
+      trim: true,
+      lowercase: true,
+      select: false,
+    },
     email: {
       type: String,
       required: true,
@@ -18,6 +24,7 @@ var userAuthCodeSchema = new mongoose.Schema(
       type: String,
       required: true,
       trim: true,
+      select: false,
     },
     name: {
       type: String,
@@ -28,11 +35,13 @@ var userAuthCodeSchema = new mongoose.Schema(
       type: String,
       trim: true,
       default: '',
+      select: false,
     },
     passwordSalt: {
       type: String,
       trim: true,
       default: '',
+      select: false,
     },
     expiresAt: {
       type: Date,
@@ -53,7 +62,9 @@ var userAuthCodeSchema = new mongoose.Schema(
   }
 );
 
+userAuthCodeSchema.index({ recordKey: 1 }, { unique: true, sparse: true, name: 'uq_user_auth_code_record_key' });
 userAuthCodeSchema.index({ email: 1, purpose: 1, createdAt: -1 });
+userAuthCodeSchema.index({ email: 1, purpose: 1, usedAt: 1, expiresAt: 1, createdAt: -1 }, { name: 'idx_user_auth_code_lookup' });
 userAuthCodeSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 });
 
 module.exports = mongoose.models.UserAuthCode || mongoose.model('UserAuthCode', userAuthCodeSchema);
