@@ -1,32 +1,34 @@
-var mongoose = require('mongoose');
-var crypto = require('crypto');
-var catalogService = require('../services/catalogService');
-var database = require('../lib/db');
-var userAuth = require('../lib/userAuth');
-var resendService = require('../services/resendService');
-var User = require('../models/User');
-var Order = require('../models/Order');
-var UserAuthCode = require('../models/UserAuthCode');
+import mongoose from 'mongoose';
+import crypto from 'crypto';
+import catalogService from '../services/catalogService.js';
+import database from '../lib/db.js';
+import userAuth from '../lib/userAuth.js';
+import resendService from '../services/resendService.js';
+import User from '../models/User.js';
+import Order from '../models/Order.js';
+import Product from '../models/Product.js';
+import UserAuthCode from '../models/UserAuthCode.js';
 
-var storefrontPageSize = 10;
-var authCodeTtlMinutes = 10;
-var authCodeTtlMs = authCodeTtlMinutes * 60 * 1000;
-var minUserNameLength = 2;
-var maxUserNameLength = 120;
-var maxEmailLength = 254;
-var minPasswordLength = 6;
-var maxPasswordLength = 128;
-var verificationCodeLength = 6;
-var signupPrefillCookieName = 'bd_signup_prefill';
-var signupStateCookieName = 'bd_signup_state';
-var signupPrefillCookieTtlMs = 30 * 60 * 1000;
-var loginPrefillCookieName = 'bd_login_prefill';
-var loginStateCookieName = 'bd_login_state';
-var forgotPrefillCookieName = 'bd_forgot_prefill';
-var forgotStateCookieName = 'bd_forgot_state';
-var profileStateCookieName = 'bd_profile_state';
-var homeStateCookieName = 'bd_home_state';
-var supportedAuthCodePurposes = {
+
+let storefrontPageSize = 10;
+let authCodeTtlMinutes = 10;
+let authCodeTtlMs = authCodeTtlMinutes * 60 * 1000;
+let minUserNameLength = 2;
+let maxUserNameLength = 120;
+let maxEmailLength = 254;
+let minPasswordLength = 6;
+let maxPasswordLength = 128;
+let verificationCodeLength = 6;
+let signupPrefillCookieName = 'bd_signup_prefill';
+let signupStateCookieName = 'bd_signup_state';
+let signupPrefillCookieTtlMs = 30 * 60 * 1000;
+let loginPrefillCookieName = 'bd_login_prefill';
+let loginStateCookieName = 'bd_login_state';
+let forgotPrefillCookieName = 'bd_forgot_prefill';
+let forgotStateCookieName = 'bd_forgot_state';
+let profileStateCookieName = 'bd_profile_state';
+let homeStateCookieName = 'bd_home_state';
+let supportedAuthCodePurposes = {
   signup: true,
   'password-reset': true,
 };
@@ -44,8 +46,8 @@ function normalizeEmail(value) {
 }
 
 function buildAuthCodeRecordKey(email, purpose) {
-  var normalizedEmail = normalizeEmail(email);
-  var normalizedPurpose = toTrimmedString(purpose).toLowerCase();
+  let normalizedEmail = normalizeEmail(email);
+  let normalizedPurpose = toTrimmedString(purpose).toLowerCase();
 
   if (!normalizedEmail || !normalizedPurpose) {
     return '';
@@ -55,12 +57,12 @@ function buildAuthCodeRecordKey(email, purpose) {
 }
 
 function isValidEmailAddress(email) {
-  var normalizedEmail = normalizeEmail(email);
+  let normalizedEmail = normalizeEmail(email);
   return normalizedEmail.length <= maxEmailLength && isLikelyEmailAddress(normalizedEmail);
 }
 
 function isPasswordLengthValid(password) {
-  var passwordLength = toTrimmedString(password).length;
+  let passwordLength = toTrimmedString(password).length;
   return passwordLength >= minPasswordLength && passwordLength <= maxPasswordLength;
 }
 
@@ -69,7 +71,7 @@ function isPasswordLengthWithinLimit(password) {
 }
 
 function isValidVerificationCode(value) {
-  var trimmedValue = toTrimmedString(value);
+  let trimmedValue = toTrimmedString(value);
   return new RegExp('^[0-9]{' + verificationCodeLength + '}$').test(trimmedValue);
 }
 
@@ -78,7 +80,7 @@ function shouldRequireEmailVerificationOnLogin() {
 }
 
 function getStoreWhatsappNumber() {
-  var rawValue = String(process.env.STORE_WHATSAPP_NUMBER || process.env.WHATSAPP_NUMBER || '').trim();
+  let rawValue = String(process.env.STORE_WHATSAPP_NUMBER || process.env.WHATSAPP_NUMBER || '').trim();
   return rawValue.replace(/[^0-9]/g, '');
 }
 
@@ -95,8 +97,8 @@ function isLikelyEmailAddress(value) {
 }
 
 function sanitizeText(value, maxLength) {
-  var cleanValue = toTrimmedString(value);
-  var limit = Number(maxLength);
+  let cleanValue = toTrimmedString(value);
+  let limit = Number(maxLength);
 
   if (Number.isFinite(limit) && limit > 0 && cleanValue.length > limit) {
     return cleanValue.slice(0, limit);
@@ -116,9 +118,9 @@ function getSignupPrefillCookieOptions(req) {
 }
 
 function getSignupPrefillFromCookie(req) {
-  var rawValue = req && req.cookies ? req.cookies[signupPrefillCookieName] : '';
-  var parsedValue = null;
-  var normalizedEmail = '';
+  let rawValue = req && req.cookies ? req.cookies[signupPrefillCookieName] : '';
+  let parsedValue = null;
+  let normalizedEmail = '';
 
   if (!rawValue) {
     return {
@@ -148,8 +150,8 @@ function getSignupPrefillFromCookie(req) {
 }
 
 function setSignupPrefillCookie(res, req, email, name) {
-  var normalizedEmail = normalizeEmail(email);
-  var cleanName = sanitizeText(name, maxUserNameLength);
+  let normalizedEmail = normalizeEmail(email);
+  let cleanName = sanitizeText(name, maxUserNameLength);
 
   if (normalizedEmail.length > maxEmailLength) {
     normalizedEmail = '';
@@ -185,8 +187,8 @@ function getSignupStateCookieOptions(req) {
 }
 
 function getSignupStateFromCookie(req) {
-  var rawValue = req && req.cookies ? req.cookies[signupStateCookieName] : '';
-  var parsedValue = null;
+  let rawValue = req && req.cookies ? req.cookies[signupStateCookieName] : '';
+  let parsedValue = null;
 
   if (!rawValue) {
     return {
@@ -211,8 +213,8 @@ function getSignupStateFromCookie(req) {
 }
 
 function setSignupStateCookie(res, req, statusCode, errorCode) {
-  var cleanStatusCode = toTrimmedString(statusCode);
-  var cleanErrorCode = toTrimmedString(errorCode);
+  let cleanStatusCode = toTrimmedString(statusCode);
+  let cleanErrorCode = toTrimmedString(errorCode);
 
   if (!cleanStatusCode && !cleanErrorCode) {
     res.clearCookie(signupStateCookieName, { path: '/signup' });
@@ -244,8 +246,8 @@ function getScopedCookieOptions(req, path) {
 }
 
 function getScopedStateFromCookie(req, cookieName) {
-  var rawValue = req && req.cookies ? req.cookies[cookieName] : '';
-  var parsedValue = null;
+  let rawValue = req && req.cookies ? req.cookies[cookieName] : '';
+  let parsedValue = null;
 
   if (!rawValue) {
     return {
@@ -270,8 +272,8 @@ function getScopedStateFromCookie(req, cookieName) {
 }
 
 function setScopedStateCookie(res, req, cookieName, path, statusCode, errorCode) {
-  var cleanStatusCode = toTrimmedString(statusCode);
-  var cleanErrorCode = toTrimmedString(errorCode);
+  let cleanStatusCode = toTrimmedString(statusCode);
+  let cleanErrorCode = toTrimmedString(errorCode);
 
   if (!cleanStatusCode && !cleanErrorCode) {
     res.clearCookie(cookieName, { path: path });
@@ -293,7 +295,7 @@ function clearScopedStateCookie(res, cookieName, path) {
 }
 
 function getScopedEmailFromCookie(req, cookieName) {
-  var normalizedEmail = normalizeEmail(req && req.cookies ? req.cookies[cookieName] : '');
+  let normalizedEmail = normalizeEmail(req && req.cookies ? req.cookies[cookieName] : '');
   if (normalizedEmail.length > maxEmailLength) {
     return '';
   }
@@ -301,7 +303,7 @@ function getScopedEmailFromCookie(req, cookieName) {
 }
 
 function setScopedEmailCookie(res, req, cookieName, path, email) {
-  var normalizedEmail = normalizeEmail(email);
+  let normalizedEmail = normalizeEmail(email);
 
   if (normalizedEmail.length > maxEmailLength) {
     normalizedEmail = '';
@@ -320,7 +322,7 @@ function clearScopedEmailCookie(res, cookieName, path) {
 }
 
 function normalizeOrderPhone(value) {
-  var digits = String(value || '').replace(/[^0-9]/g, '');
+  let digits = String(value || '').replace(/[^0-9]/g, '');
 
   if (digits.indexOf('977') === 0 && digits.length === 13) {
     return digits.slice(3);
@@ -334,8 +336,8 @@ function isValidOrderPhone(value) {
 }
 
 function parsePositiveNumber(value) {
-  var normalizedValue = String(value || '').replace(/,/g, '').replace(/[^0-9.]/g, '');
-  var parsedValue = Number(normalizedValue);
+  let normalizedValue = String(value || '').replace(/,/g, '').replace(/[^0-9.]/g, '');
+  let parsedValue = Number(normalizedValue);
 
   if (!Number.isFinite(parsedValue) || parsedValue <= 0) {
     return 0;
@@ -345,7 +347,7 @@ function parsePositiveNumber(value) {
 }
 
 function formatNprAmount(value) {
-  var parsedValue = Number(value);
+  let parsedValue = Number(value);
 
   if (!Number.isFinite(parsedValue) || parsedValue < 0) {
     return '0';
@@ -376,7 +378,7 @@ function escapeHtml(value) {
 }
 
 function buildOrderWhatsappMessage(orderData) {
-  var lines = [];
+  let lines = [];
 
   lines.push('Hello, I want to place an order.');
   lines.push('');
@@ -443,7 +445,7 @@ function buildOrderNotificationHtml(orderData) {
 }
 
 function parsePositiveInteger(value, fallbackValue) {
-  var parsedValue = Number(value);
+  let parsedValue = Number(value);
 
   if (!Number.isFinite(parsedValue) || parsedValue < 1) {
     return fallbackValue;
@@ -453,8 +455,8 @@ function parsePositiveInteger(value, fallbackValue) {
 }
 
 function parseAvailableStockQuantity(value) {
-  var cleanValue = toTrimmedString(value);
-  var parsedValue = Number(cleanValue);
+  let cleanValue = toTrimmedString(value);
+  let parsedValue = Number(cleanValue);
 
   if (!cleanValue) {
     return 0;
@@ -522,7 +524,7 @@ function getAuthCodeHashSecret() {
 }
 
 function generateAuthCode() {
-  var code = crypto.randomInt(0, 1000000);
+  let code = crypto.randomInt(0, 1000000);
   return String(code).padStart(6, '0');
 }
 
@@ -534,8 +536,8 @@ function hashAuthCode(inputCode) {
 }
 
 function timingSafeStringEqual(left, right) {
-  var leftBuffer = Buffer.from(String(left || ''), 'utf8');
-  var rightBuffer = Buffer.from(String(right || ''), 'utf8');
+  let leftBuffer = Buffer.from(String(left || ''), 'utf8');
+  let rightBuffer = Buffer.from(String(right || ''), 'utf8');
 
   if (leftBuffer.length !== rightBuffer.length) {
     return false;
@@ -545,9 +547,9 @@ function timingSafeStringEqual(left, right) {
 }
 
 async function hashUserPassword(password, salt) {
-  var cleanPassword = String(password || '');
-  var resolvedSalt = toTrimmedString(salt) || crypto.randomBytes(16).toString('hex');
-  var passwordHash = await new Promise(function (resolve, reject) {
+  let cleanPassword = String(password || '');
+  let resolvedSalt = toTrimmedString(salt) || crypto.randomBytes(16).toString('hex');
+  let passwordHash = await new Promise(function (resolve, reject) {
     crypto.scrypt(cleanPassword, resolvedSalt, 64, function (error, derivedKey) {
       if (error) {
         reject(error);
@@ -565,16 +567,16 @@ async function hashUserPassword(password, salt) {
 }
 
 async function doesPasswordMatch(password, salt, expectedHash) {
-  var cleanSalt = toTrimmedString(salt);
-  var cleanExpectedHash = toTrimmedString(expectedHash);
+  let cleanSalt = toTrimmedString(salt);
+  let cleanExpectedHash = toTrimmedString(expectedHash);
 
   if (!cleanSalt || !cleanExpectedHash) {
     return false;
   }
 
   try {
-    var generatedPassword = await hashUserPassword(password, cleanSalt);
-    var generatedHash = generatedPassword.hash;
+    let generatedPassword = await hashUserPassword(password, cleanSalt);
+    let generatedHash = generatedPassword.hash;
     return timingSafeStringEqual(generatedHash, cleanExpectedHash);
   } catch (error) {
     return false;
@@ -610,7 +612,7 @@ function buildOtpEmailSubject(purpose, code) {
 }
 
 function buildOtpEmailText(purpose, code) {
-  var actionText = getAuthCodeActionText(purpose);
+  let actionText = getAuthCodeActionText(purpose);
 
   return [
     'Your BhutanDevi ' + actionText + ' code is: ' + code,
@@ -621,7 +623,7 @@ function buildOtpEmailText(purpose, code) {
 }
 
 function buildOtpEmailHtml(purpose, code) {
-  var actionText = getAuthCodeActionText(purpose);
+  let actionText = getAuthCodeActionText(purpose);
 
   return [
     '<div style="font-family:Arial,sans-serif;line-height:1.5;color:#0f172a;">',
@@ -639,8 +641,8 @@ async function ensureDatabaseConnection() {
 }
 
 async function getAcceptedSoldStockCount(productId) {
-  var normalizedProductId = toTrimmedString(productId);
-  var acceptedOrders = [];
+  let normalizedProductId = toTrimmedString(productId);
+  let soldGroups = [];
 
   if (!normalizedProductId) {
     return 0;
@@ -651,14 +653,26 @@ async function getAcceptedSoldStockCount(productId) {
       return 0;
     }
 
-    acceptedOrders = await Order.find({
-      productId: normalizedProductId,
-      adminStatus: 'accepted',
-    }).select('quantity').lean();
+    soldGroups = await Order.aggregate([
+      {
+        $match: {
+          productId: normalizedProductId,
+          adminStatus: 'accepted',
+        },
+      },
+      {
+        $group: {
+          _id: null,
+          sold: { $sum: '$quantity' },
+        },
+      },
+    ]);
 
-    return acceptedOrders.reduce(function (total, orderRecord) {
-      return total + parsePositiveInteger(orderRecord && orderRecord.quantity, 1);
-    }, 0);
+    if (!Array.isArray(soldGroups) || !soldGroups.length) {
+      return 0;
+    }
+
+    return Number.isFinite(Number(soldGroups[0].sold)) ? Number(soldGroups[0].sold) : 0;
   } catch (error) {
     console.error('Failed to load sold stock count:', error.message);
     return 0;
@@ -666,12 +680,12 @@ async function getAcceptedSoldStockCount(productId) {
 }
 
 async function issueAuthCode(email, purpose, name, passwordPayload) {
-  var normalizedEmail = normalizeEmail(email);
-  var normalizedPurpose = toTrimmedString(purpose);
-  var recordKey = buildAuthCodeRecordKey(normalizedEmail, normalizedPurpose);
-  var code = generateAuthCode();
-  var issuedAt = new Date();
-  var updatePayload = {
+  let normalizedEmail = normalizeEmail(email);
+  let normalizedPurpose = toTrimmedString(purpose);
+  let recordKey = buildAuthCodeRecordKey(normalizedEmail, normalizedPurpose);
+  let code = generateAuthCode();
+  let issuedAt = new Date();
+  let updatePayload = {
     recordKey: recordKey,
     email: normalizedEmail,
     purpose: normalizedPurpose,
@@ -722,11 +736,11 @@ async function issueAuthCode(email, purpose, name, passwordPayload) {
 }
 
 async function verifyAuthCode(email, purpose, verificationCode) {
-  var normalizedEmail = normalizeEmail(email);
-  var normalizedPurpose = toTrimmedString(purpose);
-  var consumedAt = new Date();
-  var codeRecord = null;
-  var hasActiveCode = false;
+  let normalizedEmail = normalizeEmail(email);
+  let normalizedPurpose = toTrimmedString(purpose);
+  let consumedAt = new Date();
+  let codeRecord = null;
+  let hasActiveCode = false;
 
   if (!isSupportedAuthCodePurpose(normalizedPurpose)) {
     return {
@@ -750,7 +764,7 @@ async function verifyAuthCode(email, purpose, verificationCode) {
       },
     },
     {
-      new: true,
+      returnDocument: 'after',
       sort: { createdAt: -1 },
     }
   ).select('+passwordHash +passwordSalt');
@@ -1003,12 +1017,12 @@ function setUserSessionAndRedirectHome(res, req, user, statusCode) {
 }
 
 async function findAuthenticatedUserRecord(authenticatedUser, options) {
-  var authUser = authenticatedUser && authenticatedUser.email ? authenticatedUser : null;
-  var authUserId = toTrimmedString(authUser ? authUser.id : '');
-  var authEmail = normalizeEmail(authUser ? authUser.email : '');
-  var includeSecrets = Boolean(options && options.includeSecrets);
-  var userQuery = null;
-  var userRecord = null;
+  let authUser = authenticatedUser && authenticatedUser.email ? authenticatedUser : null;
+  let authUserId = toTrimmedString(authUser ? authUser.id : '');
+  let authEmail = normalizeEmail(authUser ? authUser.email : '');
+  let includeSecrets = Boolean(options && options.includeSecrets);
+  let userQuery = null;
+  let userRecord = null;
 
   if (!authUser) {
     return null;
@@ -1033,32 +1047,46 @@ async function findAuthenticatedUserRecord(authenticatedUser, options) {
   return userRecord;
 }
 
-function renderHomePage(req, res, next) {
-  var catalog = catalogService.getCatalogContext();
-  var statusCodeFromQuery = toTrimmedString(req.query.status);
-  var homeState = null;
-  var statusCode = '';
-  var q = typeof req.query.q === 'string' ? req.query.q.trim() : '';
-  var rawCategory = typeof req.query.category === 'string' ? req.query.category.trim() : '';
-  var query = q;
-  var selectedCategory = catalogService.resolveCategoryName(rawCategory, catalog.categoryGroups);
-  var isHomeRoute = req.path === '/home' || req.path === '/home/';
-  var isRootRoute = req.path === '/';
-  var hasActiveFilters = q.length > 0 || Boolean(selectedCategory);
-  var showCarousel = isRootRoute && !hasActiveFilters;
-  var basePath = isHomeRoute ? '/home' : '/';
-  var redirectParams = [];
-  var categoryGroupsForView = catalogService.buildCategoryViewData(query, selectedCategory, catalog.categoryGroups);
-  var filteredProductSections = catalogService.filterProductData(
-    query,
-    selectedCategory,
-    catalog.productSections,
-    catalog.categoryKeywordMap
-  );
-  var openCategoryName = catalogService.getOpenCategoryName(categoryGroupsForView, selectedCategory, query);
-  var totalResults = catalogService.countItems(filteredProductSections);
-  var totalPages = Math.max(1, Math.ceil(totalResults / storefrontPageSize));
-  var currentPage = parsePositiveInteger(req.query.page, 1);
+async function renderHomePage(req, res, next) {
+  let catalog = null;
+  let statusCodeFromQuery = toTrimmedString(req.query.status);
+  let homeState = null;
+  let statusCode = '';
+  let q = typeof req.query.q === 'string' ? req.query.q.trim() : '';
+  let rawCategory = typeof req.query.category === 'string' ? req.query.category.trim() : '';
+  let query = q;
+  let isHomeRoute = req.path === '/home' || req.path === '/home/';
+  let isRootRoute = req.path === '/';
+  let basePath = isHomeRoute ? '/home' : '/';
+  let redirectParams = [];
+  let selectedCategory = '';
+  let hasActiveFilters = false;
+  let showCarousel = false;
+  let categoryGroupsForView = [];
+  let filteredProductSections = [];
+  let openCategoryName = '';
+  let totalResults = 0;
+  let totalPages = 1;
+  let currentPage = parsePositiveInteger(req.query.page, 1);
+
+  try {
+    catalog = await catalogService.getCatalogContext();
+    selectedCategory = catalogService.resolveCategoryName(rawCategory, catalog.categoryGroups);
+    hasActiveFilters = q.length > 0 || Boolean(selectedCategory);
+    showCarousel = isRootRoute && !hasActiveFilters;
+    categoryGroupsForView = catalogService.buildCategoryViewData(query, selectedCategory, catalog.categoryGroups);
+    filteredProductSections = catalogService.filterProductData(
+      query,
+      selectedCategory,
+      catalog.productSections,
+      catalog.categoryKeywordMap
+    );
+    openCategoryName = catalogService.getOpenCategoryName(categoryGroupsForView, selectedCategory, query);
+    totalResults = catalogService.countItems(filteredProductSections);
+    totalPages = Math.max(1, Math.ceil(totalResults / storefrontPageSize));
+  } catch (error) {
+    return next(error);
+  }
 
   if (currentPage > totalPages) {
     currentPage = totalPages;
@@ -1115,15 +1143,15 @@ function renderHomePage(req, res, next) {
 }
 
 async function renderProductDetail(req, res, next) {
-  var productId = typeof req.params.productId === 'string' ? req.params.productId.trim() : '';
-  var q = typeof req.query.q === 'string' ? req.query.q.trim() : '';
-  var rawCategory = typeof req.query.category === 'string' ? req.query.category.trim() : '';
-  var catalog = catalogService.getCatalogContext();
-  var selectedCategory = catalogService.resolveCategoryName(rawCategory, catalog.categoryGroups);
-  var categoryGroupsForView = catalogService.buildCategoryViewData(q, selectedCategory, catalog.categoryGroups);
-  var openCategoryName = catalogService.getOpenCategoryName(categoryGroupsForView, selectedCategory, q);
-  var productMatch = catalogService.findProductById(productId, catalog.productSections);
-  var soldStockCount = 0;
+  let productId = typeof req.params.productId === 'string' ? req.params.productId.trim() : '';
+  let q = typeof req.query.q === 'string' ? req.query.q.trim() : '';
+  let rawCategory = typeof req.query.category === 'string' ? req.query.category.trim() : '';
+  let catalog = await catalogService.getCatalogContext();
+  let selectedCategory = catalogService.resolveCategoryName(rawCategory, catalog.categoryGroups);
+  let categoryGroupsForView = catalogService.buildCategoryViewData(q, selectedCategory, catalog.categoryGroups);
+  let openCategoryName = catalogService.getOpenCategoryName(categoryGroupsForView, selectedCategory, q);
+  let productMatch = catalogService.findProductById(productId, catalog.productSections);
+  let soldStockCount = 0;
 
   if (!productMatch) {
     return next();
@@ -1150,16 +1178,16 @@ async function renderProductDetail(req, res, next) {
   });
 }
 
-function renderOrderPage(req, res, next) {
-  var authenticatedUser = req.userAuth && req.userAuth.email ? req.userAuth : null;
-  var productId = typeof req.params.productId === 'string' ? req.params.productId.trim() : '';
-  var q = typeof req.query.q === 'string' ? req.query.q.trim() : '';
-  var rawCategory = typeof req.query.category === 'string' ? req.query.category.trim() : '';
-  var catalog = catalogService.getCatalogContext();
-  var selectedCategory = catalogService.resolveCategoryName(rawCategory, catalog.categoryGroups);
-  var categoryGroupsForView = catalogService.buildCategoryViewData(q, selectedCategory, catalog.categoryGroups);
-  var openCategoryName = catalogService.getOpenCategoryName(categoryGroupsForView, selectedCategory, q);
-  var productMatch = null;
+async function renderOrderPage(req, res, next) {
+  let authenticatedUser = req.userAuth && req.userAuth.email ? req.userAuth : null;
+  let productId = typeof req.params.productId === 'string' ? req.params.productId.trim() : '';
+  let q = typeof req.query.q === 'string' ? req.query.q.trim() : '';
+  let rawCategory = typeof req.query.category === 'string' ? req.query.category.trim() : '';
+  let catalog = await catalogService.getCatalogContext();
+  let selectedCategory = catalogService.resolveCategoryName(rawCategory, catalog.categoryGroups);
+  let categoryGroupsForView = catalogService.buildCategoryViewData(q, selectedCategory, catalog.categoryGroups);
+  let openCategoryName = catalogService.getOpenCategoryName(categoryGroupsForView, selectedCategory, q);
+  let productMatch = null;
 
   if (!authenticatedUser) {
     return redirectToLogin(res, req, '', 'login-required', '');
@@ -1195,15 +1223,15 @@ function renderOrderPage(req, res, next) {
 }
 
 function renderLoginPage(req, res) {
-  var statusCodeFromQuery = toTrimmedString(req.query.status);
-  var errorCodeFromQuery = toTrimmedString(req.query.error);
-  var emailFromQuery = normalizeEmail(req.query.email);
-  var hasLegacyStateQuery = Boolean(statusCodeFromQuery || errorCodeFromQuery);
-  var hasLegacyPrefillQuery = Boolean(emailFromQuery);
-  var loginState = null;
-  var statusCode = '';
-  var errorCode = '';
-  var email = '';
+  let statusCodeFromQuery = toTrimmedString(req.query.status);
+  let errorCodeFromQuery = toTrimmedString(req.query.error);
+  let emailFromQuery = normalizeEmail(req.query.email);
+  let hasLegacyStateQuery = Boolean(statusCodeFromQuery || errorCodeFromQuery);
+  let hasLegacyPrefillQuery = Boolean(emailFromQuery);
+  let loginState = null;
+  let statusCode = '';
+  let errorCode = '';
+  let email = '';
 
   if (req.userAuth) {
     return res.redirect('/');
@@ -1255,19 +1283,19 @@ function renderLoginPageWithMessage(req, res, statusCode, errorCode, email) {
 }
 
 function renderSignupPage(req, res) {
-  var statusCodeFromQuery = toTrimmedString(req.query.status);
-  var errorCodeFromQuery = toTrimmedString(req.query.error);
-  var emailFromQuery = normalizeEmail(req.query.email);
-  var nameFromQuery = sanitizeText(req.query.name, maxUserNameLength);
-  var hasLegacyStatusQuery = Boolean(statusCodeFromQuery || errorCodeFromQuery);
-  var hasLegacyPrefillQuery = Boolean(emailFromQuery || nameFromQuery);
-  var signupPrefill = null;
-  var signupState = null;
-  var statusCode = '';
-  var errorCode = '';
-  var email = '';
-  var name = '';
-  var requireCode = statusCode === 'code-sent' && Boolean(email);
+  let statusCodeFromQuery = toTrimmedString(req.query.status);
+  let errorCodeFromQuery = toTrimmedString(req.query.error);
+  let emailFromQuery = normalizeEmail(req.query.email);
+  let nameFromQuery = sanitizeText(req.query.name, maxUserNameLength);
+  let hasLegacyStatusQuery = Boolean(statusCodeFromQuery || errorCodeFromQuery);
+  let hasLegacyPrefillQuery = Boolean(emailFromQuery || nameFromQuery);
+  let signupPrefill = null;
+  let signupState = null;
+  let statusCode = '';
+  let errorCode = '';
+  let email = '';
+  let name = '';
+  let requireCode = statusCode === 'code-sent' && Boolean(email);
 
   if (req.userAuth) {
     return res.redirect('/');
@@ -1322,18 +1350,18 @@ function renderSignupPage(req, res) {
 }
 
 function renderForgotPasswordPage(req, res) {
-  var statusCodeFromQuery = toTrimmedString(req.query.status);
-  var errorCodeFromQuery = toTrimmedString(req.query.error);
-  var emailFromQuery = normalizeEmail(req.query.email);
-  var hasLegacyStateQuery = Boolean(statusCodeFromQuery || errorCodeFromQuery);
-  var hasLegacyPrefillQuery = Boolean(emailFromQuery);
-  var forgotState = null;
-  var statusCode = '';
-  var errorCode = '';
-  var email = '';
-  var authenticatedUser = req.userAuth && req.userAuth.email ? req.userAuth : null;
-  var requireCode = false;
-  var effectiveEmail = '';
+  let statusCodeFromQuery = toTrimmedString(req.query.status);
+  let errorCodeFromQuery = toTrimmedString(req.query.error);
+  let emailFromQuery = normalizeEmail(req.query.email);
+  let hasLegacyStateQuery = Boolean(statusCodeFromQuery || errorCodeFromQuery);
+  let hasLegacyPrefillQuery = Boolean(emailFromQuery);
+  let forgotState = null;
+  let statusCode = '';
+  let errorCode = '';
+  let email = '';
+  let authenticatedUser = req.userAuth && req.userAuth.email ? req.userAuth : null;
+  let requireCode = false;
+  let effectiveEmail = '';
 
   forgotState = getScopedStateFromCookie(req, forgotStateCookieName);
 
@@ -1375,31 +1403,37 @@ function renderForgotPasswordPage(req, res) {
 }
 
 async function renderMyOrdersPage(req, res) {
-  var catalog = catalogService.getCatalogContext();
-  var categoryGroupsForView = catalogService.buildCategoryViewData('', '', catalog.categoryGroups);
-  var openCategoryName = catalogService.getOpenCategoryName(categoryGroupsForView, '', '');
-  var authenticatedUser = req.userAuth && req.userAuth.email ? req.userAuth : null;
-  var authenticatedUserId = toTrimmedString(authenticatedUser ? authenticatedUser.id : '');
-  var authenticatedEmail = normalizeEmail(authenticatedUser ? authenticatedUser.email : '');
-  var orders = [];
-  var ordersLoadError = '';
-  var orderQuery = {};
+  let catalog = await catalogService.getCatalogContext();
+  let categoryGroupsForView = catalogService.buildCategoryViewData('', '', catalog.categoryGroups);
+  let openCategoryName = catalogService.getOpenCategoryName(categoryGroupsForView, '', '');
+  let authenticatedUser = req.userAuth && req.userAuth.email ? req.userAuth : null;
+  let authenticatedUserId = toTrimmedString(authenticatedUser ? authenticatedUser.id : '');
+  let authenticatedEmail = normalizeEmail(authenticatedUser ? authenticatedUser.email : '');
+  let orders = [];
+  let ordersLoadError = '';
+  let orderQuery = {};
+  let orderQueryClauses = [];
 
   if (!authenticatedUser) {
     return redirectToLogin(res, req, '', 'login-required', '');
   }
 
-  if (authenticatedUserId && authenticatedEmail) {
-    orderQuery = {
-      $or: [
-        { userId: authenticatedUserId },
-        { customerEmail: authenticatedEmail },
-      ],
-    };
-  } else if (authenticatedUserId) {
-    orderQuery = { userId: authenticatedUserId };
-  } else {
-    orderQuery = { customerEmail: authenticatedEmail };
+  if (mongoose.isValidObjectId(authenticatedUserId)) {
+    orderQueryClauses.push({ user: authenticatedUserId });
+  }
+
+  if (authenticatedUserId) {
+    orderQueryClauses.push({ userId: authenticatedUserId });
+  }
+
+  if (authenticatedEmail) {
+    orderQueryClauses.push({ customerEmail: authenticatedEmail });
+  }
+
+  if (orderQueryClauses.length > 1) {
+    orderQuery = { $or: orderQueryClauses };
+  } else if (orderQueryClauses.length === 1) {
+    orderQuery = orderQueryClauses[0];
   }
 
   try {
@@ -1407,6 +1441,7 @@ async function renderMyOrdersPage(req, res) {
       ordersLoadError = 'Could not load your order history right now. Please try again later.';
     } else {
       orders = await Order.find(orderQuery)
+        .select('productName productType quantity unitPriceLabel totalLabel phoneNumber note customerName createdAt status adminStatus adminMessage adminAcceptedAt productId')
         .sort({ createdAt: -1 })
         .limit(200)
         .lean();
@@ -1435,22 +1470,22 @@ async function renderMyOrdersPage(req, res) {
 }
 
 async function renderProfilePage(req, res) {
-  var authenticatedUser = req.userAuth && req.userAuth.email ? req.userAuth : null;
-  var catalog = catalogService.getCatalogContext();
-  var statusCodeFromQuery = toTrimmedString(req.query.status);
-  var errorCodeFromQuery = toTrimmedString(req.query.error);
-  var hasLegacyStateQuery = Boolean(statusCodeFromQuery || errorCodeFromQuery);
-  var profileState = null;
-  var statusCode = '';
-  var errorCode = '';
-  var categoryGroupsForView = catalogService.buildCategoryViewData('', '', catalog.categoryGroups);
-  var openCategoryName = catalogService.getOpenCategoryName(categoryGroupsForView, '', '');
-  var statusMessage = '';
-  var errorMessage = '';
-  var userRecord = null;
-  var profileName = sanitizeText(authenticatedUser ? authenticatedUser.name : '', maxUserNameLength);
-  var profileEmail = normalizeEmail(authenticatedUser ? authenticatedUser.email : '');
-  var hasConnectedDb = false;
+  let authenticatedUser = req.userAuth && req.userAuth.email ? req.userAuth : null;
+  let catalog = await catalogService.getCatalogContext();
+  let statusCodeFromQuery = toTrimmedString(req.query.status);
+  let errorCodeFromQuery = toTrimmedString(req.query.error);
+  let hasLegacyStateQuery = Boolean(statusCodeFromQuery || errorCodeFromQuery);
+  let profileState = null;
+  let statusCode = '';
+  let errorCode = '';
+  let categoryGroupsForView = catalogService.buildCategoryViewData('', '', catalog.categoryGroups);
+  let openCategoryName = catalogService.getOpenCategoryName(categoryGroupsForView, '', '');
+  let statusMessage = '';
+  let errorMessage = '';
+  let userRecord = null;
+  let profileName = sanitizeText(authenticatedUser ? authenticatedUser.name : '', maxUserNameLength);
+  let profileEmail = normalizeEmail(authenticatedUser ? authenticatedUser.email : '');
+  let hasConnectedDb = false;
 
   if (!authenticatedUser) {
     return redirectToLogin(res, req, '', 'login-required', '');
@@ -1518,10 +1553,10 @@ async function renderProfilePage(req, res) {
 }
 
 async function handleProfileNameUpdate(req, res) {
-  var authenticatedUser = req.userAuth && req.userAuth.email ? req.userAuth : null;
-  var rawName = toTrimmedString(req.body.name);
-  var name = sanitizeText(rawName, maxUserNameLength);
-  var userRecord = null;
+  let authenticatedUser = req.userAuth && req.userAuth.email ? req.userAuth : null;
+  let rawName = toTrimmedString(req.body.name);
+  let name = sanitizeText(rawName, maxUserNameLength);
+  let userRecord = null;
 
   if (!authenticatedUser) {
     return redirectToLogin(res, req, '', 'login-required', '');
@@ -1558,12 +1593,12 @@ async function handleProfileNameUpdate(req, res) {
 }
 
 async function handleProfilePasswordUpdate(req, res) {
-  var authenticatedUser = req.userAuth && req.userAuth.email ? req.userAuth : null;
-  var currentPassword = toTrimmedString(req.body.currentPassword);
-  var newPassword = toTrimmedString(req.body.newPassword);
-  var confirmPassword = toTrimmedString(req.body.confirmPassword);
-  var userRecord = null;
-  var passwordPayload = null;
+  let authenticatedUser = req.userAuth && req.userAuth.email ? req.userAuth : null;
+  let currentPassword = toTrimmedString(req.body.currentPassword);
+  let newPassword = toTrimmedString(req.body.newPassword);
+  let confirmPassword = toTrimmedString(req.body.confirmPassword);
+  let userRecord = null;
+  let passwordPayload = null;
 
   if (!authenticatedUser) {
     return redirectToLogin(res, req, '', 'login-required', '');
@@ -1627,12 +1662,12 @@ async function handleProfilePasswordUpdate(req, res) {
 }
 
 async function handleLoginSubmit(req, res) {
-  var email = normalizeEmail(req.body.email);
-  var password = toTrimmedString(req.body.password);
-  var user = null;
-  var code = '';
-  var sendResult = null;
-  var requireEmailVerificationOnLogin = shouldRequireEmailVerificationOnLogin();
+  let email = normalizeEmail(req.body.email);
+  let password = toTrimmedString(req.body.password);
+  let user = null;
+  let code = '';
+  let sendResult = null;
+  let requireEmailVerificationOnLogin = shouldRequireEmailVerificationOnLogin();
 
   if (!email || email.length > maxEmailLength || !isValidEmailAddress(email)) {
     return renderLoginPageWithMessage(req, res, '', 'invalid-email', email);
@@ -1696,16 +1731,16 @@ async function handleLoginSubmit(req, res) {
 }
 
 async function handleSignupSubmit(req, res) {
-  var name = toTrimmedString(req.body.name);
-  var email = normalizeEmail(req.body.email);
-  var password = toTrimmedString(req.body.password);
-  var verificationCode = toTrimmedString(req.body.verificationCode).replace(/\s+/g, '');
-  var existingUser = null;
-  var code = '';
-  var sendResult = null;
-  var verificationResult = null;
-  var passwordPayload = null;
-  var newUser = null;
+  let name = toTrimmedString(req.body.name);
+  let email = normalizeEmail(req.body.email);
+  let password = toTrimmedString(req.body.password);
+  let verificationCode = toTrimmedString(req.body.verificationCode).replace(/\s+/g, '');
+  let existingUser = null;
+  let code = '';
+  let sendResult = null;
+  let verificationResult = null;
+  let passwordPayload = null;
+  let newUser = null;
 
   setSignupPrefillCookie(res, req, email, name);
 
@@ -1766,10 +1801,10 @@ async function handleSignupSubmit(req, res) {
       return redirectToSignup(res, req, 'code-sent', verificationResult.errorCode);
     }
 
-    var authRecord = verificationResult.record;
-    var resolvedPasswordHash = toTrimmedString(authRecord && authRecord.passwordHash)
+    let authRecord = verificationResult.record;
+    let resolvedPasswordHash = toTrimmedString(authRecord && authRecord.passwordHash)
       || toTrimmedString(existingUser && existingUser.passwordHash);
-    var resolvedPasswordSalt = toTrimmedString(authRecord && authRecord.passwordSalt)
+    let resolvedPasswordSalt = toTrimmedString(authRecord && authRecord.passwordSalt)
       || toTrimmedString(existingUser && existingUser.passwordSalt);
 
     if (!authRecord || (!resolvedPasswordHash && !existingUser)) {
@@ -1820,14 +1855,14 @@ async function handleSignupSubmit(req, res) {
 }
 
 async function handleForgotPasswordSubmit(req, res) {
-  var email = normalizeEmail(req.body.email);
-  var verificationCode = toTrimmedString(req.body.verificationCode).replace(/\s+/g, '');
-  var password = toTrimmedString(req.body.password);
-  var existingUser = null;
-  var code = '';
-  var sendResult = null;
-  var verificationResult = null;
-  var passwordPayload = null;
+  let email = normalizeEmail(req.body.email);
+  let verificationCode = toTrimmedString(req.body.verificationCode).replace(/\s+/g, '');
+  let password = toTrimmedString(req.body.password);
+  let existingUser = null;
+  let code = '';
+  let sendResult = null;
+  let verificationResult = null;
+  let passwordPayload = null;
 
   setScopedEmailCookie(res, req, forgotPrefillCookieName, '/forgot-password', email);
 
@@ -1904,21 +1939,21 @@ async function handleForgotPasswordSubmit(req, res) {
 }
 
 function queueOrderNotificationEmails(orderRecord, orderData, options) {
-  var notificationEmail = normalizeEmail(options && options.notificationEmail);
-  var emailSubject = sanitizeText(options && options.emailSubject, 220);
-  var customerEmail = normalizeEmail(options && options.customerEmail);
-  var shouldSendCustomerConfirmation = Boolean(options && options.shouldSendCustomerConfirmation);
-  var productName = sanitizeText(options && options.productName, 180);
-  var quantity = parsePositiveInteger(options && options.quantity, 1);
-  var totalLabel = sanitizeText(options && options.totalLabel, 120);
+  let notificationEmail = normalizeEmail(options && options.notificationEmail);
+  let emailSubject = sanitizeText(options && options.emailSubject, 220);
+  let customerEmail = normalizeEmail(options && options.customerEmail);
+  let shouldSendCustomerConfirmation = Boolean(options && options.shouldSendCustomerConfirmation);
+  let productName = sanitizeText(options && options.productName, 180);
+  let quantity = parsePositiveInteger(options && options.quantity, 1);
+  let totalLabel = sanitizeText(options && options.totalLabel, 120);
 
   if (!orderRecord || typeof orderRecord.save !== 'function') {
     return;
   }
 
   Promise.resolve().then(async function () {
-    var notificationResult = null;
-    var confirmationResult = null;
+    let notificationResult = null;
+    let confirmationResult = null;
 
     if (!notificationEmail || !isValidEmailAddress(notificationEmail) || !emailSubject) {
       console.error('Order email skipped: ORDER_NOTIFICATION_EMAIL is not configured.');
@@ -2000,33 +2035,30 @@ function queueOrderNotificationEmails(orderRecord, orderData, options) {
 }
 
 async function handleOrderSubmit(req, res) {
-  var authenticatedUser = req.userAuth && req.userAuth.email ? req.userAuth : null;
-  var authenticatedUserId = toTrimmedString(authenticatedUser ? authenticatedUser.id : '');
-  var productId = sanitizeText(req.body.productId, 180);
-  var requestedProductName = sanitizeText(req.body.productName, 180);
-  var requestedProductType = sanitizeText(req.body.productType, 120);
-  var requestedUnitPriceLabel = sanitizeText(req.body.unitPriceLabel, 120);
-  var requestedUnitPriceValue = parsePositiveNumber(req.body.unitPriceValue);
-  var rawQuantity = Number(req.body.quantity);
-  var quantity = Number.isFinite(rawQuantity) ? Math.floor(rawQuantity) : 0;
-  var customerName = sanitizeText(req.body.customerName, 140);
-  var phoneNumber = normalizeOrderPhone(sanitizeText(req.body.phoneNumber, 60));
-  var customerEmail = normalizeEmail(authenticatedUser ? authenticatedUser.email : '');
-  var note = sanitizeText(req.body.note, 1000);
-  var notificationEmail = getOrderNotificationEmail();
-  var catalog = catalogService.getCatalogContext();
-  var productMatch = null;
-  var productName = requestedProductName || 'Product';
-  var productType = requestedProductType || 'Other';
-  var availableStockQuantity = null;
-  var unitPriceValue = requestedUnitPriceValue;
-  var unitPriceLabel = requestedUnitPriceLabel || 'Contact for price';
-  var totalPriceValue = 0;
-  var totalLabel = '';
-  var emailSubject = '';
-  var orderData = null;
-  var orderRecord = null;
-  var shouldSendCustomerConfirmation = false;
+  let authenticatedUser = req.userAuth && req.userAuth.email ? req.userAuth : null;
+  let authenticatedUserId = toTrimmedString(authenticatedUser ? authenticatedUser.id : '');
+  let productId = sanitizeText(req.body.productId, 180);
+  let rawQuantity = Number(req.body.quantity);
+  let quantity = Number.isFinite(rawQuantity) ? Math.floor(rawQuantity) : 0;
+  let customerName = sanitizeText(req.body.customerName, 140);
+  let phoneNumber = normalizeOrderPhone(sanitizeText(req.body.phoneNumber, 60));
+  let customerEmail = normalizeEmail(authenticatedUser ? authenticatedUser.email : '');
+  let note = sanitizeText(req.body.note, 1000);
+  let notificationEmail = getOrderNotificationEmail();
+  let productDoc = null;
+  let productCategory = null;
+  let productIdentifier = '';
+  let productName = 'Product';
+  let productType = 'Other';
+  let availableStockQuantity = null;
+  let unitPriceValue = 0;
+  let unitPriceLabel = 'Contact for price';
+  let totalPriceValue = 0;
+  let totalLabel = '';
+  let emailSubject = '';
+  let orderData = null;
+  let orderRecord = null;
+  let shouldSendCustomerConfirmation = false;
 
   if (!authenticatedUser) {
     return res.status(401).json({
@@ -2076,25 +2108,45 @@ async function handleOrderSubmit(req, res) {
     });
   }
 
-  if (productId) {
-    productMatch = catalogService.findProductById(productId, catalog.productSections);
-  }
-
-  if (productMatch && productMatch.item) {
-    productName = sanitizeText(productMatch.item.name, 180) || productName;
-    productType = sanitizeText(productMatch.item.type, 120) || productType;
-    availableStockQuantity = parseAvailableStockQuantity(productMatch.item.quantity);
-    unitPriceLabel = sanitizeText(productMatch.item.price, 120) || unitPriceLabel;
-    unitPriceValue = parsePositiveNumber(unitPriceLabel) || unitPriceValue;
-  }
-
-  if (!productName) {
+  if (!productId) {
     return res.status(400).json({
       ok: false,
       errorCode: 'invalid-product',
       message: 'Product is required.',
     });
   }
+
+  if (!await ensureDatabaseConnection()) {
+    return res.status(503).json({
+      ok: false,
+      errorCode: 'db-unavailable',
+      message: 'Order service is temporarily unavailable. Please try again.',
+    });
+  }
+
+  try {
+    productDoc = await catalogService.findProductDocumentByIdentifier(productId, { activeOnly: true });
+  } catch (error) {
+    console.error('Product lookup failed during order submit:', error.message);
+  }
+
+  if (!productDoc) {
+    return res.status(404).json({
+      ok: false,
+      errorCode: 'invalid-product',
+      message: 'Product was not found.',
+    });
+  }
+
+  productCategory = productDoc && productDoc.category && typeof productDoc.category === 'object'
+    ? productDoc.category
+    : null;
+  productIdentifier = sanitizeText(productDoc.legacyId || String(productDoc._id || ''), 180);
+  productName = sanitizeText(productDoc.name, 180) || productName;
+  productType = sanitizeText(productCategory && productCategory.name, 120) || productType;
+  availableStockQuantity = parseAvailableStockQuantity(productDoc.quantity);
+  unitPriceValue = Number(productDoc.price);
+  unitPriceLabel = unitPriceValue > 0 ? ('NPR ' + formatNprAmount(unitPriceValue)) : 'Contact for price';
 
   if (availableStockQuantity !== null) {
     if (availableStockQuantity < 1) {
@@ -2135,22 +2187,16 @@ async function handleOrderSubmit(req, res) {
     note: note,
   };
 
-  if (!await ensureDatabaseConnection()) {
-    return res.status(503).json({
-      ok: false,
-      errorCode: 'db-unavailable',
-      message: 'Order service is temporarily unavailable. Please try again.',
-    });
-  }
-
   try {
     orderRecord = await Order.create({
+      user: mongoose.isValidObjectId(authenticatedUserId) ? authenticatedUserId : null,
       userId: authenticatedUserId || customerEmail,
       customerEmail: customerEmail,
       customerName: customerName,
       phoneNumber: phoneNumber,
       note: note,
-      productId: productId,
+      product: productDoc && productDoc._id ? productDoc._id : null,
+      productId: productIdentifier,
       productName: productName,
       productType: productType,
       quantity: quantity,
@@ -2195,8 +2241,7 @@ async function handleUserLogout(req, res) {
   userAuth.clearUserAuthCookie(res);
   return redirectToLogin(res, req, 'logged-out', '', '');
 }
-
-module.exports = {
+export default {
   handleForgotPasswordSubmit: handleForgotPasswordSubmit,
   handleOrderSubmit: handleOrderSubmit,
   handleLoginSubmit: handleLoginSubmit,

@@ -14,10 +14,10 @@
 
     <main class="app-shell py-6">
       <%
-        var ordersList = Array.isArray(orders) ? orders : [];
+        let ordersList = Array.isArray(orders) ? orders : [];
 
         function formatOrderDate(value) {
-          var parsedDate = value ? new Date(value) : null;
+          let parsedDate = value ? new Date(value) : null;
 
           if (!parsedDate || Number.isNaN(parsedDate.getTime())) {
             return '-';
@@ -33,7 +33,7 @@
         }
 
         function getStatusLabel(statusValue) {
-          var status = String(statusValue || '').toLowerCase();
+          let status = String(statusValue || '').toLowerCase();
 
           if (status === 'submitted') {
             return 'Submitted';
@@ -47,7 +47,7 @@
         }
 
         function getStatusClass(statusValue) {
-          var status = String(statusValue || '').toLowerCase();
+          let status = String(statusValue || '').toLowerCase();
 
           if (status === 'submitted') {
             return 'border-emerald-200 bg-emerald-50 text-emerald-700';
@@ -61,7 +61,7 @@
         }
 
         function getAdminStatusLabel(adminStatusValue) {
-          var status = String(adminStatusValue || '').toLowerCase();
+          let status = String(adminStatusValue || '').toLowerCase();
 
           if (status === 'accepted') {
             return 'Accepted';
@@ -71,7 +71,7 @@
         }
 
         function getAdminStatusClass(adminStatusValue) {
-          var status = String(adminStatusValue || '').toLowerCase();
+          let status = String(adminStatusValue || '').toLowerCase();
 
           if (status === 'accepted') {
             return 'border-emerald-200 bg-emerald-50 text-emerald-700';
@@ -114,22 +114,22 @@
             <div class="mt-5 grid gap-3 xl:grid-cols-2">
               <% ordersList.forEach(function (orderItem) { %>
               <%
-                var productName = orderItem && orderItem.productName ? String(orderItem.productName) : 'Product';
-                var productType = orderItem && orderItem.productType ? String(orderItem.productType) : 'Category';
-                var quantity = orderItem && orderItem.quantity ? Number(orderItem.quantity) : 1;
-                var unitPriceLabel = orderItem && orderItem.unitPriceLabel ? String(orderItem.unitPriceLabel) : 'Contact for price';
-                var totalLabel = orderItem && orderItem.totalLabel ? String(orderItem.totalLabel) : 'Contact for price';
-                var phoneNumber = orderItem && orderItem.phoneNumber ? String(orderItem.phoneNumber) : '-';
-                var note = orderItem && orderItem.note ? String(orderItem.note) : '-';
-                var customerName = orderItem && orderItem.customerName ? String(orderItem.customerName) : '-';
-                var createdAtLabel = formatOrderDate(orderItem ? orderItem.createdAt : '');
-                var statusLabel = getStatusLabel(orderItem ? orderItem.status : '');
-                var statusClass = getStatusClass(orderItem ? orderItem.status : '');
-                var adminStatusLabel = getAdminStatusLabel(orderItem ? orderItem.adminStatus : '');
-                var adminStatusClass = getAdminStatusClass(orderItem ? orderItem.adminStatus : '');
-                var adminMessage = orderItem && orderItem.adminMessage ? String(orderItem.adminMessage) : '';
-                var adminAcceptedAtLabel = formatOrderDate(orderItem ? orderItem.adminAcceptedAt : '');
-                var productId = orderItem && orderItem.productId ? String(orderItem.productId) : '';
+                let productName = orderItem && orderItem.productName ? String(orderItem.productName) : 'Product';
+                let productType = orderItem && orderItem.productType ? String(orderItem.productType) : 'Category';
+                let quantity = orderItem && orderItem.quantity ? Number(orderItem.quantity) : 1;
+                let unitPriceLabel = orderItem && orderItem.unitPriceLabel ? String(orderItem.unitPriceLabel) : 'Contact for price';
+                let totalLabel = orderItem && orderItem.totalLabel ? String(orderItem.totalLabel) : 'Contact for price';
+                let phoneNumber = orderItem && orderItem.phoneNumber ? String(orderItem.phoneNumber) : '-';
+                let note = orderItem && orderItem.note ? String(orderItem.note) : '-';
+                let customerName = orderItem && orderItem.customerName ? String(orderItem.customerName) : '-';
+                let createdAtLabel = formatOrderDate(orderItem ? orderItem.createdAt : '');
+                let statusLabel = getStatusLabel(orderItem ? orderItem.status : '');
+                let statusClass = getStatusClass(orderItem ? orderItem.status : '');
+                let adminStatusLabel = getAdminStatusLabel(orderItem ? orderItem.adminStatus : '');
+                let adminStatusClass = getAdminStatusClass(orderItem ? orderItem.adminStatus : '');
+                let adminMessage = orderItem && orderItem.adminMessage ? String(orderItem.adminMessage) : '';
+                let adminAcceptedAtLabel = formatOrderDate(orderItem ? orderItem.adminAcceptedAt : '');
+                let productId = orderItem && orderItem.productId ? String(orderItem.productId) : '';
               %>
               <article class="flex h-full flex-col rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
                 <div class="flex flex-wrap items-start justify-between gap-2">

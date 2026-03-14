@@ -1,9 +1,10 @@
-var express = require('express');
-var validators = require('../lib/validation');
-var catalogController = require('../controllers/catalogController');
-var requestSanitizer = require('../lib/requestSanitizer');
+import express from 'express';
+import validators from '../lib/validation.js';
+import catalogController from '../controllers/catalogController.js';
+import requestSanitizer from '../lib/requestSanitizer.js';
 
-var router = express.Router();
+
+let router = express.Router();
 
 router.use(requestSanitizer.sanitizeRequestPayload);
 
@@ -12,5 +13,4 @@ router.post('/brands', validators.catalogCreateBrand, catalogController.createBr
 router.post('/products', validators.catalogCreateProduct, catalogController.createProduct);
 router.patch('/products/:productId', validators.catalogUpdateProduct, catalogController.updateProduct);
 router.delete('/products/:productId', validators.catalogDeleteProduct, catalogController.deleteProduct);
-
-module.exports = router;
+export default router;

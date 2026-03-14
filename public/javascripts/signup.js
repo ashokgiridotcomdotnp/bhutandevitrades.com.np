@@ -12,8 +12,8 @@
   }
 
   function setFormError(form, message) {
-    var errorNode = getFormErrorNode(form);
-    var normalizedMessage = toTrimmedString(message);
+    let errorNode = getFormErrorNode(form);
+    let normalizedMessage = toTrimmedString(message);
 
     if (!errorNode || !normalizedMessage) {
       return;
@@ -24,7 +24,7 @@
   }
 
   function clearFormError(form) {
-    var errorNode = getFormErrorNode(form);
+    let errorNode = getFormErrorNode(form);
     if (!errorNode) {
       return;
     }
@@ -42,7 +42,7 @@
   }
 
   function getLoadingLabel(form, submitButton) {
-    var customLabel = submitButton ? toTrimmedString(submitButton.getAttribute('data-loading-label')) : '';
+    let customLabel = submitButton ? toTrimmedString(submitButton.getAttribute('data-loading-label')) : '';
 
     if (customLabel) {
       return customLabel;
@@ -73,8 +73,8 @@
   }
 
   function extractNumericLength(input) {
-    var minLength = Number(input && input.getAttribute('minlength'));
-    var maxLength = Number(input && input.getAttribute('maxlength'));
+    let minLength = Number(input && input.getAttribute('minlength'));
+    let maxLength = Number(input && input.getAttribute('maxlength'));
 
     if (Number.isFinite(minLength) && minLength > 0) {
       return Math.floor(minLength);
@@ -88,23 +88,23 @@
   }
 
   function validateSignupForm(form) {
-    var nameInput = form.querySelector('input[name="name"]');
-    var emailInput = form.querySelector('input[name="email"]');
-    var passwordInput = form.querySelector('input[name="password"]');
-    var verificationCodeInput = form.querySelector('input[name="verificationCode"]');
-    var name = toTrimmedString(nameInput && nameInput.value);
-    var email = toTrimmedString(emailInput && emailInput.value).toLowerCase();
-    var password = toTrimmedString(passwordInput && passwordInput.value);
-    var verificationCode = toTrimmedString(verificationCodeInput && verificationCodeInput.value).replace(/\s+/g, '');
-    var passwordMinLength = Number(passwordInput && passwordInput.getAttribute('minlength'));
-    var passwordMaxLength = Number(passwordInput && passwordInput.getAttribute('maxlength'));
-    var codeLength = extractNumericLength(verificationCodeInput);
+    let nameInput = form.querySelector('input[name="name"]');
+    let emailInput = form.querySelector('input[name="email"]');
+    let passwordInput = form.querySelector('input[name="password"]');
+    let verificationCodeInput = form.querySelector('input[name="verificationCode"]');
+    let name = toTrimmedString(nameInput && nameInput.value);
+    let email = toTrimmedString(emailInput && emailInput.value).toLowerCase();
+    let password = toTrimmedString(passwordInput && passwordInput.value);
+    let verificationCode = toTrimmedString(verificationCodeInput && verificationCodeInput.value).replace(/\s+/g, '');
+    let passwordMinLength = Number(passwordInput && passwordInput.getAttribute('minlength'));
+    let passwordMaxLength = Number(passwordInput && passwordInput.getAttribute('maxlength'));
+    let codeLength = extractNumericLength(verificationCodeInput);
 
     clearFormError(form);
 
     if (typeof form.reportValidity === 'function' && !form.reportValidity()) {
-      var firstInvalidField = form.querySelector(':invalid');
-      var invalidMessage = firstInvalidField && firstInvalidField.validationMessage
+      let firstInvalidField = form.querySelector(':invalid');
+      let invalidMessage = firstInvalidField && firstInvalidField.validationMessage
         ? String(firstInvalidField.validationMessage).trim()
         : 'Please complete all required fields correctly.';
       setFormError(form, invalidMessage);
@@ -167,10 +167,10 @@
   }
 
   function handleSignupSubmit(event) {
-    var form = event.target;
-    var submitButton = null;
-    var loadingLabel = '';
-    var originalLabel = '';
+    let form = event.target;
+    let submitButton = null;
+    let loadingLabel = '';
+    let originalLabel = '';
 
     if (!form || form.tagName !== 'FORM') {
       return;

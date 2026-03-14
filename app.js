@@ -1,35 +1,41 @@
-require('dotenv').config({ quiet: true });
+import createError from 'http-errors';
+import crypto from 'crypto';
+import express from 'express';
+import fs from 'fs';
+import path from 'path';
+import cookieParser from 'cookie-parser';
+import morgan from 'morgan';
+import helmet from 'helmet';
+import compression from 'compression';
+import rateLimit from 'express-rate-limit';
+import config from './lib/config.js';
+import database from './lib/db.js';
+import logger from './lib/logger.js';
+import userAuth from './lib/userAuth.js';
+import requestSanitizer from './lib/requestSanitizer.js';
+import indexRouter from './routes/index.js';
+import { fileURLToPath } from 'node:url';
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
-var createError = require('http-errors');
-var express = require('express');
-var fs = require('fs');
-var path = require('path');
-var cookieParser = require('cookie-parser');
-var logger = require('morgan');
-var helmet = require('helmet');
-var compression = require('compression');
-var rateLimit = require('express-rate-limit');
-var database = require('./lib/db');
-var userAuth = require('./lib/userAuth');
-var requestSanitizer = require('./lib/requestSanitizer');
 
-var indexRouter = require('./routes/index');
 
-var app = express();
-var publicDirectory = path.join(__dirname, 'public');
-var deploymentAssetVersion = process.env.ASSET_VERSION && process.env.ASSET_VERSION.trim()
-  ? process.env.ASSET_VERSION.trim()
-  : '';
+
+let app = express();
+let publicDirectory = path.join(__dirname, 'public');
+let deploymentAssetVersion = config.app.assetVersion;
 
 // Trust proxy for secure cookie support behind reverse proxy
-app.set('trust proxy', 1);
+app.set('trust proxy', config.app.trustProxy);
+
+config.getStartupWarnings().forEach(function (warningMessage) {
+  logger.warn(warningMessage);
+});
 
 database.connectToDatabase().catch(function (error) {
-  if (error && error.message) {
-    console.error('Initial MongoDB connect failed:', error.message);
-  } else {
-    console.error('Initial MongoDB connect failed');
-  }
+  logger.error('Initial MongoDB connect failed', {
+    error: logger.serializeError(error),
+  });
 });
 
 // view engine setup
@@ -41,7 +47,7 @@ function normalizeAssetPath(assetPath) {
     return null;
   }
 
-  var normalizedAssetPath = path.posix.normalize(assetPath.charAt(0) === '/' ? assetPath : '/' + assetPath);
+  let normalizedAssetPath = path.posix.normalize(assetPath.charAt(0) === '/' ? assetPath : '/' + assetPath);
 
   if (normalizedAssetPath.indexOf('..') !== -1) {
     return null;
@@ -51,8 +57,8 @@ function normalizeAssetPath(assetPath) {
 }
 
 function resolvePublicAssetPath(assetPath) {
-  var normalizedAssetPath = normalizeAssetPath(assetPath);
-  var absoluteAssetPath;
+  let normalizedAssetPath = normalizeAssetPath(assetPath);
+  let absoluteAssetPath;
 
   if (!normalizedAssetPath) {
     return null;
@@ -68,8 +74,8 @@ function resolvePublicAssetPath(assetPath) {
 }
 
 function getAssetVersion(assetPath) {
-  var absoluteAssetPath;
-  var assetStat;
+  let absoluteAssetPath;
+  let assetStat;
 
   if (deploymentAssetVersion) {
     return deploymentAssetVersion;
@@ -90,7 +96,7 @@ function getAssetVersion(assetPath) {
 }
 
 function buildAssetPath(assetPath) {
-  var normalizedAssetPath = normalizeAssetPath(assetPath);
+  let normalizedAssetPath = normalizeAssetPath(assetPath);
 
   if (!normalizedAssetPath) {
     return assetPath;
@@ -100,7 +106,7 @@ function buildAssetPath(assetPath) {
 }
 
 function isSecureTransportRequest(req) {
-  var forwardedProto = String(req.get('x-forwarded-proto') || '').split(',')[0].trim().toLowerCase();
+  let forwardedProto = String(req.get('x-forwarded-proto') || '').split(',')[0].trim().toLowerCase();
   return req.secure || forwardedProto === 'https';
 }
 
@@ -143,13 +149,44 @@ function createHelmetMiddleware(enableHttpsUpgrade) {
   });
 }
 
-var secureHelmetMiddleware = createHelmetMiddleware(true);
-var localHelmetMiddleware = createHelmetMiddleware(false);
+let secureHelmetMiddleware = createHelmetMiddleware(true);
+let localHelmetMiddleware = createHelmetMiddleware(false);
 
 app.locals.assetPath = buildAssetPath;
 
 app.disable('x-powered-by');
-app.use(logger('dev'));
+app.use(function (req, res, next) {
+  req.requestId = typeof crypto.randomUUID === 'function'
+    ? crypto.randomUUID()
+    : String(Date.now()) + '-' + Math.round(Math.random() * 1e9);
+  res.locals.requestId = req.requestId;
+  res.set('X-Request-Id', req.requestId);
+  next();
+});
+
+let logHttpSuccess = /^(1|true|yes|on)$/i.test(String(process.env.LOG_HTTP_SUCCESS || '').trim());
+app.use(morgan(':method :url :status :response-time ms - :res[content-length]', {
+  stream: {
+    write: function (message) {
+      logger.http(message.trim());
+    },
+  },
+  skip: function (req, res) {
+    let statusCode = Number(res && res.statusCode);
+
+    if (req && typeof req.path === 'string' && req.path === '/favicon.ico') {
+      return true;
+    }
+
+    if (!logHttpSuccess && Number.isFinite(statusCode) && statusCode < 400) {
+      return true;
+    }
+
+    return isStaticAssetPath(req && typeof req.path === 'string' ? req.path : '')
+      && Number.isFinite(statusCode)
+      && statusCode < 400;
+  },
+}));
 
 // Security headers with Helmet
 app.use(function (req, res, next) {
@@ -161,9 +198,9 @@ app.use(function (req, res, next) {
 });
 
 // Rate limiting for auth endpoints
-var authLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 10, // 10 attempts per window
+let authLimiter = rateLimit({
+  windowMs: config.app.authRateLimitWindowMs,
+  max: config.app.authRateLimitMax,
   message: 'Too many attempts from this IP, please try again after 15 minutes.',
   standardHeaders: true,
   legacyHeaders: false,
@@ -179,9 +216,9 @@ function isStaticAssetPath(pathname) {
     || pathname === '/favicon.ico';
 }
 
-var apiLimiter = rateLimit({
-  windowMs: 60 * 1000, // 1 minute
-  max: 60, // 60 requests per minute
+let apiLimiter = rateLimit({
+  windowMs: config.app.apiRateLimitWindowMs,
+  max: config.app.apiRateLimitMax,
   message: 'Too many requests from this IP, please try again later.',
   standardHeaders: true,
   legacyHeaders: false,
@@ -200,14 +237,14 @@ app.use(apiLimiter);
 app.use(compression({ threshold: 1024 }));
 
 // Request body size limits
-app.use(express.json({ limit: '100kb' }));
-app.use(express.urlencoded({ extended: false, limit: '100kb' }));
+app.use(express.json({ limit: config.app.jsonBodyLimit }));
+app.use(express.urlencoded({ extended: false, limit: config.app.urlencodedBodyLimit }));
 app.use(cookieParser());
 app.use(requestSanitizer.sanitizeRequestPayload);
 
 // Caching headers for static assets
 app.use(function (req, res, next) {
-  var isVersionedAssetRequest = /(?:^|[?&])v=[^&]+/.test(req.originalUrl || '');
+  let isVersionedAssetRequest = /(?:^|[?&])v=[^&]+/.test(req.originalUrl || '');
 
   if (req.path.startsWith('/stylesheets/') || req.path.startsWith('/javascripts/')) {
     res.set('Cache-Control', isVersionedAssetRequest ? 'public, max-age=31536000, immutable' : 'public, max-age=0, must-revalidate');
@@ -236,9 +273,16 @@ app.use(function (req, res, next) {
 
 // error handler
 app.use(function (err, req, res, next) {
-  var statusCode = err.status || 500;
-  var safeRequestedPath = '/';
-  var isDevelopmentEnv = req.app.get('env') === 'development';
+  let statusCode = err.status || 500;
+  let safeRequestedPath = '/';
+  let isDevelopmentEnv = req.app.get('env') === 'development';
+  let isJsonRequest = Boolean(
+    req
+    && (
+      req.xhr
+      || String(req.get('accept') || '').toLowerCase().indexOf('application/json') !== -1
+    )
+  );
 
   if (req && typeof req.path === 'string' && req.path.trim()) {
     safeRequestedPath = req.path.trim();
@@ -251,8 +295,47 @@ app.use(function (err, req, res, next) {
   res.set('Cache-Control', 'private, no-store');
   res.status(statusCode);
 
+  if (statusCode === 404 && isStaticAssetPath(safeRequestedPath)) {
+    return res.end();
+  }
+
+  let serializedError = statusCode >= 500
+    ? logger.serializeError(err)
+    : {
+        name: String((err && err.name) || 'Error'),
+        message: String((err && err.message) || ''),
+      };
+
+  if (statusCode >= 500) {
+    logger.error('Unhandled request error', {
+      requestId: req && req.requestId ? req.requestId : '',
+      method: req && req.method ? req.method : '',
+      path: safeRequestedPath,
+      error: serializedError,
+    });
+  } else {
+    logger.warn('Handled request error', {
+      requestId: req && req.requestId ? req.requestId : '',
+      method: req && req.method ? req.method : '',
+      path: safeRequestedPath,
+      statusCode: statusCode,
+      error: serializedError,
+    });
+  }
+
   if (statusCode === 404) {
     return res.render('404', { requestedPath: safeRequestedPath });
+  }
+
+  if (isJsonRequest) {
+    return res.json({
+      ok: false,
+      errorCode: err && err.code ? err.code : 'internal-error',
+      message: statusCode >= 500
+        ? 'Something went wrong. Please try again later.'
+        : (err && err.message ? err.message : 'Request failed'),
+      requestId: req && req.requestId ? req.requestId : '',
+    });
   }
 
   // set locals, only providing error in development
@@ -265,5 +348,4 @@ app.use(function (err, req, res, next) {
   // render the error page
   res.render('error');
 });
-
-module.exports = app;
+export default app;

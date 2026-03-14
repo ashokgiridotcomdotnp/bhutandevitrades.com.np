@@ -1,33 +1,14 @@
 <%
-  var resolvedBasePath = typeof basePath === 'string' ? basePath : '/';
-  var currentBasePath = resolvedBasePath === '/home' ? '/home' : '/';
-
-  function buildCategoryHref(categoryName) {
-    var params = [];
-    if (categoryName) {
-      params.push('category=' + encodeURIComponent(categoryName));
-    }
-    return currentBasePath + (params.length ? '?' + params.join('&') : '');
-  }
-
-  var navCategorySource = typeof topNavCategories !== 'undefined' ? topNavCategories : [];
-  var navCategories = Array.isArray(navCategorySource)
-    ? navCategorySource
-        .map(function (group) {
-          return group && group.name ? String(group.name) : '';
-        })
-        .filter(Boolean)
-    : ['Helmet', 'Engine Oil', 'Tyres', 'Grease', 'Chain Sprocket', 'Shock'];
-
-  var normalizedActiveCategory = (activeCategory || '').toLowerCase();
-  var sidebarEnabled = typeof hasSidebar !== 'undefined' ? hasSidebar : false;
-  var shouldShowUserAuthActions = typeof showUserAuthActions !== 'undefined' ? Boolean(showUserAuthActions) : false;
-  var currentPathname = typeof currentPath === 'string' ? currentPath : '';
-  var isLoginPath = currentPathname === '/login';
-  var isSignupPath = currentPathname === '/signup';
-  var authenticatedUser = typeof currentUser !== 'undefined' && currentUser && currentUser.email ? currentUser : null;
-  var userDisplayName = authenticatedUser ? (authenticatedUser.name || authenticatedUser.email) : '';
-  var userInitial = userDisplayName ? userDisplayName.charAt(0).toUpperCase() : 'U';
+  let resolvedBasePath = typeof basePath === 'string' ? basePath : '/';
+  let currentBasePath = resolvedBasePath === '/home' ? '/home' : '/';
+  let sidebarEnabled = typeof hasSidebar !== 'undefined' ? hasSidebar : false;
+  let shouldShowUserAuthActions = typeof showUserAuthActions !== 'undefined' ? Boolean(showUserAuthActions) : false;
+  let currentPathname = typeof currentPath === 'string' ? currentPath : '';
+  let isLoginPath = currentPathname === '/login';
+  let isSignupPath = currentPathname === '/signup';
+  let authenticatedUser = typeof currentUser !== 'undefined' && currentUser && currentUser.email ? currentUser : null;
+  let userDisplayName = authenticatedUser ? (authenticatedUser.name || authenticatedUser.email) : '';
+  let userInitial = userDisplayName ? userDisplayName.charAt(0).toUpperCase() : 'U';
 %>
 
 <nav id="site-navbar" class="sticky top-0 z-50 border-b border-slate-200/80 bg-slate-50/80 backdrop-blur transition-all duration-300">
@@ -54,16 +35,16 @@
             <span class="hidden whitespace-nowrap text-[11px] font-bold tracking-wide text-slate-100 sm:block">bhutandevitradeandsuppliers</span>
           </a>
 
-          <form action="<%= currentBasePath %>" method="get" class="min-w-0 flex-1">
+          <form action="<%= currentBasePath %>" method="get" class="min-w-0 flex-1" role="search">
             <label for="search-input" class="sr-only">Search products</label>
-            <div class="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-1.5 shadow-sm transition-all duration-200 focus-within:border-cyan-300 focus-within:shadow-md">
+            <div class="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 shadow-sm transition-all duration-200 focus-within:border-cyan-300 focus-within:shadow-md">
               <input
                 id="search-input"
                 type="search"
                 name="q"
                 value="<%= q || '' %>"
                 placeholder="Search products, categories, or brands"
-                class="w-full border-0 bg-transparent px-1 py-2 text-sm text-slate-700 placeholder:text-slate-400 focus:outline-none"
+                class="w-full border-0 bg-transparent px-1 py-3 text-sm text-slate-700 placeholder:text-slate-400 focus:outline-none"
               />
               <button type="submit" aria-label="Search" class="pro-btn-primary px-2.5 py-1.5">
                 <img src="/icons/search.svg" alt="" aria-hidden="true" class="shrink-0" style="width: 14px; height: 14px;" />
@@ -74,38 +55,6 @@
         </div>
 
         <div class="hidden min-w-0 items-center justify-end gap-2 pb-1 lg:flex">
-          <div class="relative min-w-0 flex-1" style="max-width: 36rem;">
-            <div data-nav-categories-scroller class="flex min-w-0 items-center gap-2 overflow-x-auto pro-scrollbar" style="padding-right: 2.5rem;">
-              <% navCategories.forEach(function (categoryName) { %>
-              <% var normalizedNavCategory = String(categoryName || '').toLowerCase(); %>
-              <a
-                href="<%= buildCategoryHref(categoryName) %>"
-                title="<%= categoryName %>"
-                class="inline-flex shrink-0 items-center gap-2 rounded-xl border px-3 py-2 text-xs font-semibold transition <%= normalizedActiveCategory === normalizedNavCategory ? 'border-cyan-500 bg-cyan-50 text-cyan-800 shadow-sm' : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-100 hover:text-slate-800' %>"
-                style="width: 8.25rem;"
-              >
-                <span
-                  class="inline-flex h-6 w-6 items-center justify-center rounded-lg text-[11px] font-bold <%= normalizedActiveCategory === normalizedNavCategory ? 'bg-cyan-700 text-white' : 'bg-slate-200 text-slate-600' %>"
-                >
-                  <%= String(categoryName).charAt(0).toUpperCase() %>
-                </span>
-                <span class="truncate"><%= categoryName %></span>
-              </a>
-              <% }) %>
-            </div>
-
-            <% if (navCategories.length > 4) { %>
-            <button
-              type="button"
-              data-nav-categories-next
-              aria-label="Scroll categories"
-              class="absolute right-0 top-1/2 z-20 inline-flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-full border border-slate-300 bg-white shadow-sm transition hover:border-slate-400 hover:bg-slate-100"
-            >
-              <img src="/icons/right-arrow.svg" alt="" aria-hidden="true" class="shrink-0" style="width: 12px; height: 12px;" />
-            </button>
-            <% } %>
-          </div>
-
           <% if (shouldShowUserAuthActions && authenticatedUser) { %>
           <div class="relative ml-1 shrink-0 border-l border-slate-200 pl-2" data-user-menu-root>
             <button
@@ -160,7 +109,7 @@
 
           <% if (shouldShowUserAuthActions && !authenticatedUser) { %>
           <div class="ml-1 flex shrink-0 items-center gap-2 border-l border-slate-200 pl-2">
-            <a href="/login" class="<%= isLoginPath ? 'pro-btn-primary pro-btn-xs' : 'pro-btn-secondary pro-btn-xs' %> gap-1.5">
+            <a href="/login" class="<%= isLoginPath ? 'pro-btn-primary pro-btn-xs' : 'pro-btn-secondary pro-btn-xs' %> gap-1.5 py-3">
               <img
                 src="<%= isLoginPath ? '/icons/login-white.svg' : '/icons/login-black.svg' %>"
                 alt=""
@@ -170,7 +119,7 @@
               />
               <span>Login</span>
             </a>
-            <a href="/signup" class="<%= isSignupPath ? 'pro-btn-primary pro-btn-xs' : 'pro-btn-secondary pro-btn-xs' %> gap-1.5">
+            <a href="/signup" class="<%= isSignupPath ? 'pro-btn-primary pro-btn-xs' : 'pro-btn-secondary pro-btn-xs' %> gap-1.5 py-3">
               <img
                 src="<%= isSignupPath ? '/icons/signup-white.svg' : '/icons/signup-black.svg' %>"
                 alt=""

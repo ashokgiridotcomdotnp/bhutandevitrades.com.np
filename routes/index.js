@@ -1,59 +1,56 @@
-var express = require('express');
-var adminController = require('../controllers/adminController');
-var authController = require('../controllers/authController');
-var catalogRouter = require('./catalog');
-var publicController = require('../controllers/publicController');
-var userAuth = require('../lib/userAuth');
+import express from 'express';
+import adminController from '../controllers/adminController.js';
+import authController from '../controllers/authController.js';
+import publicController from '../controllers/publicController.js';
+import asyncHandler from '../lib/asyncHandler.js';
+import userAuth from '../lib/userAuth.js';
 
-var router = express.Router();
 
-router.use(adminController.refreshAdminDataMiddleware);
+let router = express.Router();
 
-router.get(['/', '/home'], publicController.renderHomePage);
-router.post('/orders', publicController.handleOrderSubmit);
-router.get('/order/:productId', publicController.renderOrderPage);
+router.get(['/', '/home'], asyncHandler(publicController.renderHomePage));
+router.post('/orders', asyncHandler(publicController.handleOrderSubmit));
+router.get('/order/:productId', asyncHandler(publicController.renderOrderPage));
 router.get('/login', publicController.renderLoginPage);
-router.post('/login', publicController.handleLoginSubmit);
+router.post('/login', asyncHandler(publicController.handleLoginSubmit));
 router.get('/forgot-password', publicController.renderForgotPasswordPage);
-router.post('/forgot-password', publicController.handleForgotPasswordSubmit);
-router.get('/my-orders', publicController.renderMyOrdersPage);
-router.get('/profile', userAuth.requireUserAuth, publicController.renderProfilePage);
+router.post('/forgot-password', asyncHandler(publicController.handleForgotPasswordSubmit));
+router.get('/my-orders', asyncHandler(publicController.renderMyOrdersPage));
+router.get('/profile', userAuth.requireUserAuth, asyncHandler(publicController.renderProfilePage));
 router.get('/signup', publicController.renderSignupPage);
-router.post('/signup', publicController.handleSignupSubmit);
-router.post('/logout', publicController.handleUserLogout);
-router.post('/profile/name', userAuth.requireUserAuth, publicController.handleProfileNameUpdate);
-router.post('/profile/password', userAuth.requireUserAuth, publicController.handleProfilePasswordUpdate);
+router.post('/signup', asyncHandler(publicController.handleSignupSubmit));
+router.post('/logout', asyncHandler(publicController.handleUserLogout));
+router.post('/profile/name', userAuth.requireUserAuth, asyncHandler(publicController.handleProfileNameUpdate));
+router.post('/profile/password', userAuth.requireUserAuth, asyncHandler(publicController.handleProfilePasswordUpdate));
 router.get('/admin/login', authController.renderAdminLogin);
-router.post('/admin/login', authController.handleAdminLogin);
-router.get('/admin/logout', authController.handleAdminLogout);
-router.post('/admin/logout', authController.handleAdminLogout);
+router.post('/admin/login', asyncHandler(authController.handleAdminLogin));
+router.get('/admin/logout', asyncHandler(authController.handleAdminLogout));
+router.post('/admin/logout', asyncHandler(authController.handleAdminLogout));
 
 router.use('/admin', authController.requireAdminAuth);
-router.use('/admin/catalog', catalogRouter);
 
-router.get('/admin', adminController.renderAdminPage);
-router.get('/admin/orders', adminController.renderAdminOrdersPage);
-router.get('/admin/products', adminController.renderAdminProductsPage);
+router.get('/admin', asyncHandler(adminController.renderAdminPage));
+router.get('/admin/orders', asyncHandler(adminController.renderAdminOrdersPage));
+router.get('/admin/products', asyncHandler(adminController.renderAdminProductsPage));
 router.get('/admin/categories', adminController.redirectAdminCategoryRoot);
-router.get('/admin/categories/:categorySlug', adminController.renderAdminCategoryPage);
-router.post('/admin/prices', adminController.saveProductPrice);
+router.get('/admin/categories/:categorySlug', asyncHandler(adminController.renderAdminCategoryPage));
+router.post('/admin/prices', asyncHandler(adminController.saveProductPrice));
 router.post('/admin/images', adminController.saveProductImage);
 router.post('/admin/products/edit', adminController.editProduct);
-router.post('/admin/products/delete', adminController.deleteProduct);
-router.post('/admin/categories/delete', adminController.deleteCategory);
-router.post('/admin/categories', adminController.saveCategory);
+router.post('/admin/products/delete', asyncHandler(adminController.deleteProduct));
+router.post('/admin/categories/delete', asyncHandler(adminController.deleteCategory));
+router.post('/admin/categories', asyncHandler(adminController.saveCategory));
 router.post('/admin/products', adminController.saveProduct);
 router.get('/admin/orders/accept', function (req, res) {
   return res.redirect('/admin/orders');
 });
-router.post('/admin/orders/accept', adminController.acceptOrderRequest);
+router.post('/admin/orders/accept', asyncHandler(adminController.acceptOrderRequest));
 router.get('/admin/orders/delete', function (req, res) {
   return res.redirect('/admin/orders');
 });
-router.post('/admin/orders/delete', adminController.deleteOrderRequest);
+router.post('/admin/orders/delete', asyncHandler(adminController.deleteOrderRequest));
 router.get('/admin/profile', authController.renderAdminProfile);
-router.post('/admin/profile/password', authController.handleAdminUpdatePassword);
+router.post('/admin/profile/password', asyncHandler(authController.handleAdminUpdatePassword));
 
-router.get('/products/:productId', publicController.renderProductDetail);
-
-module.exports = router;
+router.get('/products/:productId', asyncHandler(publicController.renderProductDetail));
+export default router;

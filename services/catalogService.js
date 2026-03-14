@@ -1,52 +1,42 @@
-var fs = require('fs');
-var path = require('path');
-var multer = require('multer');
-var sharp = require('sharp');
-var adminDataStore = require('../repositories/adminDataStore');
-var cloudinaryClient = require('../lib/cloudinary');
+import fs from 'fs';
+import path from 'path';
+import multer from 'multer';
+import sharp from 'sharp';
+import Category from '../models/Category.js';
+import Product from '../models/Product.js';
+import cloudinaryClient from '../lib/cloudinary.js';
+import database from '../lib/db.js';
+import { fileURLToPath } from 'node:url';
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
-var uploadedProductImagesDirPath = path.join(__dirname, '..', 'public', 'uploads', 'products');
-var publicAssetsDirPath = path.join(__dirname, '..', 'public');
-var defaultProductImagePath = '';
-var baseCategoryGroups = [];
-var baseProductSections = [];
-var baseCategoryKeywordMap = {};
-var homeCarouselImages = [
+
+
+
+let uploadedProductImagesDirPath = path.join(__dirname, '..', 'public', 'uploads', 'products');
+let publicAssetsDirPath = path.join(__dirname, '..', 'public');
+let defaultProductImagePath = '';
+let homeCarouselImages = [
   '/images/productParts/slidePasal.webp',
   '/images/productParts/slidePasal2.webp',
   '/images/productParts/slidePasal3.webp',
   '/images/productParts/helmet1.webp',
 ];
-var hasAttemptedDatabaseBootstrap = false;
-var parsedCatalogCacheTtlMs = Number(process.env.CATALOG_CACHE_TTL_MS);
-var catalogCacheTtlMs = Number.isFinite(parsedCatalogCacheTtlMs) && parsedCatalogCacheTtlMs >= 0 ? parsedCatalogCacheTtlMs : 15000;
-var cloudinaryUploadFolder = String(process.env.CLOUDINARY_PRODUCT_UPLOAD_FOLDER || 'bhutandevi/products').trim() || 'bhutandevi/products';
-var parsedCloudinaryMigrationCooldownMs = Number(process.env.CLOUDINARY_IMAGE_MIGRATION_COOLDOWN_MS);
-var cloudinaryImageMigrationCooldownMs = Number.isFinite(parsedCloudinaryMigrationCooldownMs) && parsedCloudinaryMigrationCooldownMs >= 0
-  ? Math.floor(parsedCloudinaryMigrationCooldownMs)
-  : 60000;
-var parsedCloudinaryUploadTimeoutMs = Number(process.env.CLOUDINARY_UPLOAD_TIMEOUT_MS);
-var cloudinaryUploadTimeoutMs = Number.isFinite(parsedCloudinaryUploadTimeoutMs) && parsedCloudinaryUploadTimeoutMs >= 0
+let parsedCatalogCacheTtlMs = Number(process.env.CATALOG_CACHE_TTL_MS);
+let catalogCacheTtlMs = Number.isFinite(parsedCatalogCacheTtlMs) && parsedCatalogCacheTtlMs >= 0
+  ? parsedCatalogCacheTtlMs
+  : 15000;
+let cloudinaryUploadFolder = String(process.env.CLOUDINARY_PRODUCT_UPLOAD_FOLDER || 'bhutandevi/products').trim()
+  || 'bhutandevi/products';
+let parsedCloudinaryUploadTimeoutMs = Number(process.env.CLOUDINARY_UPLOAD_TIMEOUT_MS);
+let cloudinaryUploadTimeoutMs = Number.isFinite(parsedCloudinaryUploadTimeoutMs) && parsedCloudinaryUploadTimeoutMs >= 0
   ? Math.floor(parsedCloudinaryUploadTimeoutMs)
   : 3500;
-var parsedImageAssetCheckCacheTtlMs = Number(process.env.IMAGE_ASSET_CHECK_CACHE_TTL_MS);
-var imageAssetCheckCacheTtlMs = Number.isFinite(parsedImageAssetCheckCacheTtlMs) && parsedImageAssetCheckCacheTtlMs >= 0
-  ? Math.floor(parsedImageAssetCheckCacheTtlMs)
-  : 60000;
-var cachedCatalogContext = null;
-var cachedCatalogContextExpiresAt = 0;
-var isCloudinaryMigrationInProgress = false;
-var lastCloudinaryImageMigrationAt = 0;
-var imageAssetExistenceCache = Object.create(null);
-
-function isMongoStorageEnabled() {
-  return String(process.env.MONGODB_URI || '').trim().length > 0;
-}
-
-function clearCatalogContextCache() {
-  cachedCatalogContext = null;
-  cachedCatalogContextExpiresAt = 0;
-}
+let catalogCategorySelectFields = 'name normalizedName slug description items sortOrder isActive';
+let catalogProductSelectFields = 'legacyId category name spec description price compareAtPrice quantity imageUrl images createdAt status isActive';
+let cachedCatalogContext = null;
+let cachedCatalogContextExpiresAt = 0;
+let catalogContextPromise = null;
 
 function ensureDirectoryExists(directoryPath) {
   if (!fs.existsSync(directoryPath)) {
@@ -56,44 +46,44 @@ function ensureDirectoryExists(directoryPath) {
 
 ensureDirectoryExists(uploadedProductImagesDirPath);
 
-var imageUploadStorage = multer.diskStorage({
+let imageUploadStorage = multer.diskStorage({
   destination: function (req, file, callback) {
     callback(null, uploadedProductImagesDirPath);
   },
   filename: function (req, file, callback) {
-    var extension = path.extname(file.originalname || '').toLowerCase();
-    var baseName = path
-      .basename(file.originalname || 'image', extension)
+    let extension = path.extname(file && file.originalname ? file.originalname : '').toLowerCase();
+    let baseName = path
+      .basename(file && file.originalname ? file.originalname : 'image', extension)
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, '-')
       .replace(/^-+|-+$/g, '');
-    var uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
-    var safeExtension = extension || '.webp';
+    let uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
+    let safeExtension = extension || '.webp';
+
     callback(null, (baseName || 'image') + '-' + uniqueSuffix + safeExtension);
   },
 });
 
-var allowedImageTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'image/svg+xml'];
-var maxFileSize = 5 * 1024 * 1024; // 5MB
+let allowedImageTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'image/svg+xml'];
+let maxFileSize = 5 * 1024 * 1024;
 
-var imageUpload = multer({
+let imageUpload = multer({
   storage: imageUploadStorage,
   limits: {
     fileSize: maxFileSize,
     files: 1,
   },
   fileFilter: function (req, file, callback) {
-    // Check mimetype
+    let originalName = String(file && file.originalname ? file.originalname : '');
+
     if (!file || !file.mimetype) {
       return callback(new Error('invalid-image-file'));
     }
 
-    if (!allowedImageTypes.includes(file.mimetype)) {
+    if (allowedImageTypes.indexOf(file.mimetype) === -1) {
       return callback(new Error('invalid-image-type'));
     }
 
-    // Validate filename to prevent path traversal
-    var originalName = String(file.originalname || '');
     if (originalName.indexOf('..') !== -1 || originalName.indexOf('/') !== -1 || originalName.indexOf('\\') !== -1) {
       return callback(new Error('invalid-filename'));
     }
@@ -101,120 +91,6 @@ var imageUpload = multer({
     callback(null, true);
   },
 });
-
-var adminData = loadAdminDataFromFile();
-
-refreshAdminData().catch(function (error) {
-  console.error('Initial admin data refresh failed:', error.message);
-});
-
-function normalizeForSearch(value) {
-  return String(value || '')
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, ' ')
-    .trim()
-    .replace(/\s+/g, ' ');
-}
-
-function tokenizeQuery(query) {
-  var normalized = normalizeForSearch(query);
-  return normalized ? normalized.split(' ') : [];
-}
-
-function includesQuery(value, query) {
-  var terms = tokenizeQuery(query);
-  if (terms.length === 0) {
-    return true;
-  }
-
-  var normalizedValue = normalizeForSearch(value);
-  var compactValue = normalizedValue.replace(/\s+/g, '');
-  var compactQuery = terms.join('');
-
-  if (compactQuery && compactValue.indexOf(compactQuery) !== -1) {
-    return true;
-  }
-
-  return terms.every(function (term) {
-    return normalizedValue.indexOf(term) !== -1;
-  });
-}
-
-function getHelmetCoverageType(item) {
-  var categoryKey = normalizeForSearch(item && item.type);
-  var searchableText = normalizeForSearch([
-    item && item.name,
-    item && item.spec,
-  ].join(' '));
-
-  if (categoryKey !== 'helmet' || !searchableText) {
-    return '';
-  }
-
-  if (
-    searchableText.indexOf('type full') !== -1 ||
-    searchableText.indexOf('full face') !== -1 ||
-    searchableText.indexOf('full helmet') !== -1
-  ) {
-    return 'full';
-  }
-
-  if (
-    searchableText.indexOf('type half') !== -1 ||
-    searchableText.indexOf('half face') !== -1 ||
-    searchableText.indexOf('half helmet') !== -1 ||
-    searchableText.indexOf('open face') !== -1
-  ) {
-    return 'half';
-  }
-
-  return '';
-}
-
-function getHelmetCoverageLabel(item) {
-  var coverageType = getHelmetCoverageType(item);
-
-  if (coverageType === 'full') {
-    return 'Full Face Helmets';
-  }
-
-  if (coverageType === 'half') {
-    return 'Half Face Helmets';
-  }
-
-  return '';
-}
-
-function getHelmetCoverageSearchKeywords(item) {
-  var coverageType = getHelmetCoverageType(item);
-
-  if (coverageType === 'full') {
-    return ['full helmet', 'full helmets', 'full face helmet', 'full face helmets'];
-  }
-
-  if (coverageType === 'half') {
-    return ['half helmet', 'half helmets', 'half face helmet', 'half face helmets', 'open face helmet', 'open face helmets'];
-  }
-
-  return [];
-}
-
-function buildProductSearchableText(item, section) {
-  var baseText = [
-    section && section.title,
-    section && section.subtitle,
-    item && item.type,
-    item && item.name,
-    item && item.spec,
-  ].join(' ');
-  var coverageKeywords = getHelmetCoverageSearchKeywords(item);
-
-  if (!coverageKeywords.length) {
-    return baseText;
-  }
-
-  return [baseText].concat(coverageKeywords).join(' ');
-}
 
 function toTrimmedString(value) {
   if (value === null || typeof value === 'undefined') {
@@ -224,27 +100,68 @@ function toTrimmedString(value) {
   return String(value).trim();
 }
 
-function normalizeOptionalDescription(value) {
-  var cleanedValue = toTrimmedString(value);
+function normalizeForSearch(value) {
+  return toTrimmedString(value)
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim()
+    .replace(/\s+/g, ' ');
+}
 
-  if (!cleanedValue) {
-    return '';
-  }
+function normalizeList(values) {
+  let list = Array.isArray(values) ? values : [];
+  let seen = Object.create(null);
+  let normalizedValues = [];
 
-  if (/^n\/?a$/i.test(cleanedValue) || /^not available$/i.test(cleanedValue)) {
-    return '';
-  }
+  list.forEach(function (value) {
+    let trimmed = toTrimmedString(value);
+    let key = normalizeForSearch(trimmed);
 
-  return cleanedValue;
+    if (!trimmed || !key || seen[key]) {
+      return;
+    }
+
+    seen[key] = true;
+    normalizedValues.push(trimmed);
+  });
+
+  return normalizedValues;
 }
 
 function parseCommaSeparatedList(value) {
   return normalizeList(String(value || '').split(/[,\n]+/));
 }
 
+function cloneValue(value) {
+  return JSON.parse(JSON.stringify(value));
+}
+
+function formatNprAmount(value) {
+  let numericValue = Number(value);
+  let hasDecimals = false;
+
+  if (!Number.isFinite(numericValue) || numericValue < 0) {
+    return '';
+  }
+
+  hasDecimals = Math.abs(numericValue % 1) > 0;
+
+  return 'NPR ' + numericValue.toLocaleString('en-US', {
+    minimumFractionDigits: hasDecimals ? 2 : 0,
+    maximumFractionDigits: 2,
+  });
+}
+
+function slugify(value) {
+  return toTrimmedString(value)
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+}
+
 function normalizeAssetPath(value) {
-  var trimmed = toTrimmedString(value);
-  var normalizedValue = '';
+  let trimmed = toTrimmedString(value);
+  let normalizedValue = '';
 
   if (!trimmed) {
     return '';
@@ -258,29 +175,21 @@ function normalizeAssetPath(value) {
     return '';
   }
 
-  if (normalizedValue.indexOf('/images/helmets/') === 0) {
-    normalizedValue = normalizedValue.replace('/images/helmets/', '/images/productParts/');
-  }
-
-  // Accept malformed schemes like `https:/example.com/...`.
   if (/^https?:\/[^/]/i.test(normalizedValue)) {
     normalizedValue = normalizedValue.replace(/^https?:\/(?!\/)/i, function (protocolPrefix) {
       return /^https:/i.test(protocolPrefix) ? 'https://' : 'http://';
     });
   }
 
-  // Handle protocol-relative URLs.
   if (normalizedValue.indexOf('//') === 0) {
     return 'https:' + normalizedValue;
   }
 
-  // Handle bare Cloudinary host paths.
   if (/^res\.cloudinary\.com\//i.test(normalizedValue)) {
     return 'https://' + normalizedValue;
   }
 
   if (/^https?:\/\//i.test(normalizedValue)) {
-    // Avoid mixed-content issues when Cloudinary URLs are stored as http.
     if (/^http:\/\/res\.cloudinary\.com\//i.test(normalizedValue)) {
       return normalizedValue.replace(/^http:\/\//i, 'https://');
     }
@@ -292,19 +201,23 @@ function normalizeAssetPath(value) {
     normalizedValue = normalizedValue.replace(/^\.+/, '');
   }
 
-  if (normalizedValue.charAt(0) === '/') {
-    return normalizedValue;
+  if (normalizedValue.charAt(0) !== '/') {
+    normalizedValue = '/' + normalizedValue.replace(/^\/+/, '');
   }
 
-  return '/' + normalizedValue.replace(/^\/+/, '');
+  if (normalizedValue.indexOf('..') !== -1) {
+    return '';
+  }
+
+  return normalizedValue;
 }
 
 function getPublicFilePathFromAssetPath(assetPath) {
-  var normalizedPath = normalizeAssetPath(assetPath);
-  var cleanPath = '';
-  var decodedPath = '';
-  var relativePath = '';
-  var resolvedPath = '';
+  let normalizedPath = normalizeAssetPath(assetPath);
+  let cleanPath = '';
+  let decodedPath = '';
+  let relativePath = '';
+  let resolvedPath = '';
 
   if (!normalizedPath || /^https?:\/\//i.test(normalizedPath)) {
     return '';
@@ -328,89 +241,25 @@ function getPublicFilePathFromAssetPath(assetPath) {
   return resolvedPath;
 }
 
-function getCachedImageAssetExistence(publicFilePath) {
-  var cacheEntry = imageAssetExistenceCache[publicFilePath];
-  if (!cacheEntry || cacheEntry.expiresAt < Date.now()) {
-    return null;
-  }
-
-  return Boolean(cacheEntry.exists);
-}
-
-function setCachedImageAssetExistence(publicFilePath, exists) {
-  if (!publicFilePath) {
-    return;
-  }
-
-  imageAssetExistenceCache[publicFilePath] = {
-    exists: Boolean(exists),
-    expiresAt: Date.now() + imageAssetCheckCacheTtlMs,
-  };
-}
-
-function doesImageAssetExist(assetPath) {
-  var publicFilePath = getPublicFilePathFromAssetPath(assetPath);
-  var cachedExists = null;
-  var fileExists = false;
-
-  if (!publicFilePath) {
-    return false;
-  }
-
-  cachedExists = getCachedImageAssetExistence(publicFilePath);
-  if (typeof cachedExists === 'boolean') {
-    return cachedExists;
-  }
-
-  fileExists = fs.existsSync(publicFilePath);
-  setCachedImageAssetExistence(publicFilePath, fileExists);
-  return fileExists;
-}
-
-function isRenderableImagePath(assetPath) {
-  var normalizedPath = normalizeAssetPath(assetPath);
-  var publicFilePath = '';
-  var cachedExists = null;
-
-  if (!normalizedPath) {
-    return false;
-  }
-
-  if (/^https?:\/\//i.test(normalizedPath)) {
-    return true;
-  }
-
-  // Local product and catalog image paths are managed under public assets.
-  // Fast-path avoids synchronous disk checks on hot request paths.
-  if (
-    normalizedPath.indexOf('/uploads/products/') === 0 ||
-    normalizedPath.indexOf('/images/') === 0
-  ) {
-    publicFilePath = getPublicFilePathFromAssetPath(normalizedPath);
-    cachedExists = getCachedImageAssetExistence(publicFilePath);
-    if (typeof cachedExists === 'boolean') {
-      return cachedExists;
-    }
-
-    setCachedImageAssetExistence(publicFilePath, true);
-    return true;
-  }
-
-  return doesImageAssetExist(normalizedPath);
-}
-
-function ensureRenderableImagePath(assetPath) {
-  var normalizedPath = normalizeAssetPath(assetPath);
-
-  return isRenderableImagePath(normalizedPath) ? normalizedPath : '';
-}
-
 function getUploadedImagePath(file) {
   if (!file || !file.filename) {
     return '';
   }
 
   return '/uploads/products/' + file.filename;
+}
+
+function normalizeImageList(images, fallbackImage) {
+  let imageList = normalizeList((images || []).map(function (imagePath) {
+    return normalizeAssetPath(imagePath);
+  }).filter(Boolean));
+  let primaryImage = normalizeAssetPath(fallbackImage);
+
+  if (primaryImage) {
+    imageList.unshift(primaryImage);
+  }
+
+  return normalizeList(imageList);
 }
 
 async function deleteFileSafely(filePath) {
@@ -420,29 +269,31 @@ async function deleteFileSafely(filePath) {
 
   try {
     await fs.promises.unlink(filePath);
-    setCachedImageAssetExistence(filePath, false);
     return true;
   } catch (error) {
     if (error && error.code === 'ENOENT') {
-      setCachedImageAssetExistence(filePath, false);
       return false;
     }
+
     console.error('Failed to remove temporary upload file:', error.message);
     return false;
   }
 }
 
-async function optimizeUploadedImageLocally(file) {
-  var sourceFilePath = file && file.path ? file.path : '';
-  var uploadedImagePath = getUploadedImagePath(file);
+async function optimizeUploadedImage(file) {
+  let sourceFilePath = file && file.path ? file.path : '';
+  let uploadedImagePath = getUploadedImagePath(file);
+  let sourcePathParts = null;
+  let optimizedBaseName = '';
+  let optimizedFilePath = '';
 
   if (!sourceFilePath || !uploadedImagePath) {
     return uploadedImagePath;
   }
 
-  var sourcePathParts = path.parse(sourceFilePath);
-  var optimizedBaseName = sourcePathParts.name + '-opt.webp';
-  var optimizedFilePath = path.join(sourcePathParts.dir, optimizedBaseName);
+  sourcePathParts = path.parse(sourceFilePath);
+  optimizedBaseName = sourcePathParts.name + '-opt.webp';
+  optimizedFilePath = path.join(sourcePathParts.dir, optimizedBaseName);
 
   try {
     await sharp(sourceFilePath)
@@ -463,18 +314,11 @@ async function optimizeUploadedImageLocally(file) {
       await deleteFileSafely(sourceFilePath);
     }
 
-    var optimizedAssetPath = '/uploads/products/' + optimizedBaseName;
-    setCachedImageAssetExistence(getPublicFilePathFromAssetPath(optimizedAssetPath), true);
-    return optimizedAssetPath;
+    return '/uploads/products/' + optimizedBaseName;
   } catch (error) {
     console.error('Failed to optimize uploaded image:', error.message);
-    setCachedImageAssetExistence(getPublicFilePathFromAssetPath(uploadedImagePath), true);
     return uploadedImagePath;
   }
-}
-
-async function optimizeUploadedImage(file) {
-  return optimizeUploadedImageLocally(file);
 }
 
 function isCloudinaryUrl(assetPath) {
@@ -482,9 +326,9 @@ function isCloudinaryUrl(assetPath) {
 }
 
 async function uploadImageSourceToCloudinary(sourcePath, fallbackPath) {
-  var uploadResult = null;
-  var secureUrl = '';
-  var uploadUrl = '';
+  let uploadResult = null;
+  let secureUrl = '';
+  let uploadUrl = '';
 
   try {
     uploadResult = await cloudinaryClient.cloudinary.uploader.upload(sourcePath, {
@@ -519,28 +363,28 @@ async function uploadImageSourceToCloudinary(sourcePath, fallbackPath) {
 }
 
 async function uploadImageSourceToCloudinaryWithTimeout(sourcePath, fallbackPath, timeoutMs) {
-  var safeFallbackPath = normalizeAssetPath(fallbackPath);
-  var uploadPromise = uploadImageSourceToCloudinary(sourcePath, safeFallbackPath).catch(function () {
+  let safeFallbackPath = normalizeAssetPath(fallbackPath);
+  let uploadPromise = uploadImageSourceToCloudinary(sourcePath, safeFallbackPath).catch(function () {
     return safeFallbackPath;
   });
-  var timeoutPromise = null;
 
   if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
     return uploadPromise;
   }
 
-  timeoutPromise = new Promise(function (resolve) {
-    setTimeout(function () {
-      resolve(safeFallbackPath);
-    }, timeoutMs);
-  });
-
-  return Promise.race([uploadPromise, timeoutPromise]);
+  return Promise.race([
+    uploadPromise,
+    new Promise(function (resolve) {
+      setTimeout(function () {
+        resolve(safeFallbackPath);
+      }, timeoutMs);
+    }),
+  ]);
 }
 
 async function promoteImageToCloudinary(assetPath) {
-  var normalizedAssetPath = normalizeAssetPath(assetPath);
-  var localFilePath = '';
+  let normalizedAssetPath = normalizeAssetPath(assetPath);
+  let localFilePath = '';
 
   if (!normalizedAssetPath || isCloudinaryUrl(normalizedAssetPath)) {
     return normalizedAssetPath;
@@ -563,9 +407,9 @@ async function promoteImageToCloudinary(assetPath) {
 }
 
 async function optimizeAndPromoteUploadedImage(file) {
-  var localImagePath = normalizeAssetPath(await optimizeUploadedImage(file));
-  var localFilePath = '';
-  var cloudImagePath = '';
+  let localImagePath = normalizeAssetPath(await optimizeUploadedImage(file));
+  let localFilePath = '';
+  let cloudImagePath = '';
 
   if (!localImagePath) {
     return '';
@@ -589,6 +433,7 @@ async function optimizeAndPromoteUploadedImage(file) {
     localImagePath,
     cloudinaryUploadTimeoutMs
   ));
+
   if (isCloudinaryUrl(cloudImagePath)) {
     await cleanupLocalImageAsset(localImagePath);
     return cloudImagePath;
@@ -598,8 +443,8 @@ async function optimizeAndPromoteUploadedImage(file) {
 }
 
 async function cleanupLocalImageAsset(assetPath) {
-  var normalizedAssetPath = normalizeAssetPath(assetPath);
-  var localFilePath = '';
+  let normalizedAssetPath = normalizeAssetPath(assetPath);
+  let localFilePath = '';
 
   if (!normalizedAssetPath || /^https?:\/\//i.test(normalizedAssetPath)) {
     return;
@@ -613,1875 +458,578 @@ async function cleanupLocalImageAsset(assetPath) {
   await deleteFileSafely(localFilePath);
 }
 
-function getProductOverrideEntry(productId) {
-  var cleanId = toTrimmedString(productId);
-  if (!cleanId || !adminData || !adminData.productOverrides || typeof adminData.productOverrides !== 'object') {
-    return {};
-  }
-
-  var entry = adminData.productOverrides[cleanId];
-  return entry && typeof entry === 'object' ? entry : {};
+function clearCatalogContextCache() {
+  cachedCatalogContext = null;
+  cachedCatalogContextExpiresAt = 0;
+  catalogContextPromise = null;
 }
 
-function isDeletedProduct(productId) {
-  var cleanId = toTrimmedString(productId);
-  if (!cleanId || !adminData || !Array.isArray(adminData.deletedProductIds)) {
-    return false;
-  }
-
-  return adminData.deletedProductIds.indexOf(cleanId) !== -1;
-}
-
-function getCategoryKeywordCandidates(categoryName) {
-  var normalizedName = normalizeForSearch(categoryName);
-  var keywordCandidates = [];
-
-  if (!normalizedName) {
-    return [];
-  }
-
-  keywordCandidates.push(normalizedName);
-
-  if (baseCategoryKeywordMap && Array.isArray(baseCategoryKeywordMap[normalizedName])) {
-    keywordCandidates = mergeUniqueValues(keywordCandidates, baseCategoryKeywordMap[normalizedName]);
-  }
-
-  if (normalizedName.length > 1 && normalizedName.charAt(normalizedName.length - 1) === 's') {
-    keywordCandidates.push(normalizedName.slice(0, -1));
-  } else {
-    keywordCandidates.push(normalizedName + 's');
-  }
-
-  return normalizeList(keywordCandidates).map(function (value) {
-    return normalizeForSearch(value);
-  });
-}
-
-function doCategoryKeywordsMatch(leftName, rightName) {
-  var leftKeywords = getCategoryKeywordCandidates(leftName);
-  var rightKeywords = getCategoryKeywordCandidates(rightName);
-  var leftIndex = Object.create(null);
-  var leftKey = normalizeForSearch(leftName);
-  var rightKey = normalizeForSearch(rightName);
-
-  if (!leftKey || !rightKey) {
-    return false;
-  }
-
-  if (
-    leftKey === rightKey ||
-    leftKey.indexOf(rightKey) !== -1 ||
-    rightKey.indexOf(leftKey) !== -1
-  ) {
-    return true;
-  }
-
-  leftKeywords.forEach(function (keyword) {
-    leftIndex[keyword] = true;
-  });
-
-  for (var index = 0; index < rightKeywords.length; index += 1) {
-    var keyword = rightKeywords[index];
-    if (!keyword) {
-      continue;
-    }
-
-    if (leftIndex[keyword]) {
-      return true;
-    }
-  }
-
-  return false;
-}
-
-function isDeletedCategory(categoryName) {
-  var cleanCategoryName = toTrimmedString(categoryName);
-  var targetKey = normalizeForSearch(cleanCategoryName);
-
-  if (!targetKey || !adminData || !Array.isArray(adminData.deletedCategoryNames)) {
-    return false;
-  }
-
-  return adminData.deletedCategoryNames.some(function (storedCategoryName) {
-    return doCategoryKeywordsMatch(storedCategoryName, cleanCategoryName);
-  });
-}
-
-function removeDeletedCategory(categoryName) {
-  var targetName = toTrimmedString(categoryName);
-  var targetKey = normalizeForSearch(targetName);
-
-  if (!targetKey || !adminData || !Array.isArray(adminData.deletedCategoryNames)) {
-    return;
-  }
-
-  adminData.deletedCategoryNames = adminData.deletedCategoryNames.filter(function (storedCategoryName) {
-    return !doCategoryKeywordsMatch(storedCategoryName, targetName);
-  });
-}
-
-function normalizeList(values) {
-  var list = Array.isArray(values) ? values : [];
-  var seen = Object.create(null);
-  var normalizedValues = [];
-
-  list.forEach(function (value) {
-    var trimmed = toTrimmedString(value);
-    var key = normalizeForSearch(trimmed);
-
-    if (!trimmed || !key || seen[key]) {
-      return;
-    }
-
-    seen[key] = true;
-    normalizedValues.push(trimmed);
-  });
-
-  return normalizedValues;
-}
-
-function mergeUniqueValues(firstList, secondList) {
-  return normalizeList([].concat(firstList || [], secondList || []));
-}
-
-function buildAdminProductOrderLookup() {
-  var orderLookup = Object.create(null);
-
-  if (!adminData || !Array.isArray(adminData.products)) {
-    return orderLookup;
-  }
-
-  adminData.products.forEach(function (product, index) {
-    var productId = toTrimmedString(product && product.id);
-
-    if (!productId) {
-      return;
-    }
-
-    // Higher index means product was added later.
-    orderLookup[productId] = index + 1;
-  });
-
-  return orderLookup;
-}
-
-function getProductAddedOrder(productId, adminProductOrderLookup) {
-  var cleanId = toTrimmedString(productId);
-  var rawOrder = cleanId && adminProductOrderLookup ? Number(adminProductOrderLookup[cleanId]) : 0;
-
-  if (!Number.isFinite(rawOrder) || rawOrder < 1) {
-    return 0;
-  }
-
-  return Math.floor(rawOrder);
-}
-
-function sortProductsByLatestFirst(items) {
-  var list = Array.isArray(items) ? items : [];
-
-  list.sort(function (left, right) {
-    var leftOrder = Number(left && left.addedOrder);
-    var rightOrder = Number(right && right.addedOrder);
-    var normalizedLeftOrder = Number.isFinite(leftOrder) ? leftOrder : 0;
-    var normalizedRightOrder = Number.isFinite(rightOrder) ? rightOrder : 0;
-
-    return (
-      (normalizedRightOrder - normalizedLeftOrder) ||
-      String(left && left.name ? left.name : '').localeCompare(String(right && right.name ? right.name : ''))
-    );
-  });
-
-  return list;
-}
-
-function getEffectivePrice(productId, fallbackPrice) {
-  var cleanId = toTrimmedString(productId);
-  var defaultPrice = toTrimmedString(fallbackPrice);
-  var productOverridePrice = toTrimmedString(getProductOverrideEntry(cleanId).price);
-  var overridePrice = '';
-
-  if (
-    cleanId &&
-    adminData &&
-    adminData.priceOverrides &&
-    typeof adminData.priceOverrides === 'object'
-  ) {
-    overridePrice = toTrimmedString(adminData.priceOverrides[cleanId]);
-  }
-
-  return productOverridePrice || overridePrice || defaultPrice;
-}
-
-function getEffectiveImage(productId, fallbackImage) {
-  var cleanId = toTrimmedString(productId);
-  var productOverrideImage = normalizeAssetPath(getProductOverrideEntry(cleanId).image);
-  var defaultImage = normalizeAssetPath(fallbackImage);
-  var overrideImage = '';
-  var candidateImages = [];
-  var candidateIndex = 0;
-  var candidatePath = '';
-
-  if (
-    cleanId &&
-    adminData &&
-    adminData.imageOverrides &&
-    typeof adminData.imageOverrides === 'object'
-  ) {
-    overrideImage = normalizeAssetPath(adminData.imageOverrides[cleanId]);
-  }
-
-  candidateImages = [
-    productOverrideImage,
-    overrideImage,
-    defaultImage,
-  ];
-
-  for (candidateIndex = 0; candidateIndex < candidateImages.length; candidateIndex += 1) {
-    candidatePath = normalizeAssetPath(candidateImages[candidateIndex]);
-    if (!candidatePath) {
-      continue;
-    }
-
-    if (isRenderableImagePath(candidatePath)) {
-      return candidatePath;
-    }
-  }
-
-  return '';
-}
-
-function normalizeImageList(images, fallbackImage) {
-  var normalizedImages = normalizeList((images || []).map(function (imagePath) {
-    return ensureRenderableImagePath(imagePath);
-  }));
-  var primaryImage = ensureRenderableImagePath(fallbackImage);
-
-  if (primaryImage) {
-    normalizedImages = [primaryImage].concat(normalizedImages);
-  }
-
-  normalizedImages = normalizeList(normalizedImages);
-  return normalizedImages;
-}
-
-function cloneCategoryGroups(groups) {
-  return (groups || []).map(function (group) {
-    return {
-      name: toTrimmedString(group.name),
-      description: toTrimmedString(group.description),
-      items: normalizeList(group.items),
-    };
-  });
-}
-
-function cloneProductSections(sections, adminProductOrderLookup) {
-  return (sections || []).map(function (section) {
-    var clonedSection = {
-      title: toTrimmedString(section.title),
-      subtitle: toTrimmedString(section.subtitle),
-      items: (section.items || [])
-        .filter(function (item) {
-          return !isDeletedProduct(item.id);
-        })
-        .map(function (item) {
-          var itemId = toTrimmedString(item.id);
-          var productOverride = getProductOverrideEntry(itemId);
-          var effectiveType = toTrimmedString(productOverride.type) || toTrimmedString(item.type);
-          var overridePrice = toTrimmedString(productOverride.price);
-          var hasOverridePrice = Boolean(overridePrice);
-          var overrideQuantity = toTrimmedString(productOverride.quantity);
-          var hasOverrideQuantity = Boolean(overrideQuantity);
-          var hasPriceOverride =
-            itemId &&
-            adminData &&
-            adminData.priceOverrides &&
-            Object.prototype.hasOwnProperty.call(adminData.priceOverrides, itemId);
-
-          if (isDeletedCategory(effectiveType)) {
-            return null;
-          }
-
-          var effectiveName = toTrimmedString(productOverride.name) || toTrimmedString(item.name);
-          var effectiveSpec = toTrimmedString(productOverride.spec) || toTrimmedString(item.spec);
-          var effectiveImage = getEffectiveImage(itemId, productOverride.image || item.image);
-          var effectiveOriginalPrice = hasOverridePrice
-            ? toTrimmedString(productOverride.originalPrice)
-            : toTrimmedString(item.originalPrice);
-          var effectiveDiscountPercent = hasOverridePrice
-            ? toTrimmedString(productOverride.discountPercent)
-            : toTrimmedString(item.discountPercent);
-          var effectiveQuantity = hasOverrideQuantity
-            ? overrideQuantity
-            : toTrimmedString(item.quantity);
-
-          if (hasPriceOverride) {
-            effectiveOriginalPrice = '';
-            effectiveDiscountPercent = '';
-          }
-
-          return {
-            id: itemId,
-            type: effectiveType,
-            name: effectiveName,
-            spec: effectiveSpec,
-            price: getEffectivePrice(itemId, overridePrice || item.price),
-            originalPrice: effectiveOriginalPrice,
-            discountPercent: effectiveDiscountPercent,
-            quantity: effectiveQuantity,
-            image: effectiveImage,
-            images: normalizeImageList(item.images, effectiveImage),
-            addedOrder: getProductAddedOrder(itemId, adminProductOrderLookup),
-          };
-        })
-        .filter(Boolean),
-    };
-
-    sortProductsByLatestFirst(clonedSection.items);
-    return clonedSection;
-  });
-}
-
-function ensureAdminCategoryShape(rawCategory) {
-  if (!rawCategory || typeof rawCategory !== 'object') {
-    return null;
-  }
-
-  var categoryName = toTrimmedString(rawCategory.name);
-  if (!categoryName) {
-    return null;
-  }
-
+function createEmptyCatalogContext() {
   return {
-    name: categoryName,
-    description: normalizeOptionalDescription(rawCategory.description),
-    items: normalizeList(rawCategory.items),
+    categoryGroups: [],
+    productSections: [],
+    categoryKeywordMap: {},
   };
 }
 
-function ensureAdminProductShape(rawProduct) {
-  if (!rawProduct || typeof rawProduct !== 'object') {
-    return null;
-  }
+function computeDiscountPercent(price, compareAtPrice) {
+  let numericPrice = Number(price);
+  let numericCompareAtPrice = Number(compareAtPrice);
+  let percentage = 0;
 
-  var type = toTrimmedString(rawProduct.type);
-  var name = toTrimmedString(rawProduct.name);
-
-  if (!type || !name) {
-    return null;
-  }
-
-  var image = '';
-  var imageCandidates = [normalizeAssetPath(rawProduct.image)];
-  var normalizedProductImages = normalizeList((rawProduct.images || []).map(function (imagePath) {
-    return normalizeAssetPath(imagePath);
-  }));
-
-  imageCandidates = imageCandidates.concat(normalizedProductImages);
-
-  imageCandidates.some(function (candidatePath) {
-    if (!candidatePath || !isRenderableImagePath(candidatePath)) {
-      return false;
-    }
-
-    image = candidatePath;
-    return true;
-  });
-
-  return {
-    id: buildSlug(rawProduct.id) || buildSlug(type + ' ' + name) || String(Date.now()),
-    type: type,
-    name: name,
-    spec: normalizeOptionalDescription(rawProduct.spec),
-    price: toTrimmedString(rawProduct.price) || 'Contact for price',
-    originalPrice: toTrimmedString(rawProduct.originalPrice),
-    discountPercent: toTrimmedString(rawProduct.discountPercent),
-    quantity: toTrimmedString(rawProduct.quantity),
-    image: image,
-    images: normalizeImageList(rawProduct.images, image),
-  };
-}
-
-function buildCategoryProductNameKey(categoryName, productName) {
-  var categoryKey = normalizeForSearch(categoryName);
-  var productKey = normalizeForSearch(productName);
-
-  if (!categoryKey || !productKey) {
+  if (!Number.isFinite(numericPrice) || numericPrice <= 0) {
     return '';
   }
 
-  return categoryKey + '::' + productKey;
-}
-
-function createDefaultAdminData() {
-  return {
-    categories: [],
-    products: [],
-    priceOverrides: {},
-    imageOverrides: {},
-    productOverrides: {},
-    deletedProductIds: [],
-    deletedCategoryNames: [],
-  };
-}
-
-function normalizeAdminDataShape(rawData) {
-  var safeData = createDefaultAdminData();
-  var categoryIndexByKey = Object.create(null);
-  var allProducts = [];
-  var dedupedProducts = [];
-  var seenProductIds = Object.create(null);
-  var seenCategoryProductNames = Object.create(null);
-  var activeProductIdKeys = Object.create(null);
-  var activeCategoryKeys = Object.create(null);
-  var productIndex = 0;
-  var productIdKey = '';
-  var categoryProductKey = '';
-
-  if (!rawData || typeof rawData !== 'object') {
-    return safeData;
-  }
-
-  if (Array.isArray(rawData.categories)) {
-    rawData.categories.forEach(function (category) {
-      var safeCategory = ensureAdminCategoryShape(category);
-      var safeCategoryKey = '';
-      var existingCategory = null;
-      if (safeCategory) {
-        safeCategoryKey = normalizeForSearch(safeCategory.name);
-        if (!safeCategoryKey) {
-          return;
-        }
-
-        if (typeof categoryIndexByKey[safeCategoryKey] === 'number') {
-          existingCategory = safeData.categories[categoryIndexByKey[safeCategoryKey]];
-          if (safeCategory.description) {
-            existingCategory.description = safeCategory.description;
-          }
-          existingCategory.items = mergeUniqueValues(existingCategory.items, safeCategory.items);
-          return;
-        }
-
-        categoryIndexByKey[safeCategoryKey] = safeData.categories.length;
-        safeData.categories.push(safeCategory);
-      }
-    });
-  }
-
-  if (Array.isArray(rawData.products)) {
-    rawData.products.forEach(function (product) {
-      var safeProduct = ensureAdminProductShape(product);
-      if (safeProduct) {
-        allProducts.push(safeProduct);
-      }
-    });
-  }
-
-  if (rawData.priceOverrides && typeof rawData.priceOverrides === 'object') {
-    Object.keys(rawData.priceOverrides).forEach(function (productId) {
-      var cleanId = toTrimmedString(productId);
-      var cleanPrice = toTrimmedString(rawData.priceOverrides[productId]);
-      if (!cleanId || !cleanPrice) {
-        return;
-      }
-      safeData.priceOverrides[cleanId] = cleanPrice;
-    });
-  }
-
-  if (rawData.imageOverrides && typeof rawData.imageOverrides === 'object') {
-    Object.keys(rawData.imageOverrides).forEach(function (productId) {
-      var cleanId = toTrimmedString(productId);
-      var cleanImage = normalizeAssetPath(rawData.imageOverrides[productId]);
-      if (!cleanId || !cleanImage) {
-        return;
-      }
-      safeData.imageOverrides[cleanId] = cleanImage;
-    });
-  }
-
-  if (rawData.productOverrides && typeof rawData.productOverrides === 'object') {
-    Object.keys(rawData.productOverrides).forEach(function (productId) {
-      var cleanId = toTrimmedString(productId);
-      var rawOverride = rawData.productOverrides[productId];
-      var normalizedOverride = {};
-
-      if (!cleanId || !rawOverride || typeof rawOverride !== 'object') {
-        return;
-      }
-
-      var cleanType = toTrimmedString(rawOverride.type);
-      var cleanName = toTrimmedString(rawOverride.name);
-      var cleanSpec = normalizeOptionalDescription(rawOverride.spec);
-      var cleanPrice = toTrimmedString(rawOverride.price);
-      var cleanOriginalPrice = toTrimmedString(rawOverride.originalPrice);
-      var cleanDiscountPercent = toTrimmedString(rawOverride.discountPercent);
-      var cleanQuantity = toTrimmedString(rawOverride.quantity);
-      var cleanImage = normalizeAssetPath(rawOverride.image);
-
-      if (cleanType) {
-        normalizedOverride.type = cleanType;
-      }
-
-      if (cleanName) {
-        normalizedOverride.name = cleanName;
-      }
-
-      if (cleanSpec) {
-        normalizedOverride.spec = cleanSpec;
-      }
-
-      if (cleanPrice) {
-        normalizedOverride.price = cleanPrice;
-      }
-
-      if (cleanOriginalPrice) {
-        normalizedOverride.originalPrice = cleanOriginalPrice;
-      }
-
-      if (cleanDiscountPercent) {
-        normalizedOverride.discountPercent = cleanDiscountPercent;
-      }
-
-      if (cleanQuantity) {
-        normalizedOverride.quantity = cleanQuantity;
-      }
-
-      if (cleanImage) {
-        normalizedOverride.image = cleanImage;
-      }
-
-      if (Object.keys(normalizedOverride).length > 0) {
-        safeData.productOverrides[cleanId] = normalizedOverride;
-      }
-    });
-  }
-
-  for (productIndex = allProducts.length - 1; productIndex >= 0; productIndex -= 1) {
-    var candidateProduct = allProducts[productIndex];
-
-    productIdKey = normalizeForSearch(candidateProduct && candidateProduct.id);
-    categoryProductKey = buildCategoryProductNameKey(
-      candidateProduct && candidateProduct.type,
-      candidateProduct && candidateProduct.name
-    );
-
-    if (
-      (productIdKey && seenProductIds[productIdKey]) ||
-      (categoryProductKey && seenCategoryProductNames[categoryProductKey])
-    ) {
-      continue;
-    }
-
-    if (productIdKey) {
-      seenProductIds[productIdKey] = true;
-      activeProductIdKeys[productIdKey] = true;
-    }
-
-    if (categoryProductKey) {
-      seenCategoryProductNames[categoryProductKey] = true;
-    }
-
-    dedupedProducts.push(candidateProduct);
-  }
-
-  safeData.products = dedupedProducts.reverse();
-
-  safeData.products.forEach(function (product) {
-    var productCategoryKey = normalizeForSearch(product && product.type);
-    if (productCategoryKey) {
-      activeCategoryKeys[productCategoryKey] = true;
-    }
-  });
-
-  safeData.categories.forEach(function (category) {
-    var categoryKey = normalizeForSearch(category && category.name);
-    if (categoryKey) {
-      activeCategoryKeys[categoryKey] = true;
-    }
-  });
-
-  if (Array.isArray(rawData.deletedProductIds)) {
-    safeData.deletedProductIds = normalizeList(rawData.deletedProductIds).filter(function (id) {
-      return !activeProductIdKeys[normalizeForSearch(id)];
-    });
-  }
-
-  if (Array.isArray(rawData.deletedCategoryNames)) {
-    safeData.deletedCategoryNames = normalizeList(rawData.deletedCategoryNames).filter(function (name) {
-      return !activeCategoryKeys[normalizeForSearch(name)];
-    });
-  }
-
-  safeData.deletedProductIds.forEach(function (id) {
-    delete safeData.priceOverrides[id];
-    delete safeData.imageOverrides[id];
-    delete safeData.productOverrides[id];
-  });
-
-  return safeData;
-}
-
-function getAdminProductById(data, productId) {
-  var cleanId = toTrimmedString(productId);
-  var matchedProduct = null;
-
-  if (!cleanId || !data || !Array.isArray(data.products)) {
-    return null;
-  }
-
-  data.products.some(function (product) {
-    if (toTrimmedString(product && product.id) === cleanId) {
-      matchedProduct = product;
-      return true;
-    }
-    return false;
-  });
-
-  return matchedProduct;
-}
-
-function pickRenderableNonDefaultImage(candidateImages) {
-  var imageCandidates = Array.isArray(candidateImages) ? candidateImages : [];
-  var candidateIndex = 0;
-  var normalizedCandidate = '';
-
-  for (candidateIndex = 0; candidateIndex < imageCandidates.length; candidateIndex += 1) {
-    normalizedCandidate = normalizeAssetPath(imageCandidates[candidateIndex]);
-    if (!normalizedCandidate) {
-      continue;
-    }
-
-    if (isRenderableImagePath(normalizedCandidate)) {
-      return normalizedCandidate;
-    }
-  }
-
-  return '';
-}
-
-function getFallbackImageFromAdminData(fallbackData, productId) {
-  var cleanId = toTrimmedString(productId);
-  var fallbackProduct = getAdminProductById(fallbackData, cleanId);
-  var fallbackProductOverride = null;
-  var fallbackImageOverride = '';
-  var fallbackProductImages = [];
-  var candidateImages = [];
-
-  if (!cleanId || !fallbackData || typeof fallbackData !== 'object') {
+  if (!Number.isFinite(numericCompareAtPrice) || numericCompareAtPrice <= numericPrice) {
     return '';
   }
 
-  if (
-    fallbackData.productOverrides &&
-    typeof fallbackData.productOverrides === 'object' &&
-    fallbackData.productOverrides[cleanId] &&
-    typeof fallbackData.productOverrides[cleanId] === 'object'
-  ) {
-    fallbackProductOverride = fallbackData.productOverrides[cleanId];
-  }
-
-  if (
-    fallbackData.imageOverrides &&
-    typeof fallbackData.imageOverrides === 'object'
-  ) {
-    fallbackImageOverride = fallbackData.imageOverrides[cleanId];
-  }
-
-  if (fallbackProduct && Array.isArray(fallbackProduct.images)) {
-    fallbackProductImages = fallbackProduct.images;
-  }
-
-  candidateImages = [
-    fallbackProductOverride && fallbackProductOverride.image,
-    fallbackImageOverride,
-    fallbackProduct && fallbackProduct.image,
-  ].concat(fallbackProductImages);
-
-  return pickRenderableNonDefaultImage(candidateImages);
+  percentage = ((numericCompareAtPrice - numericPrice) / numericCompareAtPrice) * 100;
+  return String(Math.round(percentage * 100) / 100).replace(/\.0+$/, '').replace(/(\.\d*[1-9])0+$/, '$1');
 }
 
-function shouldReplaceWithFallbackImage(currentImage, fallbackImage) {
-  var normalizedCurrentImage = normalizeAssetPath(currentImage);
-  var normalizedFallbackImage = normalizeAssetPath(fallbackImage);
+function buildCategoryKeywordMap(categoryGroups) {
+  let keywordMap = {};
 
-  if (
-    !normalizedFallbackImage ||
-    !isRenderableImagePath(normalizedFallbackImage)
-  ) {
-    return false;
-  }
+  (categoryGroups || []).forEach(function (group) {
+    let groupKey = normalizeForSearch(group && group.name);
 
-  if (!normalizedCurrentImage) {
-    return true;
-  }
-
-  return !isRenderableImagePath(normalizedCurrentImage);
-}
-
-function hydrateAdminImagesFromFallback(primaryData, fallbackData) {
-  var didChange = false;
-
-  if (
-    !primaryData ||
-    typeof primaryData !== 'object' ||
-    !fallbackData ||
-    typeof fallbackData !== 'object'
-  ) {
-    return false;
-  }
-
-  if (Array.isArray(primaryData.products)) {
-    primaryData.products.forEach(function (product) {
-      var cleanId = toTrimmedString(product && product.id);
-      var fallbackImage = '';
-
-      if (!cleanId || !product || typeof product !== 'object') {
-        return;
-      }
-
-      fallbackImage = getFallbackImageFromAdminData(fallbackData, cleanId);
-      if (!shouldReplaceWithFallbackImage(product.image, fallbackImage)) {
-        return;
-      }
-
-      product.image = fallbackImage;
-      product.images = normalizeImageList(product.images, fallbackImage);
-      didChange = true;
-    });
-  }
-
-  if (primaryData.imageOverrides && typeof primaryData.imageOverrides === 'object') {
-    Object.keys(primaryData.imageOverrides).forEach(function (productId) {
-      var cleanId = toTrimmedString(productId);
-      var fallbackImage = '';
-
-      if (!cleanId) {
-        return;
-      }
-
-      fallbackImage = getFallbackImageFromAdminData(fallbackData, cleanId);
-      if (!shouldReplaceWithFallbackImage(primaryData.imageOverrides[cleanId], fallbackImage)) {
-        return;
-      }
-
-      primaryData.imageOverrides[cleanId] = fallbackImage;
-      didChange = true;
-    });
-  }
-
-  if (primaryData.productOverrides && typeof primaryData.productOverrides === 'object') {
-    Object.keys(primaryData.productOverrides).forEach(function (productId) {
-      var cleanId = toTrimmedString(productId);
-      var overrideEntry = primaryData.productOverrides[productId];
-      var fallbackImage = '';
-
-      if (!cleanId || !overrideEntry || typeof overrideEntry !== 'object') {
-        return;
-      }
-
-      fallbackImage = getFallbackImageFromAdminData(fallbackData, cleanId);
-      if (!shouldReplaceWithFallbackImage(overrideEntry.image, fallbackImage)) {
-        return;
-      }
-
-      overrideEntry.image = fallbackImage;
-      didChange = true;
-    });
-  }
-
-  return didChange;
-}
-
-function hasCloudinaryMigrationCandidateImage(assetPath) {
-  var normalizedPath = normalizeAssetPath(assetPath);
-
-  if (!normalizedPath) {
-    return false;
-  }
-
-  return !isCloudinaryUrl(normalizedPath);
-}
-
-function hasCloudinaryMigrationCandidates(data) {
-  var productIndex = 0;
-  var imageIndex = 0;
-  var product = null;
-  var productOverrideKeys = [];
-  var imageOverrideKeys = [];
-  var productOverride = null;
-  var key = '';
-
-  if (!data || typeof data !== 'object') {
-    return false;
-  }
-
-  if (Array.isArray(data.products)) {
-    for (productIndex = 0; productIndex < data.products.length; productIndex += 1) {
-      product = data.products[productIndex];
-      if (!product || typeof product !== 'object') {
-        continue;
-      }
-
-      if (hasCloudinaryMigrationCandidateImage(product.image)) {
-        return true;
-      }
-
-      if (!Array.isArray(product.images)) {
-        continue;
-      }
-
-      for (imageIndex = 0; imageIndex < product.images.length; imageIndex += 1) {
-        if (hasCloudinaryMigrationCandidateImage(product.images[imageIndex])) {
-          return true;
-        }
-      }
-    }
-  }
-
-  if (data.imageOverrides && typeof data.imageOverrides === 'object') {
-    imageOverrideKeys = Object.keys(data.imageOverrides);
-    for (productIndex = 0; productIndex < imageOverrideKeys.length; productIndex += 1) {
-      key = imageOverrideKeys[productIndex];
-      if (hasCloudinaryMigrationCandidateImage(data.imageOverrides[key])) {
-        return true;
-      }
-    }
-  }
-
-  if (data.productOverrides && typeof data.productOverrides === 'object') {
-    productOverrideKeys = Object.keys(data.productOverrides);
-    for (productIndex = 0; productIndex < productOverrideKeys.length; productIndex += 1) {
-      key = productOverrideKeys[productIndex];
-      productOverride = data.productOverrides[key];
-      if (!productOverride || typeof productOverride !== 'object') {
-        continue;
-      }
-
-      if (hasCloudinaryMigrationCandidateImage(productOverride.image)) {
-        return true;
-      }
-    }
-  }
-
-  return false;
-}
-
-async function promoteImagePathWithCache(assetPath, cache) {
-  var normalizedPath = normalizeAssetPath(assetPath);
-  var cacheKey = normalizedPath;
-  var promotedPath = '';
-
-  if (!normalizedPath || isCloudinaryUrl(normalizedPath)) {
-    return normalizedPath;
-  }
-
-  if (cache && Object.prototype.hasOwnProperty.call(cache, cacheKey)) {
-    return cache[cacheKey];
-  }
-
-  promotedPath = await promoteImageToCloudinary(normalizedPath);
-  promotedPath = normalizeAssetPath(promotedPath || normalizedPath);
-
-  if (cache) {
-    cache[cacheKey] = promotedPath || normalizedPath;
-    return cache[cacheKey];
-  }
-
-  return promotedPath || normalizedPath;
-}
-
-async function promoteAdminDataImagesToCloudinary(data) {
-  var didChange = false;
-  var promotionCache = Object.create(null);
-  var productIndex = 0;
-  var imageIndex = 0;
-  var product = null;
-  var originalImage = '';
-  var promotedImage = '';
-  var originalListImage = '';
-  var promotedListImage = '';
-  var promotedImages = [];
-  var imageOverrideKeys = [];
-  var productOverrideKeys = [];
-  var key = '';
-  var overrideEntry = null;
-  var originalOverrideImage = '';
-  var promotedOverrideImage = '';
-
-  if (!data || typeof data !== 'object') {
-    return false;
-  }
-
-  if (Array.isArray(data.products)) {
-    for (productIndex = 0; productIndex < data.products.length; productIndex += 1) {
-      product = data.products[productIndex];
-      if (!product || typeof product !== 'object') {
-        continue;
-      }
-
-      originalImage = normalizeAssetPath(product.image);
-      promotedImage = await promoteImagePathWithCache(originalImage, promotionCache);
-      if (promotedImage && promotedImage !== originalImage) {
-        product.image = promotedImage;
-        didChange = true;
-      }
-
-      if (Array.isArray(product.images)) {
-        promotedImages = [];
-
-        for (imageIndex = 0; imageIndex < product.images.length; imageIndex += 1) {
-          originalListImage = normalizeAssetPath(product.images[imageIndex]);
-          promotedListImage = await promoteImagePathWithCache(originalListImage, promotionCache);
-
-          if (promotedListImage) {
-            promotedImages.push(promotedListImage);
-          }
-
-          if (promotedListImage && promotedListImage !== originalListImage) {
-            didChange = true;
-          }
-        }
-
-        product.images = normalizeImageList(promotedImages, product.image);
-      } else {
-        product.images = normalizeImageList([], product.image);
-      }
-    }
-  }
-
-  if (data.imageOverrides && typeof data.imageOverrides === 'object') {
-    imageOverrideKeys = Object.keys(data.imageOverrides);
-
-    for (productIndex = 0; productIndex < imageOverrideKeys.length; productIndex += 1) {
-      key = imageOverrideKeys[productIndex];
-      originalOverrideImage = normalizeAssetPath(data.imageOverrides[key]);
-      promotedOverrideImage = await promoteImagePathWithCache(originalOverrideImage, promotionCache);
-
-      if (promotedOverrideImage && promotedOverrideImage !== originalOverrideImage) {
-        data.imageOverrides[key] = promotedOverrideImage;
-        didChange = true;
-      }
-    }
-  }
-
-  if (data.productOverrides && typeof data.productOverrides === 'object') {
-    productOverrideKeys = Object.keys(data.productOverrides);
-
-    for (productIndex = 0; productIndex < productOverrideKeys.length; productIndex += 1) {
-      key = productOverrideKeys[productIndex];
-      overrideEntry = data.productOverrides[key];
-
-      if (!overrideEntry || typeof overrideEntry !== 'object') {
-        continue;
-      }
-
-      originalOverrideImage = normalizeAssetPath(overrideEntry.image);
-      promotedOverrideImage = await promoteImagePathWithCache(originalOverrideImage, promotionCache);
-
-      if (promotedOverrideImage && promotedOverrideImage !== originalOverrideImage) {
-        overrideEntry.image = promotedOverrideImage;
-        didChange = true;
-      }
-    }
-  }
-
-  return didChange;
-}
-
-async function maybePromoteAdminImagesToCloudinary() {
-  var now = Date.now();
-  var didChange = false;
-  var didSave = false;
-
-  if (!cloudinaryClient.isCloudinaryConfigured()) {
-    return false;
-  }
-
-  if (!hasCloudinaryMigrationCandidates(adminData)) {
-    return false;
-  }
-
-  if (isCloudinaryMigrationInProgress) {
-    return false;
-  }
-
-  if ((now - lastCloudinaryImageMigrationAt) < cloudinaryImageMigrationCooldownMs) {
-    return false;
-  }
-
-  isCloudinaryMigrationInProgress = true;
-  lastCloudinaryImageMigrationAt = now;
-
-  try {
-    didChange = await promoteAdminDataImagesToCloudinary(adminData);
-
-    if (!didChange) {
-      return false;
-    }
-
-    didSave = await saveAdminData();
-    if (!didSave) {
-      console.error('Promoted images to Cloudinary, but failed to persist updated image URLs.');
-    }
-
-    return didSave;
-  } finally {
-    isCloudinaryMigrationInProgress = false;
-    lastCloudinaryImageMigrationAt = Date.now();
-  }
-}
-
-function runCloudinaryMigrationInBackground() {
-  maybePromoteAdminImagesToCloudinary().catch(function (error) {
-    console.error('Background Cloudinary migration failed:', error && error.message ? error.message : error);
-  });
-}
-
-function loadAdminDataFromFile() {
-  return adminDataStore.loadFromFile(createDefaultAdminData, normalizeAdminDataShape);
-}
-
-async function loadAdminDataFromFileAsync() {
-  return adminDataStore.loadFromFileAsync(createDefaultAdminData, normalizeAdminDataShape);
-}
-
-async function saveAdminDataToFile(data) {
-  var payload = data && typeof data === 'object' ? data : adminData;
-  return adminDataStore.saveToFile(payload, normalizeAdminDataShape, createDefaultAdminData);
-}
-
-async function loadAdminDataFromDatabase() {
-  var storedData = await adminDataStore.loadFromDatabase(normalizeAdminDataShape, createDefaultAdminData);
-  if (!storedData) {
-    return false;
-  }
-
-  adminData = storedData;
-  clearCatalogContextCache();
-  return true;
-}
-
-async function refreshAdminData() {
-  var loadedFromDatabase = await loadAdminDataFromDatabase();
-  var fileBackupData = null;
-
-  if (loadedFromDatabase) {
-    fileBackupData = await loadAdminDataFromFileAsync();
-
-    if (hydrateAdminImagesFromFallback(adminData, fileBackupData)) {
-      clearCatalogContextCache();
-      await saveAdminData();
-    }
-
-    runCloudinaryMigrationInBackground();
-    return true;
-  }
-
-  adminData = await loadAdminDataFromFileAsync();
-  clearCatalogContextCache();
-
-  if (isMongoStorageEnabled() && !hasAttemptedDatabaseBootstrap) {
-    hasAttemptedDatabaseBootstrap = true;
-    await saveAdminData();
-  }
-
-  runCloudinaryMigrationInBackground();
-  return true;
-}
-
-async function saveAdminData() {
-  var normalizedData = normalizeAdminDataShape(adminData);
-  var mongoEnabled = isMongoStorageEnabled();
-  var didSaveToDatabase = false;
-  var didSaveToFile = false;
-
-  if (mongoEnabled) {
-    didSaveToDatabase = await adminDataStore.saveToDatabase(
-      normalizedData,
-      normalizeAdminDataShape,
-      createDefaultAdminData
-    );
-
-    if (!didSaveToDatabase) {
-      return false;
-    }
-
-    // Keep file in sync as a local backup after primary DB write succeeds.
-    didSaveToFile = await saveAdminDataToFile(normalizedData);
-    if (!didSaveToFile) {
-      console.error('Saved admin data in database, but failed to sync admin-data.json.');
-      return false;
-    }
-
-    adminData = normalizedData;
-    clearCatalogContextCache();
-    runCloudinaryMigrationInBackground();
-    return true;
-  }
-
-  didSaveToFile = await saveAdminDataToFile(normalizedData);
-  if (!didSaveToFile) {
-    return false;
-  }
-
-  adminData = normalizedData;
-  clearCatalogContextCache();
-  runCloudinaryMigrationInBackground();
-  return true;
-}
-
-function getMergedCategoryGroups() {
-  var mergedCategories = cloneCategoryGroups(baseCategoryGroups).filter(function (group) {
-    return !isDeletedCategory(group.name);
-  });
-  var categoryIndexByKey = Object.create(null);
-
-  mergedCategories.forEach(function (group, index) {
-    var groupKey = normalizeForSearch(group.name);
-    if (groupKey) {
-      categoryIndexByKey[groupKey] = index;
-    }
-  });
-
-  adminData.categories.forEach(function (category) {
-    if (isDeletedCategory(category.name)) {
-      return;
-    }
-
-    var categoryKey = normalizeForSearch(category.name);
-    if (!categoryKey) {
-      return;
-    }
-
-    if (typeof categoryIndexByKey[categoryKey] === 'number') {
-      var existingCategory = mergedCategories[categoryIndexByKey[categoryKey]];
-      if (category.description) {
-        existingCategory.description = category.description;
-      }
-      existingCategory.items = mergeUniqueValues(existingCategory.items, category.items);
-      return;
-    }
-
-    mergedCategories.push({
-      name: category.name,
-      description: normalizeOptionalDescription(category.description),
-      items: normalizeList(category.items),
-    });
-    categoryIndexByKey[categoryKey] = mergedCategories.length - 1;
-  });
-
-  adminData.products.forEach(function (product) {
-    if (isDeletedProduct(product.id)) {
-      return;
-    }
-
-    var productOverride = getProductOverrideEntry(product.id);
-    var effectiveCategoryName = toTrimmedString(productOverride.type) || toTrimmedString(product.type);
-    if (isDeletedCategory(effectiveCategoryName)) {
-      return;
-    }
-
-    var effectiveProductName = toTrimmedString(productOverride.name) || toTrimmedString(product.name);
-    var productCategoryKey = normalizeForSearch(effectiveCategoryName);
-    if (!productCategoryKey) {
-      return;
-    }
-
-    var categoryIndex = categoryIndexByKey[productCategoryKey];
-    if (typeof categoryIndex !== 'number') {
-      mergedCategories.push({
-        name: effectiveCategoryName,
-        description: '',
-        items: [],
-      });
-      categoryIndex = mergedCategories.length - 1;
-      categoryIndexByKey[productCategoryKey] = categoryIndex;
-    }
-
-    mergedCategories[categoryIndex].items = mergeUniqueValues(mergedCategories[categoryIndex].items, [effectiveProductName]);
-  });
-
-  return mergedCategories;
-}
-
-function getMergedProductSections() {
-  var adminProductOrderLookup = buildAdminProductOrderLookup();
-  var mergedSections = cloneProductSections(baseProductSections, adminProductOrderLookup);
-  var adminSectionMap = Object.create(null);
-
-  adminData.products.forEach(function (product) {
-    if (isDeletedProduct(product.id)) {
-      return;
-    }
-
-    var productOverride = getProductOverrideEntry(product.id);
-    var effectiveCategoryName = toTrimmedString(productOverride.type) || toTrimmedString(product.type) || 'Other';
-    var overridePrice = toTrimmedString(productOverride.price);
-    var hasOverridePrice = Boolean(overridePrice);
-    var overrideQuantity = toTrimmedString(productOverride.quantity);
-    var hasOverrideQuantity = Boolean(overrideQuantity);
-    var hasPriceOverride =
-      product.id &&
-      adminData &&
-      adminData.priceOverrides &&
-      Object.prototype.hasOwnProperty.call(adminData.priceOverrides, product.id);
-
-    if (isDeletedCategory(effectiveCategoryName)) {
-      return;
-    }
-
-    var effectiveName = toTrimmedString(productOverride.name) || toTrimmedString(product.name);
-    var effectiveSpec = normalizeOptionalDescription(toTrimmedString(productOverride.spec) || toTrimmedString(product.spec));
-    var effectivePrice = getEffectivePrice(product.id, overridePrice || product.price);
-    var effectiveOriginalPrice = hasOverridePrice
-      ? toTrimmedString(productOverride.originalPrice)
-      : toTrimmedString(product.originalPrice);
-    var effectiveDiscountPercent = hasOverridePrice
-      ? toTrimmedString(productOverride.discountPercent)
-      : toTrimmedString(product.discountPercent);
-    var effectiveQuantity = hasOverrideQuantity
-      ? overrideQuantity
-      : toTrimmedString(product.quantity);
-    var sectionKey = normalizeForSearch(effectiveCategoryName) || 'other';
-
-    if (!adminSectionMap[sectionKey]) {
-      adminSectionMap[sectionKey] = {
-        title: effectiveCategoryName + ' (Admin)',
-        subtitle: 'Products added from admin panel',
-        items: [],
-      };
-    }
-
-    var effectiveImage = getEffectiveImage(product.id, productOverride.image || product.image || '');
-
-    if (hasPriceOverride) {
-      effectiveOriginalPrice = '';
-      effectiveDiscountPercent = '';
-    }
-
-    adminSectionMap[sectionKey].items.push({
-      id: product.id,
-      type: effectiveCategoryName,
-      name: effectiveName,
-      spec: effectiveSpec,
-      price: effectivePrice,
-      originalPrice: effectiveOriginalPrice,
-      discountPercent: effectiveDiscountPercent,
-      quantity: effectiveQuantity,
-      image: effectiveImage,
-      images: normalizeImageList(product.images, effectiveImage),
-      addedOrder: getProductAddedOrder(product.id, adminProductOrderLookup),
-    });
-  });
-
-  Object.keys(adminSectionMap)
-    .forEach(function (sectionKey) {
-      sortProductsByLatestFirst(adminSectionMap[sectionKey].items);
-    });
-
-  Object.keys(adminSectionMap)
-    .sort(function (leftKey, rightKey) {
-      var leftItems = adminSectionMap[leftKey].items || [];
-      var rightItems = adminSectionMap[rightKey].items || [];
-      var leftTopOrder = Number(leftItems[0] && leftItems[0].addedOrder) || 0;
-      var rightTopOrder = Number(rightItems[0] && rightItems[0].addedOrder) || 0;
-
-      return (rightTopOrder - leftTopOrder) || leftKey.localeCompare(rightKey);
-    })
-    .forEach(function (sectionKey) {
-      mergedSections.push(adminSectionMap[sectionKey]);
-    });
-
-  mergedSections.sort(function (leftSection, rightSection) {
-    var leftItems = leftSection && Array.isArray(leftSection.items) ? leftSection.items : [];
-    var rightItems = rightSection && Array.isArray(rightSection.items) ? rightSection.items : [];
-    var leftTopOrder = Number(leftItems[0] && leftItems[0].addedOrder) || 0;
-    var rightTopOrder = Number(rightItems[0] && rightItems[0].addedOrder) || 0;
-
-    return (
-      (rightTopOrder - leftTopOrder) ||
-      String(leftSection && leftSection.title ? leftSection.title : '').localeCompare(String(rightSection && rightSection.title ? rightSection.title : ''))
-    );
-  });
-
-  return mergedSections;
-}
-
-function getMergedCategoryKeywordMap(categoryGroups) {
-  var keywordMap = {};
-
-  Object.keys(baseCategoryKeywordMap).forEach(function (key) {
-    keywordMap[key] = normalizeList(baseCategoryKeywordMap[key]);
-  });
-
-  categoryGroups.forEach(function (group) {
-    var groupKey = normalizeForSearch(group.name);
     if (!groupKey) {
       return;
     }
 
-    keywordMap[groupKey] = mergeUniqueValues(keywordMap[groupKey] || [], [group.name].concat(group.items || []));
+    keywordMap[groupKey] = normalizeList([group.name].concat(group.items || []));
   });
 
   return keywordMap;
 }
 
-function syncCategoryGroupsWithProducts(categoryGroups, productSections, categoryKeywordMap) {
-  var syncedGroups = cloneCategoryGroups(categoryGroups);
-  var groupIndexByKey = Object.create(null);
+function toCatalogProduct(productDoc, addedOrder) {
+  let categoryDoc = productDoc && productDoc.category && typeof productDoc.category === 'object'
+    ? productDoc.category
+    : null;
+  let effectiveCategoryName = toTrimmedString(categoryDoc && categoryDoc.name);
+  let quantity = Number(productDoc && productDoc.quantity);
+  let price = Number(productDoc && productDoc.price);
+  let rawCompareAtPrice = productDoc && typeof productDoc === 'object'
+    ? productDoc.compareAtPrice
+    : null;
+  let compareAtPrice = rawCompareAtPrice === null || typeof rawCompareAtPrice === 'undefined' || rawCompareAtPrice === ''
+    ? NaN
+    : Number(rawCompareAtPrice);
+  let primaryImage = normalizeAssetPath(
+    productDoc && productDoc.imageUrl
+    || (Array.isArray(productDoc && productDoc.images) ? productDoc.images[0] : '')
+  );
+  let safeImages = normalizeImageList(productDoc && productDoc.images, primaryImage);
+  let productId = toTrimmedString(productDoc && productDoc.legacyId)
+    || toTrimmedString(productDoc && productDoc._id);
 
-  syncedGroups.forEach(function (group, index) {
-    var key = normalizeForSearch(group.name);
-    if (key) {
-      groupIndexByKey[key] = index;
+  return {
+    id: productId,
+    mongoId: toTrimmedString(productDoc && productDoc._id),
+    type: effectiveCategoryName || 'Category',
+    name: toTrimmedString(productDoc && productDoc.name) || 'Product',
+    spec: toTrimmedString(productDoc && (productDoc.spec || productDoc.description)),
+    price: Number.isFinite(price) ? formatNprAmount(price) : 'Contact for price',
+    priceValue: Number.isFinite(price) ? price : null,
+    compareAtPrice: Number.isFinite(compareAtPrice) ? compareAtPrice : null,
+    originalPrice: Number.isFinite(compareAtPrice) && compareAtPrice > price ? formatNprAmount(compareAtPrice) : '',
+    discountPercent: computeDiscountPercent(price, compareAtPrice),
+    quantity: Number.isFinite(quantity) && quantity >= 0 ? quantity : 0,
+    image: primaryImage || defaultProductImagePath,
+    images: safeImages,
+    addedOrder: Number.isFinite(Number(addedOrder)) ? Number(addedOrder) : 0,
+  };
+}
+
+function buildCatalogContext(categoryDocs, productDocs) {
+  let normalizedCategoryDocs = Array.isArray(categoryDocs) ? categoryDocs : [];
+  let normalizedProductDocs = Array.isArray(productDocs) ? productDocs : [];
+  let categoryGroups = [];
+  let categoryGroupsByKey = Object.create(null);
+  let sectionByKey = Object.create(null);
+  let productSections = [];
+  let categoryKeywordMap = {};
+  let seenCategoryProductNames = Object.create(null);
+  let sectionTitle = '';
+  let sectionKey = '';
+
+  normalizedCategoryDocs.forEach(function (categoryDoc) {
+    let categoryName = toTrimmedString(categoryDoc && categoryDoc.name);
+    let categoryKey = normalizeForSearch(categoryName);
+
+    if (!categoryName || !categoryKey || categoryGroupsByKey[categoryKey]) {
+      return;
     }
+
+    categoryGroupsByKey[categoryKey] = {
+      name: categoryName,
+      description: toTrimmedString(categoryDoc && categoryDoc.description),
+      items: normalizeList(categoryDoc && categoryDoc.items),
+    };
+
+    categoryGroups.push(categoryGroupsByKey[categoryKey]);
   });
 
-  (productSections || []).forEach(function (section) {
-    (section.items || []).forEach(function (item) {
-      if (!item || !item.name) {
-        return;
-      }
+  normalizedProductDocs.forEach(function (productDoc, index) {
+    let categoryDoc = productDoc && productDoc.category && typeof productDoc.category === 'object'
+      ? productDoc.category
+      : null;
+    let categoryName = toTrimmedString(categoryDoc && categoryDoc.name);
+    let categoryKey = normalizeForSearch(categoryName);
+    let productName = toTrimmedString(productDoc && productDoc.name);
+    let categoryProductKey = categoryKey + '::' + normalizeForSearch(productName);
+    let section = null;
 
-      var resolvedCategoryName = resolveBoardCategoryName(item.type, syncedGroups, categoryKeywordMap);
-      var categoryKey = normalizeForSearch(resolvedCategoryName);
-      var groupIndex = groupIndexByKey[categoryKey];
+    if (!categoryName || !categoryKey || !productName) {
+      return;
+    }
 
-      if (typeof groupIndex !== 'number') {
-        syncedGroups.push({
-          name: resolvedCategoryName,
-          description: '',
-          items: [],
-        });
-        groupIndex = syncedGroups.length - 1;
-        groupIndexByKey[categoryKey] = groupIndex;
-      }
+    if (seenCategoryProductNames[categoryProductKey]) {
+      return;
+    }
 
-      var nextItems = [item.name];
-      var coverageLabel = getHelmetCoverageLabel(item);
+    seenCategoryProductNames[categoryProductKey] = true;
 
-      if (coverageLabel) {
-        nextItems.push(coverageLabel);
-      }
+    if (!categoryGroupsByKey[categoryKey]) {
+      categoryGroupsByKey[categoryKey] = {
+        name: categoryName,
+        description: '',
+        items: [],
+      };
+      categoryGroups.push(categoryGroupsByKey[categoryKey]);
+    }
 
-      syncedGroups[groupIndex].items = mergeUniqueValues(syncedGroups[groupIndex].items, nextItems);
+    if (categoryGroupsByKey[categoryKey].items.indexOf(productName) === -1) {
+      categoryGroupsByKey[categoryKey].items.push(productName);
+    }
+
+    section = sectionByKey[categoryKey];
+    if (!section) {
+      section = {
+        title: categoryName,
+        subtitle: '',
+        items: [],
+      };
+      sectionByKey[categoryKey] = section;
+      productSections.push(section);
+    }
+
+    section.items.push(toCatalogProduct(productDoc, normalizedProductDocs.length - index));
+  });
+
+  productSections.forEach(function (section) {
+    section.items.sort(function (left, right) {
+      return (
+        (Number(right && right.addedOrder) - Number(left && left.addedOrder)) ||
+        String(left && left.name ? left.name : '').localeCompare(String(right && right.name ? right.name : ''))
+      );
     });
   });
 
-  return syncedGroups;
-}
-
-function syncCategoryGroupsWithAdminBoards(categoryGroups, categoryBoards) {
-  var syncedGroups = cloneCategoryGroups(categoryGroups);
-  var boardByKey = Object.create(null);
-
-  (categoryBoards || []).forEach(function (board) {
-    var boardKey = normalizeForSearch(board && board.name);
-    if (!boardKey || boardByKey[boardKey]) {
-      return;
-    }
-
-    boardByKey[boardKey] = board;
+  categoryGroups.sort(function (left, right) {
+    return String(left && left.name ? left.name : '').localeCompare(String(right && right.name ? right.name : ''));
+  });
+  categoryGroups.forEach(function (group) {
+    group.items = normalizeList(group.items).sort(function (left, right) {
+      return left.localeCompare(right);
+    });
   });
 
-  syncedGroups.forEach(function (group) {
-    var groupKey = normalizeForSearch(group.name);
-    var matchedBoard = boardByKey[groupKey];
-    var itemNames = [];
-
-    if (!matchedBoard) {
-      return;
-    }
-
-    itemNames = (matchedBoard.items || [])
-      .map(function (item) {
-        var normalizedNames = [toTrimmedString(item && item.name)];
-        var coverageLabel = getHelmetCoverageLabel(item);
-
-        if (coverageLabel) {
-          normalizedNames.push(coverageLabel);
-        }
-
-        return normalizedNames;
-      })
-      .reduce(function (flatList, names) {
-        return flatList.concat(names || []);
-      }, [])
-      .filter(Boolean);
-
-    group.items = mergeUniqueValues(group.items, itemNames);
+  productSections.sort(function (left, right) {
+    sectionTitle = toTrimmedString(left && left.title);
+    sectionKey = toTrimmedString(right && right.title);
+    return sectionTitle.localeCompare(sectionKey);
   });
 
-  return syncedGroups;
-}
+  categoryKeywordMap = buildCategoryKeywordMap(categoryGroups);
 
-function getCatalogContext() {
-  var now = Date.now();
-
-  if (catalogCacheTtlMs > 0 && cachedCatalogContext && now < cachedCatalogContextExpiresAt) {
-    return cachedCatalogContext;
-  }
-
-  var productSections = getMergedProductSections();
-  var categoryGroups = getMergedCategoryGroups();
-  var categoryKeywordMap = getMergedCategoryKeywordMap(categoryGroups);
-  var categoryBoards = [];
-
-  categoryGroups = syncCategoryGroupsWithProducts(categoryGroups, productSections, categoryKeywordMap);
-  categoryBoards = buildAdminCategoryBoards(categoryGroups, productSections, categoryKeywordMap);
-  categoryGroups = syncCategoryGroupsWithAdminBoards(categoryGroups, categoryBoards);
-  categoryKeywordMap = getMergedCategoryKeywordMap(categoryGroups);
-
-  var context = {
+  return {
     categoryGroups: categoryGroups,
     productSections: productSections,
     categoryKeywordMap: categoryKeywordMap,
   };
+}
 
-  if (catalogCacheTtlMs > 0) {
-    cachedCatalogContext = context;
-    cachedCatalogContextExpiresAt = now + catalogCacheTtlMs;
+async function getCatalogContext(options) {
+  let forceRefresh = Boolean(options && options.forceRefresh);
+  let loadPromise = null;
+  let catalogContext = null;
+
+  if (!forceRefresh && cachedCatalogContext && cachedCatalogContextExpiresAt > Date.now()) {
+    return cloneValue(cachedCatalogContext);
   }
 
-  return context;
+  if (!forceRefresh && catalogContextPromise) {
+    catalogContext = await catalogContextPromise;
+    return cloneValue(catalogContext);
+  }
+
+  loadPromise = (async function () {
+    let hasDatabaseConnection = false;
+    let categoryDocs = [];
+    let productDocs = [];
+
+    hasDatabaseConnection = await database.connectToDatabase();
+    if (!hasDatabaseConnection) {
+      clearCatalogContextCache();
+      return createEmptyCatalogContext();
+    }
+
+    try {
+      let catalogResults = await Promise.all([
+        Category.find({ isActive: true })
+          .select(catalogCategorySelectFields)
+          .sort({ sortOrder: 1, name: 1 })
+          .lean(),
+        Product.find({
+          isActive: true,
+          status: 'active',
+        })
+          .select(catalogProductSelectFields)
+          .populate({
+            path: 'category',
+            select: catalogCategorySelectFields,
+            options: { lean: true },
+          })
+          .sort({ createdAt: -1, name: 1 })
+          .lean(),
+      ]);
+
+      categoryDocs = Array.isArray(catalogResults[0]) ? catalogResults[0] : [];
+      productDocs = Array.isArray(catalogResults[1]) ? catalogResults[1] : [];
+      cachedCatalogContext = buildCatalogContext(categoryDocs, productDocs);
+      cachedCatalogContextExpiresAt = Date.now() + catalogCacheTtlMs;
+
+      return cachedCatalogContext;
+    } catch (error) {
+      console.error('Failed to load catalog context:', error.message);
+      clearCatalogContextCache();
+      return createEmptyCatalogContext();
+    }
+  })();
+
+  if (!forceRefresh) {
+    catalogContextPromise = loadPromise;
+  }
+
+  try {
+    catalogContext = await loadPromise;
+    return cloneValue(catalogContext);
+  } finally {
+    if (!forceRefresh && catalogContextPromise === loadPromise) {
+      catalogContextPromise = null;
+    }
+  }
 }
 
 function resolveCategoryName(rawCategory, categoryGroups) {
-  if (!rawCategory) {
+  let normalizedCategory = normalizeForSearch(String(rawCategory || '').replace(/-/g, ' '));
+  let matchedGroup = null;
+
+  if (!normalizedCategory) {
     return '';
   }
 
-  var normalized = normalizeForSearch(rawCategory);
-  var matchedCategory = categoryGroups.find(function (group) {
-    return normalizeForSearch(group.name) === normalized;
-  });
+  matchedGroup = (categoryGroups || []).find(function (group) {
+    return normalizeForSearch(group && group.name) === normalizedCategory;
+  }) || null;
 
-  return matchedCategory ? matchedCategory.name : '';
+  return matchedGroup ? matchedGroup.name : '';
+}
+
+function includesQuery(value, query) {
+  let normalizedValue = normalizeForSearch(value);
+  let normalizedQuery = normalizeForSearch(query);
+  let queryTerms = normalizedQuery ? normalizedQuery.split(' ') : [];
+
+  if (!queryTerms.length) {
+    return true;
+  }
+
+  return queryTerms.every(function (term) {
+    return normalizedValue.indexOf(term) !== -1;
+  });
 }
 
 function buildCategoryViewData(query, selectedCategory, categoryGroups) {
-  var hasQuery = Boolean(query);
+  let normalizedSelectedCategory = normalizeForSearch(selectedCategory);
+  let normalizedQuery = normalizeForSearch(query);
 
-  return categoryGroups.map(function (group) {
-    var matchesGroupText = hasQuery ? includesQuery([group.name, group.description].join(' '), query) : false;
-    var items = group.items.map(function (item) {
-      var matchesItem = hasQuery ? includesQuery(item, query) : false;
+  return (categoryGroups || []).map(function (group) {
+    let groupName = toTrimmedString(group && group.name);
+    let groupItems = normalizeList(group && group.items);
+    let normalizedGroupName = normalizeForSearch(groupName);
+    let isSelectedCategory = normalizedSelectedCategory && normalizedSelectedCategory === normalizedGroupName;
+    let matchedItems = groupItems.map(function (itemLabel) {
       return {
-        label: item,
-        isMatch: matchesItem,
+        label: itemLabel,
+        isMatch: normalizedQuery ? includesQuery(itemLabel, normalizedQuery) : false,
       };
+    });
+    let hasMatchedItems = matchedItems.some(function (item) {
+      return Boolean(item.isMatch);
     });
 
     return {
-      name: group.name,
-      description: group.description,
-      isActive: group.name === selectedCategory,
-      isMatch: matchesGroupText || items.some(function (item) { return item.isMatch; }),
-      items: items,
+      name: groupName,
+      description: toTrimmedString(group && group.description),
+      items: matchedItems,
+      isActive: Boolean(isSelectedCategory || (!normalizedSelectedCategory && normalizedQuery && hasMatchedItems)),
     };
   });
 }
 
-function matchesCategory(item, section, selectedCategory, categoryKeywordMap) {
-  if (!selectedCategory) {
-    return true;
-  }
+function filterProductData(query, selectedCategory, productSections) {
+  let normalizedSelectedCategory = normalizeForSearch(selectedCategory);
+  let normalizedQuery = normalizeForSearch(query);
 
-  var categoryKey = normalizeForSearch(selectedCategory);
-  var keywords = categoryKeywordMap[categoryKey] || [categoryKey];
-  var searchableText = normalizeForSearch(buildProductSearchableText(item, section));
+  return (productSections || []).map(function (section) {
+    let sectionTitle = toTrimmedString(section && section.title);
+    let sectionKey = normalizeForSearch(sectionTitle);
+    let filteredItems = (section && section.items || []).filter(function (item) {
+      let itemSearchableText = [
+        item && item.type,
+        item && item.name,
+        item && item.spec,
+      ].join(' ');
 
-  return keywords.some(function (keyword) {
-    return searchableText.indexOf(normalizeForSearch(keyword)) !== -1;
+      if (normalizedSelectedCategory && normalizedSelectedCategory !== sectionKey) {
+        return false;
+      }
+
+      if (normalizedQuery && !includesQuery(itemSearchableText, normalizedQuery)) {
+        return false;
+      }
+
+      return true;
+    });
+
+    return {
+      title: sectionTitle,
+      subtitle: toTrimmedString(section && section.subtitle),
+      items: filteredItems,
+    };
+  }).filter(function (section) {
+    return Array.isArray(section.items) && section.items.length > 0;
   });
 }
 
-function filterProductData(query, selectedCategory, productSections, categoryKeywordMap) {
-  var hasQuery = Boolean(query);
-
-  return productSections
-    .map(function (section) {
-      var filteredItems = section.items.filter(function (item) {
-        var searchableText = buildProductSearchableText(item, section);
-        var queryMatch = hasQuery ? includesQuery(searchableText, query) : true;
-        var categoryMatch = matchesCategory(item, section, selectedCategory, categoryKeywordMap);
-        return queryMatch && categoryMatch;
-      });
-
-      return {
-        title: section.title,
-        subtitle: section.subtitle,
-        items: filteredItems,
-      };
-    })
-    .filter(function (section) {
-      return section.items.length > 0;
-    });
-}
-
 function getOpenCategoryName(groups, selectedCategory, query) {
-  if (selectedCategory) {
+  let normalizedSelectedCategory = normalizeForSearch(selectedCategory);
+  let normalizedQuery = normalizeForSearch(query);
+  let activeGroup = null;
+
+  if (normalizedSelectedCategory) {
     return selectedCategory;
   }
 
-  if (query) {
-    var matched = groups.find(function (group) {
-      return group.isMatch;
-    });
-    if (matched) {
-      return matched.name;
-    }
+  if (!normalizedQuery) {
+    return '';
   }
 
-  return '';
+  activeGroup = (groups || []).find(function (group) {
+    return Boolean(group && group.isActive);
+  }) || null;
+
+  return activeGroup ? toTrimmedString(activeGroup.name) : '';
 }
 
 function countItems(sections) {
-  return sections.reduce(function (total, section) {
-    return total + section.items.length;
+  return (sections || []).reduce(function (total, section) {
+    return total + (Array.isArray(section && section.items) ? section.items.length : 0);
   }, 0);
 }
 
 function findProductById(productId, productSections) {
-  for (var sectionIndex = 0; sectionIndex < productSections.length; sectionIndex += 1) {
-    var section = productSections[sectionIndex];
+  let normalizedProductId = toTrimmedString(productId);
+  let matchedResult = null;
 
-    for (var itemIndex = 0; itemIndex < section.items.length; itemIndex += 1) {
-      var item = section.items[itemIndex];
-
-      if (item.id === productId) {
-        return {
-          item: item,
-          sectionTitle: section.title,
-        };
-      }
-    }
+  if (!normalizedProductId) {
+    return null;
   }
 
-  return null;
+  (productSections || []).some(function (section, sectionIndex) {
+    let sectionItems = Array.isArray(section && section.items) ? section.items : [];
+
+    return sectionItems.some(function (item, itemIndex) {
+      if (toTrimmedString(item && item.id) !== normalizedProductId && toTrimmedString(item && item.mongoId) !== normalizedProductId) {
+        return false;
+      }
+
+      matchedResult = {
+        sectionIndex: sectionIndex,
+        itemIndex: itemIndex,
+        sectionTitle: toTrimmedString(section && section.title),
+        item: item,
+      };
+      return true;
+    });
+  });
+
+  return matchedResult;
 }
 
 function buildSearchSuggestions(categoryGroups, productSections) {
-  var seen = Object.create(null);
-  var suggestions = [];
+  let suggestions = [];
 
-  function addSuggestion(value) {
-    var normalized = normalizeForSearch(value);
-    if (!normalized || seen[normalized]) {
-      return;
-    }
+  (categoryGroups || []).forEach(function (group) {
+    suggestions.push(group && group.name);
+    suggestions = suggestions.concat(group && group.items || []);
+  });
 
-    seen[normalized] = true;
-    suggestions.push(String(value));
-  }
-
-  categoryGroups.forEach(function (group) {
-    addSuggestion(group.name);
-    addSuggestion(group.description);
-    group.items.forEach(function (item) {
-      addSuggestion(item);
+  (productSections || []).forEach(function (section) {
+    (section && section.items || []).forEach(function (item) {
+      suggestions.push(item && item.name);
+      suggestions.push(item && item.spec);
     });
   });
 
-  productSections.forEach(function (section) {
-    addSuggestion(section.title);
-    addSuggestion(section.subtitle);
-
-    section.items.forEach(function (item) {
-      addSuggestion(item.name);
-      addSuggestion(item.type);
-      addSuggestion(item.spec);
-      addSuggestion(item.price);
-      addSuggestion(item.id);
-    });
-  });
-
-  return suggestions.slice(0, 30);
-}
-
-function buildSlug(value) {
-  return normalizeForSearch(value).replace(/\s+/g, '-');
+  return normalizeList(suggestions).slice(0, 50);
 }
 
 function buildUniqueProductId(categoryName, productName, productSections) {
-  var baseId = buildSlug(categoryName + ' ' + productName) || 'product';
-  var candidateId = baseId;
-  var suffix = 2;
-  var usedIds = Object.create(null);
+  let baseId = slugify([categoryName, productName].join(' '));
+  let safeBaseId = baseId || slugify(productName) || 'product';
+  let candidateId = safeBaseId;
+  let counter = 2;
 
-  (productSections || []).forEach(function (section) {
-    section.items.forEach(function (item) {
-      if (item.id) {
-        usedIds[item.id] = true;
-      }
-    });
-  });
-
-  (adminData.products || []).forEach(function (product) {
-    var existingId = toTrimmedString(product && product.id);
-    if (existingId) {
-      usedIds[existingId] = true;
-    }
-  });
-
-  while (usedIds[candidateId]) {
-    candidateId = baseId + '-' + suffix;
-    suffix += 1;
+  while (findProductById(candidateId, productSections)) {
+    candidateId = safeBaseId + '-' + counter;
+    counter += 1;
   }
 
   return candidateId;
 }
 
-function buildAdminPriceRows(productSections) {
-  var rows = [];
+async function buildUniqueProductLegacyId(categoryName, productName) {
+  let baseId = slugify([categoryName, productName].join(' '));
+  let safeBaseId = baseId || slugify(productName) || 'product';
+  let candidateId = safeBaseId;
+  let counter = 2;
+  let productExists = false;
 
-  (productSections || []).forEach(function (section) {
-    (section.items || []).forEach(function (item) {
-      rows.push({
-        id: item.id,
-        sectionTitle: section.title,
-        type: item.type,
-        name: item.name,
-        spec: item.spec,
-        price: item.price,
-      });
-    });
-  });
+  if (!await database.connectToDatabase()) {
+    return safeBaseId;
+  }
 
-  return rows.sort(function (a, b) {
-    return a.type.localeCompare(b.type) || a.name.localeCompare(b.name);
-  });
+  do {
+    productExists = Boolean(await Product.exists({ legacyId: candidateId }));
+
+    if (!productExists) {
+      return candidateId;
+    }
+
+    candidateId = safeBaseId + '-' + counter;
+    counter += 1;
+  } while (counter < 10000);
+
+  return safeBaseId + '-' + Date.now().toString(36);
 }
 
-function resolveBoardCategoryName(rawCategoryName, categoryGroups, categoryKeywordMap) {
-  var normalizedRawName = normalizeForSearch(rawCategoryName);
-  var categoryNameByKey = Object.create(null);
-  var categoryKeys = [];
+async function queryProductDocumentByIdentifier(productId, options) {
+  let normalizedProductId = toTrimmedString(productId);
+  let filters = [];
+  let query = {};
 
-  (categoryGroups || []).forEach(function (group) {
-    var key = normalizeForSearch(group.name);
-    if (!key || categoryNameByKey[key]) {
+  if (!normalizedProductId) {
+    return null;
+  }
+
+  if (/^[a-f0-9]{24}$/i.test(normalizedProductId)) {
+    filters.push({ _id: normalizedProductId });
+  }
+
+  filters.push({ legacyId: normalizedProductId });
+
+  if (!await database.connectToDatabase()) {
+    return null;
+  }
+
+  query.$or = filters;
+
+  if (options && options.activeOnly) {
+    query.isActive = true;
+    query.status = 'active';
+  }
+
+  return Product.findOne(query)
+    .select(catalogProductSelectFields)
+    .populate({
+      path: 'category',
+      select: catalogCategorySelectFields,
+      options: { lean: true },
+    })
+    .lean();
+}
+
+async function findProductDocumentByIdentifier(productId, options) {
+  return queryProductDocumentByIdentifier(productId, options);
+}
+
+async function getCatalogProductByIdentifier(productId, options) {
+  let productDoc = await queryProductDocumentByIdentifier(productId, options);
+  let createdAt = productDoc && productDoc.createdAt ? new Date(productDoc.createdAt).getTime() : 0;
+
+  if (!productDoc) {
+    return null;
+  }
+
+  return toCatalogProduct(productDoc, createdAt);
+}
+
+function buildAdminCategoryBoards(categoryGroups, productSections) {
+  let sectionByKey = Object.create(null);
+  let boards = [];
+
+  (productSections || []).forEach(function (section) {
+    let sectionKey = normalizeForSearch(section && section.title);
+
+    if (!sectionKey) {
       return;
     }
-    categoryNameByKey[key] = group.name;
-    categoryKeys.push(key);
+
+    sectionByKey[sectionKey] = {
+      title: toTrimmedString(section && section.title),
+      subtitle: toTrimmedString(section && section.subtitle),
+      items: cloneValue(section && section.items || []),
+    };
   });
-
-  if (!normalizedRawName) {
-    return 'Other';
-  }
-
-  if (categoryNameByKey[normalizedRawName]) {
-    return categoryNameByKey[normalizedRawName];
-  }
-
-  for (var index = 0; index < categoryKeys.length; index += 1) {
-    var categoryKey = categoryKeys[index];
-    var keywords = (categoryKeywordMap && categoryKeywordMap[categoryKey]) || [categoryKey];
-
-    for (var keywordIndex = 0; keywordIndex < keywords.length; keywordIndex += 1) {
-      var normalizedKeyword = normalizeForSearch(keywords[keywordIndex]);
-      if (!normalizedKeyword) {
-        continue;
-      }
-
-      if (
-        normalizedRawName === normalizedKeyword ||
-        normalizedRawName.indexOf(normalizedKeyword) !== -1 ||
-        normalizedKeyword.indexOf(normalizedRawName) !== -1
-      ) {
-        return categoryNameByKey[categoryKey];
-      }
-    }
-  }
-
-  return toTrimmedString(rawCategoryName) || 'Other';
-}
-
-function buildAdminCategoryBoards(categoryGroups, productSections, categoryKeywordMap) {
-  var boardMap = Object.create(null);
-  var orderedKeys = [];
-  var seenProductIds = Object.create(null);
-  var adminProductOrderLookup = buildAdminProductOrderLookup();
-
-  function ensureBoard(categoryName) {
-    var cleanName = toTrimmedString(categoryName) || 'Other';
-    var categoryKey = normalizeForSearch(cleanName) || 'other';
-
-    if (!boardMap[categoryKey]) {
-      boardMap[categoryKey] = {
-        key: categoryKey,
-        name: cleanName,
-        items: [],
-      };
-      orderedKeys.push(categoryKey);
-    }
-
-    return boardMap[categoryKey];
-  }
 
   (categoryGroups || []).forEach(function (group) {
-    ensureBoard(group.name);
+    let groupName = toTrimmedString(group && group.name);
+    let groupKey = normalizeForSearch(groupName);
+    let section = sectionByKey[groupKey];
+
+    boards.push({
+      name: groupName,
+      description: toTrimmedString(group && group.description),
+      items: section ? section.items : [],
+    });
+
+    delete sectionByKey[groupKey];
   });
 
-  (productSections || []).forEach(function (section) {
-    (section.items || []).forEach(function (item) {
-      if (!item || !item.id || seenProductIds[item.id]) {
-        return;
-      }
+  Object.keys(sectionByKey).forEach(function (sectionKey) {
+    let section = sectionByKey[sectionKey];
 
-      seenProductIds[item.id] = true;
-      var boardName = resolveBoardCategoryName(item.type, categoryGroups, categoryKeywordMap);
-      var board = ensureBoard(boardName);
-
-      board.items.push({
-        id: item.id,
-        type: item.type,
-        name: item.name,
-        spec: item.spec,
-        price: item.price,
-        originalPrice: toTrimmedString(item.originalPrice),
-        discountPercent: toTrimmedString(item.discountPercent),
-        quantity: toTrimmedString(item.quantity),
-        image: item.image,
-        addedOrder: getProductAddedOrder(item.id, adminProductOrderLookup),
-      });
+    boards.push({
+      name: toTrimmedString(section && section.title),
+      description: '',
+      items: cloneValue(section && section.items || []),
     });
   });
 
-  return orderedKeys.map(function (key) {
-    var board = boardMap[key];
-    sortProductsByLatestFirst(board.items);
-    return board;
+  boards.sort(function (left, right) {
+    return String(left && left.name ? left.name : '').localeCompare(String(right && right.name ? right.name : ''));
   });
-}
 
-function findAdminCategoryByName(categoryName) {
-  var categoryKey = normalizeForSearch(categoryName);
-  if (!categoryKey) {
-    return null;
-  }
-
-  return adminData.categories.find(function (category) {
-    return normalizeForSearch(category.name) === categoryKey;
-  }) || null;
-}
-
-function upsertAdminCategory(categoryName, categoryDescription, categoryItems, options) {
-  var cleanedName = toTrimmedString(categoryName);
-  var cleanedDescription = toTrimmedString(categoryDescription);
-  var settings = options && typeof options === 'object' ? options : {};
-  var cleanedOriginalName = toTrimmedString(settings.originalName);
-  var shouldUpdateDescription = Boolean(settings.updateDescription);
-  var shouldReplaceItems = Boolean(settings.replaceItems);
-  var targetCategoryKey = normalizeForSearch(cleanedName);
-  var originalCategoryKey = normalizeForSearch(cleanedOriginalName);
-  var existingCategory = null;
-  var originalCategory = null;
-  var categoryIndex = -1;
-  var productOverrideKeys = [];
-  var keyIndex = 0;
-  var overrideKey = '';
-  var overrideEntry = null;
-
-  if (!cleanedName) {
-    return null;
-  }
-
-  removeDeletedCategory(cleanedName);
-  if (cleanedOriginalName) {
-    removeDeletedCategory(cleanedOriginalName);
-  }
-
-  existingCategory = findAdminCategoryByName(cleanedName);
-
-  if (originalCategoryKey && originalCategoryKey !== targetCategoryKey) {
-    originalCategory = findAdminCategoryByName(cleanedOriginalName);
-
-    if (originalCategory && existingCategory && originalCategory !== existingCategory) {
-      existingCategory.items = mergeUniqueValues(existingCategory.items, originalCategory.items);
-
-      if (!toTrimmedString(existingCategory.description) && toTrimmedString(originalCategory.description)) {
-        existingCategory.description = toTrimmedString(originalCategory.description);
-      }
-
-      categoryIndex = adminData.categories.indexOf(originalCategory);
-      if (categoryIndex !== -1) {
-        adminData.categories.splice(categoryIndex, 1);
-      }
-    } else if (originalCategory && !existingCategory) {
-      originalCategory.name = cleanedName;
-      existingCategory = originalCategory;
-    }
-
-    if (Array.isArray(adminData.products)) {
-      adminData.products.forEach(function (product) {
-        var productCategoryKey = normalizeForSearch(product && product.type);
-        if (productCategoryKey === originalCategoryKey) {
-          product.type = cleanedName;
-        }
-      });
-    }
-
-    if (adminData.productOverrides && typeof adminData.productOverrides === 'object') {
-      productOverrideKeys = Object.keys(adminData.productOverrides);
-
-      for (keyIndex = 0; keyIndex < productOverrideKeys.length; keyIndex += 1) {
-        overrideKey = productOverrideKeys[keyIndex];
-        overrideEntry = adminData.productOverrides[overrideKey];
-
-        if (!overrideEntry || typeof overrideEntry !== 'object') {
-          continue;
-        }
-
-        if (normalizeForSearch(overrideEntry.type) === originalCategoryKey) {
-          overrideEntry.type = cleanedName;
-        }
-      }
-    }
-  }
-
-  if (!existingCategory) {
-    existingCategory = {
-      name: cleanedName,
-      description: normalizeOptionalDescription(cleanedDescription),
-      items: normalizeList(categoryItems),
-    };
-    adminData.categories.push(existingCategory);
-    return existingCategory;
-  }
-
-  existingCategory.name = cleanedName;
-
-  if (shouldUpdateDescription) {
-    existingCategory.description = normalizeOptionalDescription(cleanedDescription);
-  }
-
-  if (shouldReplaceItems) {
-    existingCategory.items = normalizeList(categoryItems);
-  } else if (Array.isArray(categoryItems) && categoryItems.length > 0) {
-    existingCategory.items = mergeUniqueValues(existingCategory.items, categoryItems);
-  }
-
-  return existingCategory;
+  return boards;
 }
 
 function getAdminStatusMessage(statusCode) {
-  if (statusCode === 'login-success') {
-    return 'Welcome! You have successfully logged in.';
-  }
-
-  if (statusCode === 'image-saved') {
-    return 'Image updated successfully.';
-  }
-
-  if (statusCode === 'price-saved') {
-    return 'Price updated successfully.';
-  }
-
-  if (statusCode === 'category-saved') {
-    return 'Category saved successfully.';
-  }
-
   if (statusCode === 'product-saved') {
     return 'Product saved successfully.';
   }
@@ -2494,28 +1042,40 @@ function getAdminStatusMessage(statusCode) {
     return 'Product deleted successfully.';
   }
 
+  if (statusCode === 'category-saved') {
+    return 'Category saved successfully.';
+  }
+
   if (statusCode === 'category-deleted') {
     return 'Category deleted successfully.';
   }
 
+  if (statusCode === 'price-saved') {
+    return 'Product price saved successfully.';
+  }
+
+  if (statusCode === 'image-saved') {
+    return 'Product image saved successfully.';
+  }
+
   if (statusCode === 'order-accepted') {
-    return 'Order accepted. Customer notification is being sent.';
+    return 'Order accepted successfully.';
   }
 
   if (statusCode === 'order-deleted') {
-    return 'Order request deleted successfully.';
+    return 'Order deleted successfully.';
   }
 
   return '';
 }
 
 function getAdminErrorMessage(errorCode) {
-  if (errorCode === 'invalid-image-file') {
-    return 'Please upload a valid image file.';
+  if (errorCode === 'image-too-large') {
+    return 'Image file is too large.';
   }
 
-  if (errorCode === 'image-too-large') {
-    return 'Image file is too large. Max size is 5MB.';
+  if (errorCode === 'invalid-image-file' || errorCode === 'invalid-image-type') {
+    return 'Please upload a valid image file.';
   }
 
   if (errorCode === 'product-image-file-required') {
@@ -2579,7 +1139,7 @@ function getAdminErrorMessage(errorCode) {
   }
 
   if (errorCode === 'save-failed') {
-    return 'Could not save data. Check file permissions and try again.';
+    return 'Could not save data. Please try again.';
   }
 
   if (errorCode === 'db-unavailable') {
@@ -2591,7 +1151,7 @@ function getAdminErrorMessage(errorCode) {
   }
 
   if (errorCode === 'duplicate-product') {
-    return 'A product with the same category and subcategory already exists.';
+    return 'A product with the same category and name already exists.';
   }
 
   if (errorCode === 'duplicate-category') {
@@ -2600,40 +1160,36 @@ function getAdminErrorMessage(errorCode) {
 
   return '';
 }
-
-module.exports = {
+export default {
   buildAdminCategoryBoards: buildAdminCategoryBoards,
   buildCategoryViewData: buildCategoryViewData,
   buildSearchSuggestions: buildSearchSuggestions,
+  buildUniqueProductLegacyId: buildUniqueProductLegacyId,
   buildUniqueProductId: buildUniqueProductId,
+  cleanupLocalImageAsset: cleanupLocalImageAsset,
+  clearCatalogContextCache: clearCatalogContextCache,
   countItems: countItems,
   defaultProductImagePath: defaultProductImagePath,
   filterProductData: filterProductData,
   findProductById: findProductById,
-  getAdminData: function () {
-    return adminData;
-  },
+  getCatalogProductByIdentifier: getCatalogProductByIdentifier,
+  findProductDocumentByIdentifier: findProductDocumentByIdentifier,
+  formatNprAmount: formatNprAmount,
   getAdminErrorMessage: getAdminErrorMessage,
   getAdminStatusMessage: getAdminStatusMessage,
   getCatalogContext: getCatalogContext,
   getOpenCategoryName: getOpenCategoryName,
-  getProductOverrideEntry: getProductOverrideEntry,
-  optimizeUploadedImage: optimizeUploadedImage,
-  optimizeAndPromoteUploadedImage: optimizeAndPromoteUploadedImage,
-  promoteImageToCloudinary: promoteImageToCloudinary,
-  cleanupLocalImageAsset: cleanupLocalImageAsset,
   getUploadedImagePath: getUploadedImagePath,
   homeCarouselImages: homeCarouselImages,
   imageUpload: imageUpload,
-  isDeletedCategory: isDeletedCategory,
   normalizeAssetPath: normalizeAssetPath,
   normalizeForSearch: normalizeForSearch,
   normalizeImageList: normalizeImageList,
   normalizeList: normalizeList,
+  optimizeAndPromoteUploadedImage: optimizeAndPromoteUploadedImage,
+  optimizeUploadedImage: optimizeUploadedImage,
   parseCommaSeparatedList: parseCommaSeparatedList,
-  refreshAdminData: refreshAdminData,
+  promoteImageToCloudinary: promoteImageToCloudinary,
   resolveCategoryName: resolveCategoryName,
-  saveAdminData: saveAdminData,
   toTrimmedString: toTrimmedString,
-  upsertAdminCategory: upsertAdminCategory,
 };

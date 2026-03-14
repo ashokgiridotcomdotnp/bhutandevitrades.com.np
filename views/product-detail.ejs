@@ -40,8 +40,8 @@
             <div class="space-y-4">
               <%
                 function extractNumericPrice(value) {
-                  var normalizedValue = String(value || '').replace(/,/g, '').replace(/[^0-9.]/g, '');
-                  var parsedValue = Number(normalizedValue);
+                  let normalizedValue = String(value || '').replace(/,/g, '').replace(/[^0-9.]/g, '');
+                  let parsedValue = Number(normalizedValue);
 
                   if (!Number.isFinite(parsedValue) || parsedValue <= 0) {
                     return 0;
@@ -51,7 +51,7 @@
                 }
 
                 function formatNprAmount(value) {
-                  var parsedValue = Number(value);
+                  let parsedValue = Number(value);
 
                   if (!Number.isFinite(parsedValue) || parsedValue < 0) {
                     return '';
@@ -63,23 +63,23 @@
                   });
                 }
 
-                var hasDiscountedPrice = product.originalPrice && product.originalPrice !== product.price;
-                var normalizedWhatsappNumber = String(storeWhatsappNumber || '').replace(/[^0-9]/g, '');
-                var whatsappBaseUrl = normalizedWhatsappNumber ? ('https://wa.me/' + normalizedWhatsappNumber) : 'https://wa.me/';
-                var hasStoreContactNumber = Boolean(normalizedWhatsappNumber);
-                var callHref = hasStoreContactNumber ? ('tel:+' + normalizedWhatsappNumber) : '#';
-                var unitPriceValue = extractNumericPrice(product.price);
-                var hasUnitPriceValue = unitPriceValue > 0;
-                var whatsappInquiryMessage = 'Hello, I want details about "' + product.name + '" (' + product.type + ').';
-                var whatsappInquiryHref = whatsappBaseUrl + '?text=' + encodeURIComponent(whatsappInquiryMessage);
-                var authenticatedUser = currentUser && currentUser.email ? currentUser : null;
-                var canPlaceOrder = Boolean(authenticatedUser);
-                var loginToOrderHref = '/login';
-                var orderPageHref = product.id ? ('/order/' + encodeURIComponent(product.id)) : '#';
-                var parsedStockQuantity = Number(String(product && typeof product.quantity !== 'undefined' ? product.quantity : '').trim());
-                var hasStockQuantity = Number.isFinite(parsedStockQuantity) && parsedStockQuantity > 0;
-                var canOrderItem = Boolean(product.id) && hasStockQuantity;
-                var orderActionHref = canOrderItem ? orderPageHref : '#';
+                let hasDiscountedPrice = product.originalPrice && product.originalPrice !== product.price;
+                let normalizedWhatsappNumber = String(storeWhatsappNumber || '').replace(/[^0-9]/g, '');
+                let whatsappBaseUrl = normalizedWhatsappNumber ? ('https://wa.me/' + normalizedWhatsappNumber) : 'https://wa.me/';
+                let hasStoreContactNumber = Boolean(normalizedWhatsappNumber);
+                let callHref = hasStoreContactNumber ? ('tel:+' + normalizedWhatsappNumber) : '#';
+                let unitPriceValue = extractNumericPrice(product.price);
+                let hasUnitPriceValue = unitPriceValue > 0;
+                let whatsappInquiryMessage = 'Hello, I want details about "' + product.name + '" (' + product.type + ').';
+                let whatsappInquiryHref = whatsappBaseUrl + '?text=' + encodeURIComponent(whatsappInquiryMessage);
+                let authenticatedUser = currentUser && currentUser.email ? currentUser : null;
+                let canPlaceOrder = Boolean(authenticatedUser);
+                let loginToOrderHref = '/login';
+                let orderPageHref = product.id ? ('/order/' + encodeURIComponent(product.id)) : '#';
+                let parsedStockQuantity = Number(String(product && typeof product.quantity !== 'undefined' ? product.quantity : '').trim());
+                let hasStockQuantity = Number.isFinite(parsedStockQuantity) && parsedStockQuantity > 0;
+                let canOrderItem = Boolean(product.id) && hasStockQuantity;
+                let orderActionHref = canOrderItem ? orderPageHref : '#';
               %>
               <span class="pro-chip"><%= product.type %></span>
               <h1 class="text-3xl font-extrabold tracking-tight text-slate-900 sm:text-4xl"><%= product.name %></h1>

@@ -1,6 +1,7 @@
-var mongoose = require('mongoose');
+import mongoose from 'mongoose';
 
-var userSchema = new mongoose.Schema(
+
+let userSchema = new mongoose.Schema(
   {
     email: {
       type: String,
@@ -48,5 +49,4 @@ var userSchema = new mongoose.Schema(
 );
 
 userSchema.index({ updatedAt: -1 });
-
-module.exports = mongoose.models.User || mongoose.model('User', userSchema);
+export default mongoose.models.User || mongoose.model('User', userSchema);

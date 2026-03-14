@@ -2,15 +2,14 @@
   "name": "bhutandevitrades.com.np",
   "version": "0.0.0",
   "private": true,
+  "type": "module",
   "scripts": {
     "build": "npm run build:css",
     "build:css": "tailwindcss -i ./public/stylesheets/tailwind.css -o ./public/stylesheets/style.css --minify",
     "watch:css": "tailwindcss -i ./public/stylesheets/tailwind.css -o ./public/stylesheets/style.css --watch",
-    "dev": "nodemon ./bin/www",
-    "migrate:catalog:dry": "node ./scripts/migrate-catalog-admin-state.js --dry-run",
-    "migrate:catalog": "node ./scripts/migrate-catalog-admin-state.js",
+    "dev": "nodemon ./bin/www.js",
     "prestart": "npm run build:css",
-    "start": "node ./bin/www"
+    "start": "node ./bin/www.js"
   },
   "engines": {
     "node": "20.x"

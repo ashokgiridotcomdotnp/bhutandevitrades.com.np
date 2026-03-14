@@ -1,16 +1,16 @@
 (function () {
-  var sidebar = document.getElementById('mobile-category-sidebar');
-  var layoutGrid = null;
-  var productsGrid = null;
-  var siteNav = document.getElementById('site-navbar');
-  var openBtn = document.getElementById('mobile-sidebar-open');
-  var closeBtn = document.getElementById('mobile-sidebar-close');
-  var openBtnOpenIcon = openBtn ? openBtn.querySelector('[data-sidebar-toggle-icon-open]') : null;
-  var openBtnCloseIcon = openBtn ? openBtn.querySelector('[data-sidebar-toggle-icon-close]') : null;
-  var backdrop = document.getElementById('mobile-sidebar-backdrop');
-  var mobileOpenBodyClass = 'mobile-sidebar-open';
-  var desktopStorageKey = 'bhutandevi-desktop-sidebar-collapsed';
-  var desktopCollapsed = false;
+  let sidebar = document.getElementById('mobile-category-sidebar');
+  let layoutGrid = null;
+  let productsGrid = null;
+  let siteNav = document.getElementById('site-navbar');
+  let openBtn = document.getElementById('mobile-sidebar-open');
+  let closeBtn = document.getElementById('mobile-sidebar-close');
+  let openBtnOpenIcon = openBtn ? openBtn.querySelector('[data-sidebar-toggle-icon-open]') : null;
+  let openBtnCloseIcon = openBtn ? openBtn.querySelector('[data-sidebar-toggle-icon-close]') : null;
+  let backdrop = document.getElementById('mobile-sidebar-backdrop');
+  let mobileOpenBodyClass = 'mobile-sidebar-open';
+  let desktopStorageKey = 'bhutandevi-desktop-sidebar-collapsed';
+  let desktopCollapsed = false;
 
   if (!sidebar || !openBtn || !backdrop) {
     return;
@@ -219,7 +219,7 @@
   document.addEventListener('DOMContentLoaded', syncSidebarMode);
   syncSidebarMode();
 
-  var items = sidebar.querySelectorAll('[data-category-accordion-item]');
+  let items = sidebar.querySelectorAll('[data-category-accordion-item]');
   items.forEach(function (item) {
     item.addEventListener('toggle', function () {
       if (!item.open) {

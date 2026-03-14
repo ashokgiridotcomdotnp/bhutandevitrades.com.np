@@ -19,11 +19,11 @@
         <section class="min-w-0 pro-page-enter">
           <%
             function extractNumericPrice(value) {
-              var cleanValue = String(value || '')
+              let cleanValue = String(value || '')
                 .replace(/,/g, '')
                 .replace(/[^0-9.]/g, '')
                 .trim();
-              var parsedValue = Number(cleanValue);
+              let parsedValue = Number(cleanValue);
 
               if (!Number.isFinite(parsedValue) || parsedValue <= 0) {
                 return 0;
@@ -33,7 +33,7 @@
             }
 
             function formatNprAmount(value) {
-              var parsedValue = Number(value);
+              let parsedValue = Number(value);
 
               if (!Number.isFinite(parsedValue) || parsedValue < 0) {
                 return '';
@@ -46,8 +46,8 @@
             }
 
             function parseAvailableStockQuantity(value) {
-              var cleanValue = String(value || '').trim();
-              var parsedValue = Number(cleanValue);
+              let cleanValue = String(value || '').trim();
+              let parsedValue = Number(cleanValue);
 
               if (!cleanValue) {
                 return 0;
@@ -60,24 +60,24 @@
               return Math.floor(parsedValue);
             }
 
-            var storeWhatsappContactNumber = String(storeWhatsappNumber || '').trim();
-            var whatsappBaseUrl = storeWhatsappContactNumber ? ('https://wa.me/' + storeWhatsappContactNumber) : 'https://wa.me/';
-            var hasStoreContactNumber = Boolean(storeWhatsappContactNumber);
-            var callHref = hasStoreContactNumber ? ('tel:' + storeWhatsappContactNumber) : '#';
-            var unitPriceValue = extractNumericPrice(product && product.price ? product.price : '');
-            var unitPriceLabel = unitPriceValue > 0 ? ('NPR ' + formatNprAmount(unitPriceValue)) : (product && product.price ? product.price : 'Contact for price');
-            var productId = product && product.id ? String(product.id) : '';
-            var productName = product && product.name ? String(product.name) : 'Product';
-            var productType = product && product.type ? String(product.type) : (sectionTitle || 'Category');
-            var productDetailHref = productId ? ('/products/' + encodeURIComponent(productId)) : '/';
-            var defaultCustomerName = currentUser && currentUser.name ? currentUser.name : '';
-            var defaultCustomerEmail = currentUser && currentUser.email ? currentUser.email : '';
-            var availableStockQuantity = parseAvailableStockQuantity(product && typeof product.quantity !== 'undefined' ? product.quantity : '');
-            var hasKnownStockQuantity = availableStockQuantity !== null;
-            var isOutOfStock = hasKnownStockQuantity && availableStockQuantity < 1;
-            var quantityInputMax = hasKnownStockQuantity && availableStockQuantity > 0 ? availableStockQuantity : 999;
-            var defaultOrderQuantity = 1;
-            var defaultOrderTotal = unitPriceValue > 0 ? (defaultOrderQuantity * unitPriceValue) : 0;
+            let storeWhatsappContactNumber = String(storeWhatsappNumber || '').trim();
+            let whatsappBaseUrl = storeWhatsappContactNumber ? ('https://wa.me/' + storeWhatsappContactNumber) : 'https://wa.me/';
+            let hasStoreContactNumber = Boolean(storeWhatsappContactNumber);
+            let callHref = hasStoreContactNumber ? ('tel:' + storeWhatsappContactNumber) : '#';
+            let unitPriceValue = extractNumericPrice(product && product.price ? product.price : '');
+            let unitPriceLabel = unitPriceValue > 0 ? ('NPR ' + formatNprAmount(unitPriceValue)) : (product && product.price ? product.price : 'Contact for price');
+            let productId = product && product.id ? String(product.id) : '';
+            let productName = product && product.name ? String(product.name) : 'Product';
+            let productType = product && product.type ? String(product.type) : (sectionTitle || 'Category');
+            let productDetailHref = productId ? ('/products/' + encodeURIComponent(productId)) : '/';
+            let defaultCustomerName = currentUser && currentUser.name ? currentUser.name : '';
+            let defaultCustomerEmail = currentUser && currentUser.email ? currentUser.email : '';
+            let availableStockQuantity = parseAvailableStockQuantity(product && typeof product.quantity !== 'undefined' ? product.quantity : '');
+            let hasKnownStockQuantity = availableStockQuantity !== null;
+            let isOutOfStock = hasKnownStockQuantity && availableStockQuantity < 1;
+            let quantityInputMax = hasKnownStockQuantity && availableStockQuantity > 0 ? availableStockQuantity : 999;
+            let defaultOrderQuantity = 1;
+            let defaultOrderTotal = unitPriceValue > 0 ? (defaultOrderQuantity * unitPriceValue) : 0;
           %>
 
           <article class="pro-panel p-4 sm:p-6 pro-stagger">

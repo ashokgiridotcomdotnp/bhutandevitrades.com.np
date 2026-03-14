@@ -12,26 +12,38 @@
   <body class="text-slate-900">
     <main class="app-shell py-6 pro-page-enter">
       <%
-        function toAnchor(value) {
+        let safeTotalProductCount = typeof totalProductCount !== 'undefined' ? totalProductCount : 0;
+        let safeTotalProductCountAll = typeof totalProductCountAll !== 'undefined' ? totalProductCountAll : safeTotalProductCount;
+        let safeSelectedCategorySlug = typeof selectedCategorySlug !== 'undefined' ? selectedCategorySlug : '';
+        let safeSelectedCategoryName = typeof selectedCategoryName !== 'undefined' ? selectedCategoryName : '';
+        let safeCategoryBoards = typeof categoryBoards !== 'undefined' ? categoryBoards : [];
+        let safeCategoryFilterOptions = typeof categoryFilterOptions !== 'undefined' ? categoryFilterOptions : [];
+        let safeAdminCategoryRecords = typeof adminCategoryRecords !== 'undefined' ? adminCategoryRecords : {};
+        let safeStatusMessage = typeof statusMessage !== 'undefined' ? statusMessage : '';
+        let safeErrorMessage = typeof errorMessage !== 'undefined' ? errorMessage : '';
+
+        function toCategorySlug(value) {
           return String(value || '')
+            .trim()
             .toLowerCase()
-            .replace(/[^a-z0-9]+/g, '-')
-            .replace(/^-+|-+$/g, '');
+            .replace(/[^a-z0-9]+/g, ' ')
+            .trim()
+            .replace(/\s+/g, '-');
         }
 
         function toCount(value) {
-          var parsed = Number(value);
+          let parsed = Number(value);
           return Number.isFinite(parsed) ? parsed : 0;
         }
 
         function toInputNumberValue(value) {
           if (value === null || typeof value === 'undefined' || value === '') return '';
           // coerce to string and strip common formatting/currency characters
-          var s = String(value).trim();
+          let s = String(value).trim();
           // Remove currency symbols and grouping commas, keep digits, dot and minus
           s = s.replace(/[^0-9.\-]/g, '');
           if (!s) return '';
-          var n = Number(s);
+          let n = Number(s);
           if (!Number.isFinite(n)) return '';
           // integers: return without decimal; otherwise keep up to 2 decimals
           if (Math.floor(n) === n) return String(n);
@@ -39,30 +51,116 @@
         }
 
         function buildAdminProductsPageHref(targetPage) {
-          var parsedPage = Number(targetPage);
-          var safePage = Number.isFinite(parsedPage) && parsedPage > 0 ? Math.floor(parsedPage) : 1;
+          let parsedPage = Number(targetPage);
+          let safePage = Number.isFinite(parsedPage) && parsedPage > 0 ? Math.floor(parsedPage) : 1;
+          let categorySlug = String(safeSelectedCategorySlug || '').trim();
+          let categoryParam = categorySlug ? 'category=' + encodeURIComponent(categorySlug) : '';
 
           if (safePage <= 1) {
-            return '/admin/products';
+            return '/admin/products' + (categoryParam ? '?' + categoryParam : '');
           }
 
-          return '/admin/products?page=' + safePage;
+          return '/admin/products?' + (categoryParam ? (categoryParam + '&') : '') + 'page=' + safePage;
         }
 
-        var stats = dashboardStats && typeof dashboardStats === 'object' ? dashboardStats : {};
-        var rows = Array.isArray(productRows) ? productRows : [];
-        var currentPage = Number.isFinite(Number(adminProductsPage)) ? Math.max(1, Number(adminProductsPage)) : 1;
-        var totalPages = Number.isFinite(Number(adminProductsTotalPages)) ? Math.max(1, Number(adminProductsTotalPages)) : 1;
-        var currentPagePath = String(adminProductsPagePath || buildAdminProductsPageHref(currentPage));
+        function buildAdminProductsCategoryFilterHref(categorySlug) {
+          let cleaned = String(categorySlug || '').trim();
+          if (!cleaned) return '/admin/products';
+          return '/admin/products?category=' + encodeURIComponent(cleaned);
+        }
+
+        let stats = dashboardStats && typeof dashboardStats === 'object' ? dashboardStats : {};
+        let rows = Array.isArray(productRows) ? productRows : [];
+        let currentPage = Number.isFinite(Number(adminProductsPage)) ? Math.max(1, Number(adminProductsPage)) : 1;
+        let totalPages = Number.isFinite(Number(adminProductsTotalPages)) ? Math.max(1, Number(adminProductsTotalPages)) : 1;
+        let currentPagePath = String(adminProductsPagePath || buildAdminProductsPageHref(currentPage));
+        let allProductCount = Number.isFinite(Number(safeTotalProductCountAll)) ? Math.max(0, Number(safeTotalProductCountAll)) : toCount(safeTotalProductCount);
+        let isFiltered = Boolean(String(safeSelectedCategorySlug || '').trim());
+        let orderedBoards = Array.isArray(safeCategoryBoards)
+          ? safeCategoryBoards.filter(function (board) { return board && board.name; })
+          : [];
+        let filterOptions = Array.isArray(safeCategoryFilterOptions) ? safeCategoryFilterOptions : [];
+        let computedCategoryButtons = [];
+        let adminCategoryRecordsMap = safeAdminCategoryRecords && typeof safeAdminCategoryRecords === 'object' ? safeAdminCategoryRecords : {};
+
+        function buildCategoryButtonsFromBoards(boards) {
+          let list = Array.isArray(boards) ? boards : [];
+          let out = [];
+          let seen = Object.create(null);
+
+          list.forEach(function (board) {
+            let name = String(board && board.name ? board.name : '').trim();
+            let slug = toCategorySlug(name);
+            let count = Array.isArray(board && board.items) ? board.items.length : 0;
+
+            if (!name || !slug || seen[slug]) {
+              return;
+            }
+
+            seen[slug] = true;
+            out.push({ slug: slug, name: name, count: count });
+          });
+
+          return out;
+        }
+
+        function buildCategoryButtonsFromRows(productRows) {
+          let list = Array.isArray(productRows) ? productRows : [];
+          let out = [];
+          let seen = Object.create(null);
+
+          list.forEach(function (item) {
+            let name = String((item && (item.categoryName || item.type)) || 'Other').trim();
+            let slug = toCategorySlug(name);
+
+            if (!name || !slug) {
+              return;
+            }
+
+            if (!seen[slug]) {
+              seen[slug] = { slug: slug, name: name, count: 0 };
+            }
+
+            seen[slug].count += 1;
+          });
+
+          Object.keys(seen).forEach(function (slug) {
+            out.push(seen[slug]);
+          });
+
+          return out;
+        }
+
+        if (Array.isArray(filterOptions) && filterOptions.length) {
+          computedCategoryButtons = filterOptions.slice();
+        } else if (Array.isArray(orderedBoards) && orderedBoards.length) {
+          computedCategoryButtons = buildCategoryButtonsFromBoards(orderedBoards);
+        } else if (Array.isArray(rows) && rows.length) {
+          computedCategoryButtons = buildCategoryButtonsFromRows(rows);
+        }
+
+        computedCategoryButtons.sort(function (left, right) {
+          return String(left && left.name ? left.name : '').localeCompare(String(right && right.name ? right.name : ''));
+        });
+
+        function getEditableCategoryRecord(categoryName) {
+          let categoryKey = toCategorySlug(categoryName);
+          return categoryKey ? (adminCategoryRecordsMap[categoryKey] || null) : null;
+        }
+
+        function getConfiguredItems(categoryName) {
+          let record = getEditableCategoryRecord(categoryName);
+          return record && Array.isArray(record.items) ? record.items : [];
+        }
+
+        function getEditableCategoryItemsText(categoryName) {
+          return getConfiguredItems(categoryName).join(', ');
+        }
       %>
 
       <header class="mb-4 pro-panel px-5 py-4 pro-stagger">
         <div class="flex flex-wrap items-start gap-3">
-          <div>
             <h1 class="text-2xl font-extrabold tracking-tight text-slate-900">Products</h1>
-            <p class="mt-0.5 text-sm text-slate-600">Browse the full product overview outside the dashboard forms.</p>
-          </div>
-
           <div class="ml-auto flex flex-wrap items-center gap-2">
             <a href="/admin" class="pro-btn-secondary pro-btn-sm">Dashboard</a>
             <a href="/admin/orders" class="pro-btn-secondary pro-btn-sm">Order Requests</a>
@@ -74,18 +172,20 @@
         </div>
       </header>
 
-      <% if (statusMessage) { %>
-      <div class="hidden" data-success-alert><%= statusMessage %></div>
+      <% if (safeStatusMessage) { %>
+      <div class="hidden" data-success-alert><%= safeStatusMessage %></div>
       <% } %>
 
-      <% if (errorMessage) { %>
-      <div class="hidden" data-error-alert><%= errorMessage %></div>
+      <% if (safeErrorMessage) { %>
+      <div class="hidden" data-error-alert><%= safeErrorMessage %></div>
       <% } %>
 
       <section class="mb-4 grid gap-3 sm:grid-cols-3">
         <article class="pro-panel p-4">
           <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Products</p>
-          <p class="pt-2 text-3xl font-extrabold text-slate-900" data-product-overview-count><%= toCount(totalProductCount) %> products</p>
+          <p class="pt-2 text-3xl font-extrabold text-slate-900" data-product-overview-count>
+            <%= toCount(safeTotalProductCount) %><%= isFiltered ? (' of ' + allProductCount) : '' %> products
+          </p>
           <p class="pt-1 text-xs text-slate-500"><%= toCount(stats.adminOnlyProducts) %> admin-added</p>
         </article>
         <article class="pro-panel p-4">
@@ -100,6 +200,51 @@
         </article>
       </section>
 
+      <section class="mb-4 pro-panel grid gap-4 p-5 pro-stagger" data-category-section>
+        <div class="flex flex-wrap items-center gap-2">
+          <div class="min-w-0 flex-1">
+            <h2 class="text-xl font-extrabold tracking-tight text-slate-900">Categories</h2>
+            <% if (isFiltered) { %>
+            <p class="pt-1 text-xs text-slate-600">
+              Filtering products by: <span class="font-semibold text-slate-800"><%= safeSelectedCategoryName || safeSelectedCategorySlug %></span>
+              <a href="/admin/products" class="ml-2 underline decoration-slate-300 underline-offset-2 hover:decoration-slate-500">Clear filter</a>
+            </p>
+            <% } %>
+          </div>
+          <span class="rounded-full border border-slate-300 bg-slate-50 px-2.5 py-1 text-xs font-semibold text-slate-600"><span data-category-count-badge><%= computedCategoryButtons.length %></span> categories</span>
+        </div>
+
+        <div class="flex flex-wrap items-center gap-2" data-category-filter-buttons data-all-product-count="<%= allProductCount %>">
+          <a
+            href="/admin/products"
+            class="<%= isFiltered ? 'pro-btn-secondary' : 'pro-btn-primary' %> pro-btn-xs"
+            <%= isFiltered ? '' : 'aria-current="page"' %>
+            data-category-filter-button="__all__"
+          >
+            All
+            <span class="ml-1 inline-flex items-center justify-center rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[11px] font-bold text-slate-700"><%= allProductCount %></span>
+          </a>
+
+          <% computedCategoryButtons.forEach(function (option) { %>
+          <%
+            let optionSlug = String(option && option.slug ? option.slug : '');
+            let optionName = String(option && option.name ? option.name : '').trim();
+            let optionCount = Number.isFinite(Number(option && option.count)) ? Number(option.count) : 0;
+            let isActiveCategory = optionSlug && String(safeSelectedCategorySlug || '') === optionSlug;
+          %>
+          <a
+            href="<%= buildAdminProductsCategoryFilterHref(optionSlug) %>"
+            class="<%= isActiveCategory ? 'pro-btn-primary' : 'pro-btn-secondary' %> pro-btn-xs"
+            <%= isActiveCategory ? 'aria-current="page"' : '' %>
+            data-category-filter-button="<%= optionSlug %>"
+          >
+            <span class="max-w-[10rem] truncate"><%= optionName %></span>
+            <span class="ml-1 inline-flex items-center justify-center rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[11px] font-bold text-slate-700"><%= optionCount %></span>
+          </a>
+          <% }) %>
+        </div>
+      </section>
+
       <section class="pro-panel min-w-0 self-start px-4 pb-4 pt-5 sm:px-4 sm:pb-4 sm:pt-5" data-managed-products-root>
           <div class="flex flex-wrap items-start gap-1.5 border-b border-slate-200 pb-3">
             <div class="min-w-0 flex-1 grid gap-0.5">
@@ -108,7 +253,7 @@
               <p class="text-xs text-slate-600">Edit price, stock, title, image, and category assignments directly from this table.</p>
             </div>
 
-            <span class="rounded-full border border-slate-300 bg-slate-50 px-2.5 py-1 text-xs font-semibold text-slate-600" data-managed-product-count-badge><%= toCount(rows.length) %> products</span>
+            <span class="rounded-full border border-slate-300 bg-slate-50 px-2.5 py-1 text-xs font-semibold text-slate-600" data-managed-product-count-badge><%= toCount(safeTotalProductCount) %> products</span>
           </div>
 
           <% if (!rows.length) { %>
@@ -124,7 +269,9 @@
                       <th class="px-3 py-3">Product</th>
                       <th class="px-3 py-3">Category</th>
                       <th class="px-3 py-3">Description</th>
-                      <th class="px-3 py-3">Price</th>
+                      <th class="px-3 py-3">Actual Price</th>
+                      <th class="px-3 py-3">Discounted Price</th>
+                      <th class="px-3 py-3">Discount %</th>
                       <th class="px-3 py-3">Stock</th>
                       <th class="px-3 py-3">Sold</th>
                       <th class="px-3 py-3">Image</th>
@@ -157,12 +304,14 @@
                       <td class="px-3 py-3"><div class="h-8 w-24 rounded bg-slate-200 animate-pulse"></div></td>
                     </tr>
                     <% rows.forEach(function (item) { %>
-                    <% var editImageInputId = 'edit-image-' + item.id; %>
-                    <% var hasItemDiscount = item.originalPrice && item.originalPrice !== item.price; %>
-                    <% var editMrpInputValue = toInputNumberValue(item.originalPrice || item.price); %>
-                    <% var editDiscountInputValue = toInputNumberValue(item.discountPercent); %>
-                    <% var editQuantityInputValue = toInputNumberValue(item.quantity); %>
-                    <% var stockValue = item.quantity || item.quantity === 0 ? item.quantity : '-'; %>
+                    <% let editImageInputId = 'edit-image-' + item.id; %>
+                    <% let hasItemDiscount = item.originalPrice && item.originalPrice !== item.price; %>
+                    <% let editMrpInputValue = toInputNumberValue(item.originalPrice || item.price); %>
+                    <% let editDiscountInputValue = toInputNumberValue(item.discountPercent); %>
+                    <% let editQuantityInputValue = toInputNumberValue(item.quantity); %>
+                    <% let stockValue = item.quantity || item.quantity === 0 ? item.quantity : '-'; %>
+                    <% let productCategoryLabel = String(item.categoryName || item.type || 'Other'); %>
+                    <% let productCategorySlug = toCategorySlug(productCategoryLabel); %>
                     <tr class="align-middle transition-colors hover:bg-slate-50/70" data-view-panel="<%= item.id %>">
                       <td class="px-3 py-3" data-product-name-cell>
                         <div class="grid gap-1">
@@ -171,23 +320,29 @@
                         </div>
                       </td>
                       <td class="px-3 py-3">
-                        <span class="inline-flex rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-semibold text-slate-700" data-product-category-text><%= item.categoryName || item.type || 'Other' %></span>
+                        <a
+                          href="<%= buildAdminProductsCategoryFilterHref(productCategorySlug) %>"
+                          class="inline-flex rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-semibold text-slate-700 transition hover:bg-slate-100"
+                          title="Filter products by <%= productCategoryLabel %>"
+                          data-product-category-link
+                        >
+                          <span data-product-category-text><%= productCategoryLabel %></span>
+                        </a>
                       </td>
                       <td class="px-3 py-3">
                         <p class="max-w-[20rem] text-sm leading-5 text-slate-700" data-product-spec-text><%= item.spec || 'No description' %></p>
                       </td>
-                      <td class="px-3 py-3 text-slate-800" data-product-price-cell>
-                        <% if (hasItemDiscount) { %>
-                        <p class="text-xs font-semibold text-red-600 line-through" data-product-original-price-text><%= item.originalPrice %></p>
-                        <% } else { %>
-                        <p class="hidden text-xs font-semibold text-red-600 line-through" data-product-original-price-text></p>
-                        <% } %>
+                      <td class="px-3 py-3 text-slate-800" data-product-actual-price-cell>
+                        <% let actualPrice = item.originalPrice || item.price; %>
+                        <% let hasDiscount = Boolean(item.originalPrice) && item.originalPrice !== item.price; %>
+                        <p class="<%= hasDiscount ? 'text-xs font-semibold text-red-600 line-through' : 'text-sm font-semibold text-slate-800' %>" data-product-original-price-text><%= actualPrice %></p>
+                      </td>
+                      <td class="px-3 py-3 text-slate-800" data-product-final-price-cell>
                         <p class="pt-0.5 font-semibold text-emerald-700" data-product-final-price-text><%= item.price %></p>
-                        <% if (item.discountPercent) { %>
-                        <p class="pt-1 text-xs font-semibold text-slate-600" data-product-discount-text>Discount: <%= item.discountPercent %>%</p>
-                        <% } else { %>
-                        <p class="hidden pt-1 text-xs font-semibold text-slate-600" data-product-discount-text></p>
-                        <% } %>
+                      </td>
+                      <td class="px-3 py-3" data-product-discount-cell>
+                        <% let discountPercentLabel = String(item.discountPercent || '').trim(); %>
+                        <span class="inline-flex min-w-[4.5rem] items-center justify-center rounded-full border border-slate-200 bg-white px-2.5 py-1 text-xs font-bold text-slate-800"><%= discountPercentLabel ? (discountPercentLabel + '%') : '0%' %></span>
                       </td>
                       <td class="px-3 py-3">
                         <span class="inline-flex min-w-[3.25rem] justify-center rounded-full border border-slate-200 bg-white px-2.5 py-1 text-xs font-bold text-slate-800" data-product-stock-text><%= stockValue %></span>
@@ -227,7 +382,7 @@
                       </td>
                     </tr>
                     <tr class="hidden bg-cyan-50/30 ring-1 ring-cyan-100" data-edit-row="<%= item.id %>">
-                      <td colspan="8" class="px-0 py-3">
+                      <td colspan="10" class="px-0 py-3">
                         <form
                           action="/admin/products/edit"
                           method="post"
@@ -394,7 +549,7 @@
               </a>
 
               <div class="flex flex-wrap items-center justify-center gap-1.5">
-                <% for (var pageNumber = 1; pageNumber <= totalPages; pageNumber += 1) { %>
+                <% for (let pageNumber = 1; pageNumber <= totalPages; pageNumber += 1) { %>
                 <% if (pageNumber === 1 || pageNumber === totalPages || Math.abs(pageNumber - currentPage) <= 1) { %>
                 <a
                   href="<%= buildAdminProductsPageHref(pageNumber) %>"
@@ -451,37 +606,211 @@
     <script src="<%= assetPath('/javascripts/admin.js') %>"></script>
     <script>
       (function () {
-        function toggleEdit(id, show) {
-          if (!id) return;
-          var editRow = document.querySelector('[data-edit-row="' + id + '"]');
-          if (!editRow) return;
-
-          // hide other edit rows
-          document.querySelectorAll('[data-edit-row]').forEach(function (r) {
-            if (r !== editRow) {
-              r.classList.add('hidden');
-              var f = r.querySelector('form[data-edit-form]'); if (f) f.classList.add('hidden');
-            }
-          });
-
-          var form = editRow.querySelector('form[data-edit-form]');
-          if (show) {
-            editRow.classList.remove('hidden');
-            if (form) form.classList.remove('hidden');
-            setTimeout(function () { editRow.scrollIntoView({ behavior: 'smooth', block: 'center' }); }, 60);
-          } else {
-            editRow.classList.add('hidden');
-            if (form) form.classList.add('hidden');
-          }
+        function escapeHtml(s) {
+          return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
         }
 
-        document.querySelectorAll('[data-edit-toggle]').forEach(function (btn) {
-          btn.addEventListener('click', function () { toggleEdit(btn.getAttribute('data-edit-toggle'), true); });
-        });
+        function parseNumericText(value) {
+          let cleaned = String(value || '').replace(/[^0-9.\-]/g, '').trim();
+          if (!cleaned) return NaN;
+          let parsed = Number(cleaned);
+          return Number.isFinite(parsed) ? parsed : NaN;
+        }
 
-        document.querySelectorAll('[data-edit-cancel]').forEach(function (btn) {
-          btn.addEventListener('click', function () { toggleEdit(btn.getAttribute('data-edit-cancel'), false); });
-        });
+        function formatNprAmount(value) {
+          let numericValue = Number(value);
+          let hasDecimals = false;
+
+          if (!Number.isFinite(numericValue) || numericValue < 0) {
+            return '';
+          }
+
+          numericValue = Math.round(numericValue * 100) / 100;
+          hasDecimals = Math.abs(numericValue % 1) > 0;
+
+          return 'NPR ' + numericValue.toLocaleString('en-US', {
+            minimumFractionDigits: hasDecimals ? 2 : 0,
+            maximumFractionDigits: 2,
+          });
+        }
+
+        function clampDiscountPercent(value) {
+          let parsed = Number(value);
+          if (!Number.isFinite(parsed)) return 0;
+          return Math.min(Math.max(Math.round(parsed * 100) / 100, 0), 100);
+        }
+
+        function computeFinalPriceLabel(mrpValue, discountPercentValue) {
+          let mrp = Number(mrpValue);
+          if (!Number.isFinite(mrp) || mrp < 0) return '';
+          let discountPercent = clampDiscountPercent(discountPercentValue);
+          let finalValue = Math.round(mrp * ((100 - discountPercent) / 100) * 100) / 100;
+          return formatNprAmount(finalValue);
+        }
+
+        function makeRowEditable(id) {
+          if (!id) return;
+          const row = document.querySelector('[data-view-panel="' + id + '"]');
+          if (!row || row.dataset.editing === 'true' || row._inlineEditState) return;
+
+          const nameCell = row.querySelector('[data-product-name-cell]');
+          const categoryLink = row.querySelector('[data-product-category-link]');
+          const categoryCell = categoryLink ? categoryLink.closest('td') : null;
+          const specText = row.querySelector('[data-product-spec-text]');
+          const specCell = specText ? specText.closest('td') : null;
+          const actualPriceCell = row.querySelector('[data-product-actual-price-cell]');
+          const finalPriceCell = row.querySelector('[data-product-final-price-cell]');
+          const discountCell = row.querySelector('[data-product-discount-cell]');
+          const stockBadge = row.querySelector('[data-product-stock-text]');
+          const stockCell = stockBadge ? stockBadge.closest('td') : null;
+          const actionsCell = row.querySelector('td:last-child');
+
+          if (!nameCell || !categoryCell || !specCell || !actualPriceCell || !finalPriceCell || !discountCell || !stockCell || !actionsCell) {
+            return;
+          }
+
+          row.dataset.editing = 'true';
+
+          const existingActionsWrap = actionsCell.querySelector('div');
+
+          row._inlineEditState = {
+            nameHtml: nameCell.innerHTML,
+            categoryHtml: categoryCell.innerHTML,
+            specHtml: specCell.innerHTML,
+            actualPriceHtml: actualPriceCell.innerHTML,
+            finalPriceHtml: finalPriceCell.innerHTML,
+            discountHtml: discountCell.innerHTML,
+            stockHtml: stockCell.innerHTML,
+            actionsWrap: existingActionsWrap,
+          };
+
+          if (existingActionsWrap) {
+            existingActionsWrap.classList.add('hidden');
+          }
+
+          const idVal = nameCell.querySelector('[data-product-id-text]')?.textContent.trim() || id;
+          const nameVal = nameCell.querySelector('[data-product-name-text]')?.textContent.trim() || '';
+          const categoryVal = categoryLink?.querySelector('[data-product-category-text]')?.textContent.trim() || '';
+          const specVal = specText?.textContent.trim() || '';
+          const origText = (actualPriceCell.querySelector('[data-product-original-price-text]')?.textContent || '').replace(/[^0-9.\-]/g, '') || '';
+          const discountText = (discountCell.textContent || '').replace(/[^0-9.\-]/g, '') || '';
+          const qtyText = (stockBadge?.textContent || '').replace(/[^0-9\-]/g, '').trim() || '';
+
+          nameCell.innerHTML =
+            '<div class="grid gap-1">' +
+            '<input name="productName" class="pro-input" value="' + escapeHtml(nameVal) + '">' +
+            '<p class="font-mono text-[11px] text-slate-500">ID: <span>' + escapeHtml(idVal) + '</span></p>' +
+            '</div>';
+          categoryCell.innerHTML = '<input name="productCategory" class="pro-input" value="' + escapeHtml(categoryVal) + '">';
+          specCell.innerHTML = '<input name="productSpec" class="pro-input" value="' + escapeHtml(specVal) + '">';
+          actualPriceCell.innerHTML = '<input name="productPrice" type="number" min="0" step="0.01" class="pro-input" value="' + escapeHtml(origText || '') + '">';
+          discountCell.innerHTML = '<input name="productDiscountPercent" type="number" min="0" max="100" step="0.01" class="pro-input" value="' + escapeHtml(discountText || '0') + '">';
+          stockCell.innerHTML = '<input name="productQuantity" type="number" min="0" step="1" class="pro-input" value="' + escapeHtml(qtyText || '') + '">';
+
+          finalPriceCell.innerHTML = '<p class="pt-0.5 font-semibold text-emerald-700" data-product-final-price-text></p>';
+
+          const mrpInput = actualPriceCell.querySelector('input[name="productPrice"]');
+          const discountInput = discountCell.querySelector('input[name="productDiscountPercent"]');
+          const finalTextNode = finalPriceCell.querySelector('[data-product-final-price-text]');
+
+          function syncFinalPreview() {
+            let mrpValue = parseNumericText(mrpInput && mrpInput.value);
+            let discountValue = parseNumericText(discountInput && discountInput.value);
+            let finalLabel = computeFinalPriceLabel(mrpValue, discountValue);
+            if (finalTextNode) finalTextNode.textContent = finalLabel || '-';
+          }
+
+          if (mrpInput) mrpInput.addEventListener('input', syncFinalPreview);
+          if (discountInput) discountInput.addEventListener('input', syncFinalPreview);
+          syncFinalPreview();
+
+          const actionsWrap = document.createElement('div');
+          actionsWrap.className = 'flex min-w-[9rem] items-center gap-1.5 sm:justify-end';
+          actionsWrap.setAttribute('data-inline-actions', id);
+          const saveBtn = document.createElement('button');
+          saveBtn.type = 'button';
+          saveBtn.className = 'pro-btn-primary pro-btn-xs';
+          saveBtn.textContent = 'Save';
+          saveBtn.setAttribute('data-inline-save', id);
+
+          const cancelBtn = document.createElement('button');
+          cancelBtn.type = 'button';
+          cancelBtn.className = 'pro-btn-secondary pro-btn-xs';
+          cancelBtn.textContent = 'Cancel';
+          cancelBtn.setAttribute('data-inline-cancel', id);
+
+          actionsWrap.appendChild(saveBtn);
+          actionsWrap.appendChild(cancelBtn);
+          actionsCell.appendChild(actionsWrap);
+
+          cancelBtn.addEventListener('click', function () {
+            let state = row._inlineEditState;
+            if (!state) return;
+
+            nameCell.innerHTML = state.nameHtml;
+            categoryCell.innerHTML = state.categoryHtml;
+            specCell.innerHTML = state.specHtml;
+            actualPriceCell.innerHTML = state.actualPriceHtml;
+            finalPriceCell.innerHTML = state.finalPriceHtml;
+            discountCell.innerHTML = state.discountHtml;
+            stockCell.innerHTML = state.stockHtml;
+
+            let inlineActionsWrap = actionsCell.querySelector('[data-inline-actions="' + id + '"]');
+            if (inlineActionsWrap) {
+              inlineActionsWrap.remove();
+            }
+
+            if (state.actionsWrap) {
+              state.actionsWrap.classList.remove('hidden');
+            }
+
+            delete row._inlineEditState;
+            delete row.dataset.editing;
+          });
+
+          saveBtn.addEventListener('click', function () {
+            // find the hidden edit form for this id and clone it, populate values and submit
+            const hiddenForm = document.querySelector('form[data-edit-form="' + id + '"]');
+            if (!hiddenForm) return;
+            const clone = hiddenForm.cloneNode(true);
+
+            // helper to set input value if exists
+            function setIfExists(name, value) {
+              const el = clone.querySelector('[name="' + name + '"]');
+              if (el) el.value = value;
+            }
+
+            const inlineName = row.querySelector('input[name=productName]')?.value || '';
+            const inlineCategory = row.querySelector('input[name=productCategory]')?.value || '';
+            const inlineSpec = row.querySelector('input[name=productSpec]')?.value || '';
+            const inlineMrp = row.querySelector('input[name=productPrice]')?.value || '';
+            const inlineDiscount = row.querySelector('input[name=productDiscountPercent]')?.value || '';
+            const inlineQty = row.querySelector('input[name=productQuantity]')?.value || '';
+
+            setIfExists('productName', inlineName);
+            setIfExists('productCategory', inlineCategory);
+            setIfExists('productSpec', inlineSpec);
+            // server expects productPrice as MRP (actual), plus productDiscountPercent
+            setIfExists('productPrice', inlineMrp);
+            setIfExists('productDiscountPercent', inlineDiscount);
+            setIfExists('productQuantity', inlineQty);
+
+            clone.style.display = 'none';
+            document.body.appendChild(clone);
+            clone.submit();
+          });
+        }
+
+        function bindRowButtons() {
+          document.querySelectorAll('[data-edit-toggle]').forEach(function (btn) {
+            btn.removeEventListener('click', btn._inlineHandler);
+            btn._inlineHandler = function () { makeRowEditable(btn.getAttribute('data-edit-toggle')); };
+            btn.addEventListener('click', btn._inlineHandler);
+          });
+        }
+
+        // initial bind
+        bindRowButtons();
       })();
     </script>
   </body>

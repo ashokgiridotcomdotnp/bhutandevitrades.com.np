@@ -1,8 +1,9 @@
-var catalogCrudService = require('../services/catalogCrudService');
-var catalogMutationQueue = Promise.resolve();
+import catalogCrudService from '../services/catalogCrudService.js';
+
+let catalogMutationQueue = Promise.resolve();
 
 function runCatalogMutation(task) {
-  var queuedTask = catalogMutationQueue.then(function () {
+  let queuedTask = catalogMutationQueue.then(function () {
     return Promise.resolve().then(task);
   });
 
@@ -21,9 +22,9 @@ function sendSuccess(res, statusCode, payload) {
 }
 
 function sendError(res, error) {
-  var statusCode = error && Number.isFinite(error.statusCode) ? error.statusCode : 500;
-  var code = error && error.code ? error.code : 'internal-error';
-  var message = error && error.message ? error.message : 'Unexpected catalog error';
+  let statusCode = error && Number.isFinite(error.statusCode) ? error.statusCode : 500;
+  let code = error && error.code ? error.code : 'internal-error';
+  let message = error && error.message ? error.message : 'Unexpected catalog error';
 
   if (statusCode >= 500) {
     console.error('Catalog controller error:', message);
@@ -41,7 +42,7 @@ function sendError(res, error) {
 
 async function createCategory(req, res) {
   try {
-    var result = await runCatalogMutation(function () {
+    let result = await runCatalogMutation(function () {
       return catalogCrudService.createCategory(req.body || {});
     });
     return sendSuccess(res, result.created ? 201 : 200, result);
@@ -52,7 +53,7 @@ async function createCategory(req, res) {
 
 async function createBrand(req, res) {
   try {
-    var result = await runCatalogMutation(function () {
+    let result = await runCatalogMutation(function () {
       return catalogCrudService.createBrand(req.body || {});
     });
     return sendSuccess(res, result.created ? 201 : 200, result);
@@ -63,7 +64,7 @@ async function createBrand(req, res) {
 
 async function createProduct(req, res) {
   try {
-    var result = await runCatalogMutation(function () {
+    let result = await runCatalogMutation(function () {
       return catalogCrudService.createProduct(req.body || {});
     });
     return sendSuccess(res, 201, result);
@@ -74,7 +75,7 @@ async function createProduct(req, res) {
 
 async function updateProduct(req, res) {
   try {
-    var result = await runCatalogMutation(function () {
+    let result = await runCatalogMutation(function () {
       return catalogCrudService.updateProduct(req.params.productId, req.body || {});
     });
     return sendSuccess(res, 200, result);
@@ -85,7 +86,7 @@ async function updateProduct(req, res) {
 
 async function deleteProduct(req, res) {
   try {
-    var result = await runCatalogMutation(function () {
+    let result = await runCatalogMutation(function () {
       return catalogCrudService.deleteProduct(req.params.productId);
     });
     return sendSuccess(res, 200, result);
@@ -93,8 +94,7 @@ async function deleteProduct(req, res) {
     return sendError(res, error);
   }
 }
-
-module.exports = {
+export default {
   createBrand: createBrand,
   createCategory: createCategory,
   createProduct: createProduct,

@@ -1,34 +1,34 @@
 (function () {
-  var form = document.querySelector('[data-order-page-form]');
+  let form = document.querySelector('[data-order-page-form]');
 
   if (!form) {
     return;
   }
 
-  var productIdInput = form.querySelector('[data-order-product-id]');
-  var productNameInput = form.querySelector('[data-order-product-name]');
-  var productTypeInput = form.querySelector('[data-order-product-type]');
-  var quantityInput = form.querySelector('[data-order-quantity]');
-  var unitPriceInput = form.querySelector('[data-order-unit-price]');
-  var totalElement = form.querySelector('[data-order-total]');
-  var customerNameInput = form.querySelector('[data-order-customer-name]');
-  var phoneInput = form.querySelector('[data-order-phone]');
-  var customerEmailInput = form.querySelector('[data-order-customer-email]');
-  var noteInput = form.querySelector('[data-order-note]');
-  var submitButtons = Array.prototype.slice.call(form.querySelectorAll('[data-order-submit]'));
-  var successMessageElement = form.querySelector('[data-order-success]');
-  var errorMessageElement = form.querySelector('[data-order-error]');
-  var whatsappBaseUrl = String(form.getAttribute('data-whatsapp-base-url') || '').trim();
-  var unitPriceValue = parsePositiveNumber(form.getAttribute('data-order-unit-price-value'));
-  var unitPriceLabel = String(form.getAttribute('data-order-unit-price-label') || 'Contact for price').trim() || 'Contact for price';
-  var availableStockQuantity = parseAvailableStockQuantity(form.getAttribute('data-order-stock-quantity'));
+  let productIdInput = form.querySelector('[data-order-product-id]');
+  let productNameInput = form.querySelector('[data-order-product-name]');
+  let productTypeInput = form.querySelector('[data-order-product-type]');
+  let quantityInput = form.querySelector('[data-order-quantity]');
+  let unitPriceInput = form.querySelector('[data-order-unit-price]');
+  let totalElement = form.querySelector('[data-order-total]');
+  let customerNameInput = form.querySelector('[data-order-customer-name]');
+  let phoneInput = form.querySelector('[data-order-phone]');
+  let customerEmailInput = form.querySelector('[data-order-customer-email]');
+  let noteInput = form.querySelector('[data-order-note]');
+  let submitButtons = Array.prototype.slice.call(form.querySelectorAll('[data-order-submit]'));
+  let successMessageElement = form.querySelector('[data-order-success]');
+  let errorMessageElement = form.querySelector('[data-order-error]');
+  let whatsappBaseUrl = String(form.getAttribute('data-whatsapp-base-url') || '').trim();
+  let unitPriceValue = parsePositiveNumber(form.getAttribute('data-order-unit-price-value'));
+  let unitPriceLabel = String(form.getAttribute('data-order-unit-price-label') || 'Contact for price').trim() || 'Contact for price';
+  let availableStockQuantity = parseAvailableStockQuantity(form.getAttribute('data-order-stock-quantity'));
 
   function parsePositiveNumber(value) {
-    var cleanValue = String(value || '')
+    let cleanValue = String(value || '')
       .replace(/,/g, '')
       .replace(/[^0-9.]/g, '')
       .trim();
-    var parsedValue = Number(cleanValue);
+    let parsedValue = Number(cleanValue);
 
     if (!Number.isFinite(parsedValue) || parsedValue <= 0) {
       return 0;
@@ -38,8 +38,8 @@
   }
 
   function parseAvailableStockQuantity(value) {
-    var cleanValue = String(value || '').trim();
-    var parsedValue = Number(cleanValue);
+    let cleanValue = String(value || '').trim();
+    let parsedValue = Number(cleanValue);
 
     if (!cleanValue) {
       return 0;
@@ -53,12 +53,12 @@
   }
 
   function isValidOrderPhone(value) {
-    var phoneNumber = String(value || '').trim();
+    let phoneNumber = String(value || '').trim();
     return /^(?:9[0-9]{9}|\+9779[0-9]{9}|9779[0-9]{9})$/.test(phoneNumber);
   }
 
   function toPositiveInteger(value) {
-    var parsedValue = Number(value);
+    let parsedValue = Number(value);
 
     if (!Number.isFinite(parsedValue) || parsedValue < 1) {
       return 1;
@@ -68,7 +68,7 @@
   }
 
   function formatNprAmount(value) {
-    var parsedValue = Number(value);
+    let parsedValue = Number(value);
 
     if (!Number.isFinite(parsedValue) || parsedValue < 0) {
       return '0';
@@ -81,14 +81,14 @@
   }
 
   function refreshOrderTotal() {
-    var quantity = toPositiveInteger(quantityInput.value);
+    let quantity = toPositiveInteger(quantityInput.value);
 
     if (availableStockQuantity !== null && availableStockQuantity > 0 && quantity > availableStockQuantity) {
       quantity = availableStockQuantity;
       quantityInput.value = String(availableStockQuantity);
     }
 
-    var totalPrice = quantity * unitPriceValue;
+    let totalPrice = quantity * unitPriceValue;
 
     unitPriceInput.value = unitPriceLabel;
 
@@ -101,7 +101,7 @@
   }
 
   function buildFallbackWhatsappMessage(payload, totalLabel) {
-    var lines = [];
+    let lines = [];
 
     lines.push('Hello, I want to place an order.');
     lines.push('');
@@ -131,13 +131,13 @@
   }
 
   function validateOrderForm() {
-    var quantityRaw = String(quantityInput && quantityInput.value ? quantityInput.value : '').trim();
-    var quantityNumber = Number(quantityRaw);
-    var customerName = String(customerNameInput && customerNameInput.value ? customerNameInput.value : '').trim();
-    var phoneNumber = String(phoneInput && phoneInput.value ? phoneInput.value : '').trim();
-    var customerEmail = String(customerEmailInput && customerEmailInput.value ? customerEmailInput.value : '').trim().toLowerCase();
-    var note = String(noteInput && noteInput.value ? noteInput.value : '').trim();
-    var hasError = false;
+    let quantityRaw = String(quantityInput && quantityInput.value ? quantityInput.value : '').trim();
+    let quantityNumber = Number(quantityRaw);
+    let customerName = String(customerNameInput && customerNameInput.value ? customerNameInput.value : '').trim();
+    let phoneNumber = String(phoneInput && phoneInput.value ? phoneInput.value : '').trim();
+    let customerEmail = String(customerEmailInput && customerEmailInput.value ? customerEmailInput.value : '').trim().toLowerCase();
+    let note = String(noteInput && noteInput.value ? noteInput.value : '').trim();
+    let hasError = false;
 
     quantityInput.setCustomValidity('');
     customerNameInput.setCustomValidity('');
@@ -204,8 +204,8 @@
     }
 
     submitButtons.forEach(function (button) {
-      var labelElement = button.querySelector('[data-order-submit-label]');
-      var defaultLabel = String(button.getAttribute('data-default-label') || '').trim();
+      let labelElement = button.querySelector('[data-order-submit-label]');
+      let defaultLabel = String(button.getAttribute('data-default-label') || '').trim();
 
       if (!defaultLabel) {
         defaultLabel = labelElement ? String(labelElement.textContent || '').trim() : String(button.textContent || '').trim();
@@ -224,7 +224,7 @@
   }
 
   function setLoadingOverlay(isVisible) {
-    var globalLoading = window.bdLoading || null;
+    let globalLoading = window.bdLoading || null;
 
     if (!globalLoading || typeof globalLoading !== 'object') {
       return;
@@ -313,12 +313,12 @@
   }
 
   form.addEventListener('submit', async function (event) {
-    var submitter = event.submitter && event.submitter.matches('[data-order-submit]')
+    let submitter = event.submitter && event.submitter.matches('[data-order-submit]')
       ? event.submitter
       : null;
-    var orderMethod = submitter ? String(submitter.getAttribute('data-order-method') || '').trim().toLowerCase() : '';
-    var quantity = toPositiveInteger(quantityInput.value);
-    var payload = {
+    let orderMethod = submitter ? String(submitter.getAttribute('data-order-method') || '').trim().toLowerCase() : '';
+    let quantity = toPositiveInteger(quantityInput.value);
+    let payload = {
       productId: String(productIdInput && productIdInput.value ? productIdInput.value : '').trim(),
       productName: String(productNameInput && productNameInput.value ? productNameInput.value : 'Product').trim(),
       productType: String(productTypeInput && productTypeInput.value ? productTypeInput.value : 'Category').trim(),
@@ -330,12 +330,12 @@
       customerEmail: String(customerEmailInput && customerEmailInput.value ? customerEmailInput.value : '').trim(),
       note: String(noteInput && noteInput.value ? noteInput.value : '').trim()
     };
-    var totalLabel = unitPriceValue > 0 ? ('NPR ' + formatNprAmount(quantity * unitPriceValue)) : 'Contact for price';
-    var response = null;
-    var result = null;
-    var shouldOpenWhatsapp = orderMethod === 'whatsapp';
-    var whatsappMessage = '';
-    var whatsappHref = '';
+    let totalLabel = unitPriceValue > 0 ? ('NPR ' + formatNprAmount(quantity * unitPriceValue)) : 'Contact for price';
+    let response = null;
+    let result = null;
+    let shouldOpenWhatsapp = orderMethod === 'whatsapp';
+    let whatsappMessage = '';
+    let whatsappHref = '';
 
     event.preventDefault();
     clearMessages();

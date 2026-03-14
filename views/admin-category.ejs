@@ -24,34 +24,34 @@
         }
 
         function toCount(value) {
-          var parsed = Number(value);
+          let parsed = Number(value);
           return Number.isFinite(parsed) ? parsed : 0;
         }
 
         function toInputNumberValue(value) {
-          var cleanedValue = String(value || '').replace(/,/g, '').trim();
-          var matchedValue = cleanedValue.match(/-?\d+(\.\d+)?/);
+          let cleanedValue = String(value || '').replace(/,/g, '').trim();
+          let matchedValue = cleanedValue.match(/-?\d+(\.\d+)?/);
           return matchedValue ? matchedValue[0] : '';
         }
 
-        var boardItems = Array.isArray(categoryBoard && categoryBoard.items) ? categoryBoard.items : [];
-        var availableBoards = Array.isArray(categoryBoards)
+        let boardItems = Array.isArray(categoryBoard && categoryBoard.items) ? categoryBoard.items : [];
+        let availableBoards = Array.isArray(categoryBoards)
           ? categoryBoards.filter(function (board) {
               return board && board.name;
             })
           : [];
-        var normalizedCategoryName = toAnchor(categoryBoard && categoryBoard.name);
-        var isHelmetCategory = normalizedCategoryName === 'helmet';
-        var currentCategoryRecord = categoryRecord && typeof categoryRecord === 'object' ? categoryRecord : null;
-        var addProductSubcategoryOptions = [];
-        var seenAddProductSubcategories = {};
-        var managedCategoryDescription = currentCategoryRecord && currentCategoryRecord.description
+        let normalizedCategoryName = toAnchor(categoryBoard && categoryBoard.name);
+        let isHelmetCategory = normalizedCategoryName === 'helmet';
+        let currentCategoryRecord = categoryRecord && typeof categoryRecord === 'object' ? categoryRecord : null;
+        let addProductSubcategoryOptions = [];
+        let seenAddProductSubcategories = {};
+        let managedCategoryDescription = currentCategoryRecord && currentCategoryRecord.description
           ? String(currentCategoryRecord.description)
           : '';
 
         function addProductSubcategoryOption(value) {
-          var cleanedValue = String(value || '').trim();
-          var key = toAnchor(cleanedValue);
+          let cleanedValue = String(value || '').trim();
+          let key = toAnchor(cleanedValue);
 
           if (!cleanedValue || !key || seenAddProductSubcategories[key]) {
             return;
@@ -85,18 +85,18 @@
           return left.localeCompare(right);
         });
 
-        var managedCategoryItems = currentCategoryRecord && Array.isArray(currentCategoryRecord.items)
+        let managedCategoryItems = currentCategoryRecord && Array.isArray(currentCategoryRecord.items)
           ? currentCategoryRecord.items.slice()
           : addProductSubcategoryOptions.slice();
-        var managedCategoryItemsText = managedCategoryItems.join(', ');
+        let managedCategoryItemsText = managedCategoryItems.join(', ');
 
-        var parsedCategoryItemsPageSize = Number(categoryItemsPageSize);
-        var resolvedCategoryItemsPageSize = Number.isFinite(parsedCategoryItemsPageSize) && parsedCategoryItemsPageSize > 0
+        let parsedCategoryItemsPageSize = Number(categoryItemsPageSize);
+        let resolvedCategoryItemsPageSize = Number.isFinite(parsedCategoryItemsPageSize) && parsedCategoryItemsPageSize > 0
           ? Math.floor(parsedCategoryItemsPageSize)
           : 12;
-        var categoryItemsTotalPages = Math.max(1, Math.ceil(boardItems.length / resolvedCategoryItemsPageSize));
-        var parsedCategoryItemsCurrentPage = Number(categoryItemsPage);
-        var categoryItemsCurrentPage = Number.isFinite(parsedCategoryItemsCurrentPage) && parsedCategoryItemsCurrentPage > 0
+        let categoryItemsTotalPages = Math.max(1, Math.ceil(boardItems.length / resolvedCategoryItemsPageSize));
+        let parsedCategoryItemsCurrentPage = Number(categoryItemsPage);
+        let categoryItemsCurrentPage = Number.isFinite(parsedCategoryItemsCurrentPage) && parsedCategoryItemsCurrentPage > 0
           ? Math.floor(parsedCategoryItemsCurrentPage)
           : 1;
 
@@ -104,14 +104,14 @@
           categoryItemsCurrentPage = categoryItemsTotalPages;
         }
 
-        var categoryItemsStartIndex = (categoryItemsCurrentPage - 1) * resolvedCategoryItemsPageSize;
-        var paginatedBoardItems = boardItems.slice(
+        let categoryItemsStartIndex = (categoryItemsCurrentPage - 1) * resolvedCategoryItemsPageSize;
+        let paginatedBoardItems = boardItems.slice(
           categoryItemsStartIndex,
           categoryItemsStartIndex + resolvedCategoryItemsPageSize
         );
 
         function buildCategoryItemsPageHref(targetPage) {
-          var safeTargetPage = Number(targetPage);
+          let safeTargetPage = Number(targetPage);
 
           if (!Number.isFinite(safeTargetPage) || safeTargetPage < 1) {
             safeTargetPage = 1;
@@ -126,7 +126,7 @@
           return categoryPagePath + '?itemsPage=' + safeTargetPage;
         }
 
-        var categoryItemsRedirectPath = buildCategoryItemsPageHref(categoryItemsCurrentPage);
+        let categoryItemsRedirectPath = buildCategoryItemsPageHref(categoryItemsCurrentPage);
       %>
 
       <header class="pro-panel p-5 pro-stagger">
@@ -167,7 +167,7 @@
 
           <nav class="flex gap-2 overflow-x-auto pt-3 pb-1" aria-label="Category workspaces">
             <% availableBoards.forEach(function (board) { %>
-            <% var isActiveBoard = toAnchor(board.name) === normalizedCategoryName; %>
+            <% let isActiveBoard = toAnchor(board.name) === normalizedCategoryName; %>
             <a
               href="<%= categoryPageHref(board.name) %>"
               class="flex min-w-[10rem] shrink-0 items-center justify-between rounded-xl border px-3 py-2 text-sm font-semibold transition <%= isActiveBoard ? 'border-cyan-600 bg-cyan-50 text-cyan-700 shadow-sm' : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50' %>"
@@ -239,12 +239,12 @@
                       <td class="px-3 py-3"><div class="h-8 w-24 rounded bg-slate-200 animate-pulse"></div></td>
                     </tr>
                     <% paginatedBoardItems.forEach(function (item) { %>
-                    <% var editImageInputId = 'edit-image-' + item.id; %>
-                    <% var hasItemDiscount = item.originalPrice && item.originalPrice !== item.price; %>
-                    <% var editMrpInputValue = toInputNumberValue(item.originalPrice || item.price); %>
-                    <% var editDiscountInputValue = toInputNumberValue(item.discountPercent); %>
-                    <% var editQuantityInputValue = toInputNumberValue(item.quantity); %>
-                    <% var stockValue = item.quantity || item.quantity === 0 ? item.quantity : '-'; %>
+                    <% let editImageInputId = 'edit-image-' + item.id; %>
+                    <% let hasItemDiscount = item.originalPrice && item.originalPrice !== item.price; %>
+                    <% let editMrpInputValue = toInputNumberValue(item.originalPrice || item.price); %>
+                    <% let editDiscountInputValue = toInputNumberValue(item.discountPercent); %>
+                    <% let editQuantityInputValue = toInputNumberValue(item.quantity); %>
+                    <% let stockValue = item.quantity || item.quantity === 0 ? item.quantity : '-'; %>
                     <tr class="align-middle transition-colors hover:bg-slate-50/70" data-view-panel="<%= item.id %>">
                       <td class="px-3 py-3" data-product-name-cell>
                         <div class="grid gap-1">
@@ -476,7 +476,7 @@
               </a>
 
               <div class="flex flex-wrap items-center justify-center gap-1.5">
-                <% for (var categoryPageNumber = 1; categoryPageNumber <= categoryItemsTotalPages; categoryPageNumber += 1) { %>
+                <% for (let categoryPageNumber = 1; categoryPageNumber <= categoryItemsTotalPages; categoryPageNumber += 1) { %>
                 <% if (categoryPageNumber === 1 || categoryPageNumber === categoryItemsTotalPages || Math.abs(categoryPageNumber - categoryItemsCurrentPage) <= 1) { %>
                 <a
                   href="<%= buildCategoryItemsPageHref(categoryPageNumber) %>"

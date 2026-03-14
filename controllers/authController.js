@@ -1,13 +1,14 @@
-var adminAuth = require('../lib/adminAuth');
-var fs = require('fs');
-var path = require('path');
-var minAdminPasswordLength = 8;
-var maxAdminPasswordLength = 128;
-var adminPasswordPattern = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]+$/;
+import adminAuth from '../lib/adminAuth.js';
+import fs from 'fs';
+import path from 'path';
+
+let minAdminPasswordLength = 8;
+let maxAdminPasswordLength = 128;
+let adminPasswordPattern = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]+$/;
 
 function isAjaxRequest(req) {
-  var requestedWithHeader = String(req && req.headers ? req.headers['x-requested-with'] || '' : '');
-  var acceptHeader = String(req && req.headers ? req.headers.accept || '' : '').toLowerCase();
+  let requestedWithHeader = String(req && req.headers ? req.headers['x-requested-with'] || '' : '');
+  let acceptHeader = String(req && req.headers ? req.headers.accept || '' : '').toLowerCase();
 
   return Boolean(
     (req && req.xhr) ||
@@ -25,19 +26,19 @@ function sendPasswordUpdateError(res, isAjax, errorCode, statusCode, message) {
 }
 
 function renderAdminLogin(req, res) {
-  var legacyNextPath = adminAuth.getSafeAdminNextPath(req.query.next);
-  var legacyErrorCode = String(req.query.error || '').trim();
-  var legacyStatusCode = String(req.query.status || '').trim();
-  var hasLegacyQueryState = Boolean(legacyNextPath !== '/admin' || legacyErrorCode || legacyStatusCode);
-  var loginState = null;
-  var nextPath = legacyNextPath;
-  var authConfig = adminAuth.getAuthConfig();
-  var hasAuthEnabled = authConfig.enabled;
-  var hasAuthConfigured = authConfig.configured;
-  var errorCode = '';
-  var statusCode = '';
-  var errorMessage = '';
-  var statusMessage = '';
+  let legacyNextPath = adminAuth.getSafeAdminNextPath(req.query.next);
+  let legacyErrorCode = String(req.query.error || '').trim();
+  let legacyStatusCode = String(req.query.status || '').trim();
+  let hasLegacyQueryState = Boolean(legacyNextPath !== '/admin' || legacyErrorCode || legacyStatusCode);
+  let loginState = null;
+  let nextPath = legacyNextPath;
+  let authConfig = adminAuth.getAuthConfig();
+  let hasAuthEnabled = authConfig.enabled;
+  let hasAuthConfigured = authConfig.configured;
+  let errorCode = '';
+  let statusCode = '';
+  let errorMessage = '';
+  let statusMessage = '';
 
   if (adminAuth.isAuthenticatedRequest(req)) {
     return res.redirect(nextPath);
@@ -84,11 +85,11 @@ function renderAdminLogin(req, res) {
 }
 
 async function handleAdminLogin(req, res) {
-  var username = String(req.body.username || '').trim();
-  var password = String(req.body.password || '');
-  var loginState = adminAuth.getLoginState(req);
-  var nextPath = adminAuth.getSafeAdminNextPath(req.body.next || loginState.nextPath);
-  var authConfig = adminAuth.getAuthConfig();
+  let username = String(req.body.username || '').trim();
+  let password = String(req.body.password || '');
+  let loginState = adminAuth.getLoginState(req);
+  let nextPath = adminAuth.getSafeAdminNextPath(req.body.next || loginState.nextPath);
+  let authConfig = adminAuth.getAuthConfig();
 
   if (!authConfig.enabled) {
     return res.redirect(nextPath);
@@ -107,7 +108,7 @@ async function handleAdminLogin(req, res) {
   adminAuth.setAuthCookie(res, username);
   adminAuth.clearLoginState(res);
   // Add login success status to show toast notification
-  var redirectUrl = new URL(nextPath, 'http://localhost');
+  let redirectUrl = new URL(nextPath, 'http://localhost');
   redirectUrl.searchParams.set('status', 'login-success');
   return res.redirect(redirectUrl.pathname + redirectUrl.search);
 }
@@ -119,10 +120,10 @@ async function handleAdminLogout(req, res) {
 }
 
 async function renderAdminProfile(req, res) {
-  var authConfig = adminAuth.getAuthConfig();
-  var isAjax = isAjaxRequest(req);
-  var errorCode = String(req.query.error || '').trim();
-  var errorMessage = '';
+  let authConfig = adminAuth.getAuthConfig();
+  let isAjax = isAjaxRequest(req);
+  let errorCode = String(req.query.error || '').trim();
+  let errorMessage = '';
 
   if (isAjax) {
     return res.json({
@@ -156,11 +157,11 @@ async function renderAdminProfile(req, res) {
 }
 
 async function handleAdminUpdatePassword(req, res) {
-  var currentPassword = String(req.body.currentPassword || '');
-  var newPassword = String(req.body.newPassword || '');
-  var confirmPassword = String(req.body.confirmPassword || '');
-  var authConfig = adminAuth.getAuthConfig();
-  var isAjax = isAjaxRequest(req);
+  let currentPassword = String(req.body.currentPassword || '');
+  let newPassword = String(req.body.newPassword || '');
+  let confirmPassword = String(req.body.confirmPassword || '');
+  let authConfig = adminAuth.getAuthConfig();
+  let isAjax = isAjaxRequest(req);
 
   if (!currentPassword || currentPassword.length > maxAdminPasswordLength) {
     return sendPasswordUpdateError(res, isAjax, 'invalid-current-password', 400, 'Current password is required');
@@ -194,11 +195,11 @@ async function handleAdminUpdatePassword(req, res) {
   try {
     // Note: In production, you should store this in a database or encrypted config file
     // For now, we'll update the process.env (requires restart) or write to .env file
-    var envPath = path.join(process.cwd(), '.env');
-    var envContent = await fs.promises.readFile(envPath, 'utf8');
+    let envPath = path.join(process.cwd(), '.env');
+    let envContent = await fs.promises.readFile(envPath, 'utf8');
 
     // Update ADMIN_PASSWORD in .env file
-    var passwordRegex = /^(ADMIN_PASSWORD=).*$/m;
+    let passwordRegex = /^(ADMIN_PASSWORD=).*$/m;
     if (passwordRegex.test(envContent)) {
       envContent = envContent.replace(passwordRegex, '$1' + newPassword);
     } else {
@@ -227,8 +228,7 @@ async function handleAdminUpdatePassword(req, res) {
     return sendPasswordUpdateError(res, isAjax, 'password-update-failed', 500, 'Failed to update password. Please try again.');
   }
 }
-
-module.exports = {
+export default {
   handleAdminLogin: handleAdminLogin,
   handleAdminLogout: handleAdminLogout,
   handleAdminUpdatePassword: handleAdminUpdatePassword,

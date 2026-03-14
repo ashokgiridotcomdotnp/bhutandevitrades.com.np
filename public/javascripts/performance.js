@@ -1,13 +1,13 @@
 (function () {
-  var IMAGE_READY_CLASS = 'is-loaded';
-  var IMAGE_LOADING_CLASS = 'is-loading';
-  var IMAGE_SKELETON_CLASS = 'bd-image-skeleton';
-  var IMAGE_PROCESSED_ATTR = 'data-bd-image-ready';
+  let IMAGE_READY_CLASS = 'is-loaded';
+  let IMAGE_LOADING_CLASS = 'is-loading';
+  let IMAGE_SKELETON_CLASS = 'bd-image-skeleton';
+  let IMAGE_PROCESSED_ATTR = 'data-bd-image-ready';
 
   function shouldSkipImage(image) {
-    var src = String(image.getAttribute('src') || '').trim();
-    var widthAttr = Number(image.getAttribute('width'));
-    var heightAttr = Number(image.getAttribute('height'));
+    let src = String(image.getAttribute('src') || '').trim();
+    let widthAttr = Number(image.getAttribute('width'));
+    let heightAttr = Number(image.getAttribute('height'));
 
     if (!src) {
       return true;
@@ -33,8 +33,8 @@
   }
 
   function shouldLazyLoadImage(image) {
-    var rect = image.getBoundingClientRect();
-    var viewportHeight = window.innerHeight || document.documentElement.clientHeight || 0;
+    let rect = image.getBoundingClientRect();
+    let viewportHeight = window.innerHeight || document.documentElement.clientHeight || 0;
 
     if (image.hasAttribute('data-force-eager')) {
       return false;
@@ -57,7 +57,7 @@
   }
 
   function prepareImage(image) {
-    var didResolve = false;
+    let didResolve = false;
 
     if (!image || image.getAttribute(IMAGE_PROCESSED_ATTR) === '1') {
       return;
@@ -105,8 +105,8 @@
   }
 
   function optimizeImages(rootElement) {
-    var scope = rootElement && typeof rootElement.querySelectorAll === 'function' ? rootElement : document;
-    var images = scope.querySelectorAll('img');
+    let scope = rootElement && typeof rootElement.querySelectorAll === 'function' ? rootElement : document;
+    let images = scope.querySelectorAll('img');
 
     if (!images.length) {
       return;

@@ -1,4 +1,5 @@
-var mongoose = require('mongoose');
+import mongoose from 'mongoose';
+
 
 function toTrimmedString(value) {
   if (value === null || typeof value === 'undefined') {
@@ -19,7 +20,7 @@ function slugify(value) {
     .replace(/^-+|-+$/g, '');
 }
 
-var brandSchema = new mongoose.Schema(
+let brandSchema = new mongoose.Schema(
   {
     category: {
       type: mongoose.Schema.Types.ObjectId,
@@ -78,5 +79,4 @@ brandSchema.index({ category: 1, normalizedName: 1 }, { unique: true, name: 'uq_
 brandSchema.index({ category: 1, slug: 1 }, { unique: true, name: 'uq_brand_category_slug' });
 brandSchema.index({ category: 1, isActive: 1, createdAt: -1 }, { name: 'idx_brand_category_active_created' });
 brandSchema.index({ name: 'text', description: 'text' }, { name: 'idx_brand_text' });
-
-module.exports = mongoose.models.Brand || mongoose.model('Brand', brandSchema);
+export default mongoose.models.Brand || mongoose.model('Brand', brandSchema);

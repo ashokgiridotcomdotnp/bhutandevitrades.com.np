@@ -1,22 +1,22 @@
 <%
-  var resolvedBasePath = typeof basePath === 'string' ? basePath : '/';
-  var currentBasePath = resolvedBasePath === '/home' ? '/home' : '/';
-  var resolvedCurrentUser = typeof currentUser !== 'undefined' ? currentUser : null;
-  var authenticatedUser = resolvedCurrentUser && resolvedCurrentUser.email ? resolvedCurrentUser : null;
-  var resolvedCategoryGroups = typeof categoryGroups !== 'undefined' ? categoryGroups : [];
-  var isCompactFooter = typeof compactFooter !== 'undefined' ? Boolean(compactFooter) : false;
-  var categoryNames = [];
-  var seenCategoryNames = {};
-  var rawStoreWhatsappNumber = typeof storeWhatsappNumber === 'string' ? storeWhatsappNumber : '';
-  var normalizedStoreWhatsappNumber = rawStoreWhatsappNumber.replace(/[^0-9]/g, '');
-  var rawStoreFacebookHref = typeof storeFacebookHref === 'string' ? storeFacebookHref.trim() : '';
-  var rawStoreTiktokHref = typeof storeTiktokHref === 'string' ? storeTiktokHref.trim() : '';
-  var socialFacebookHref = /^https?:\/\//i.test(rawStoreFacebookHref) ? rawStoreFacebookHref : '';
-  var socialWhatsappHref = normalizedStoreWhatsappNumber ? ('https://wa.me/' + normalizedStoreWhatsappNumber) : '';
-  var socialTiktokHref = /^https?:\/\//i.test(rawStoreTiktokHref) ? rawStoreTiktokHref : '';
+  let resolvedBasePath = typeof basePath === 'string' ? basePath : '/';
+  let currentBasePath = resolvedBasePath === '/home' ? '/home' : '/';
+  let resolvedCurrentUser = typeof currentUser !== 'undefined' ? currentUser : null;
+  let authenticatedUser = resolvedCurrentUser && resolvedCurrentUser.email ? resolvedCurrentUser : null;
+  let resolvedCategoryGroups = typeof categoryGroups !== 'undefined' ? categoryGroups : [];
+  let isCompactFooter = typeof compactFooter !== 'undefined' ? Boolean(compactFooter) : false;
+  let categoryNames = [];
+  let seenCategoryNames = {};
+  let rawStoreWhatsappNumber = typeof storeWhatsappNumber === 'string' ? storeWhatsappNumber : '';
+  let normalizedStoreWhatsappNumber = rawStoreWhatsappNumber.replace(/[^0-9]/g, '');
+  let rawStoreFacebookHref = typeof storeFacebookHref === 'string' ? storeFacebookHref.trim() : '';
+  let rawStoreTiktokHref = typeof storeTiktokHref === 'string' ? storeTiktokHref.trim() : '';
+  let socialFacebookHref = /^https?:\/\//i.test(rawStoreFacebookHref) ? rawStoreFacebookHref : '';
+  let socialWhatsappHref = normalizedStoreWhatsappNumber ? ('https://wa.me/' + normalizedStoreWhatsappNumber) : '';
+  let socialTiktokHref = /^https?:\/\//i.test(rawStoreTiktokHref) ? rawStoreTiktokHref : '';
 
   function buildCategoryHref(categoryName) {
-    var params = [];
+    let params = [];
     if (categoryName) {
       params.push('category=' + encodeURIComponent(categoryName));
     }
@@ -24,7 +24,7 @@
   }
 
   function buildSearchHref(searchValue) {
-    var params = [];
+    let params = [];
     if (searchValue) {
       params.push('q=' + encodeURIComponent(searchValue));
     }
@@ -33,8 +33,8 @@
 
   if (Array.isArray(resolvedCategoryGroups)) {
     resolvedCategoryGroups.forEach(function (group) {
-      var rawName = group && group.name ? String(group.name).trim() : '';
-      var normalizedName = rawName.toLowerCase();
+      let rawName = group && group.name ? String(group.name).trim() : '';
+      let normalizedName = rawName.toLowerCase();
 
       if (!rawName || seenCategoryNames[normalizedName]) {
         return;

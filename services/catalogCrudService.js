@@ -1,14 +1,15 @@
-var mongoose = require('mongoose');
-var database = require('../lib/db');
-var Category = require('../models/Category');
-var Brand = require('../models/Brand');
-var Product = require('../models/Product');
+import mongoose from 'mongoose';
+import database from '../lib/db.js';
+import Category from '../models/Category.js';
+import Brand from '../models/Brand.js';
+import Product from '../models/Product.js';
 
-var MAX_NAME_LENGTH = 140;
-var MAX_DESCRIPTION_LENGTH = 2000;
-var MAX_IMAGE_URL_LENGTH = 2048;
-var MAX_PRICE = 1000000000;
-var MAX_QUANTITY = 1000000000;
+
+let MAX_NAME_LENGTH = 140;
+let MAX_DESCRIPTION_LENGTH = 2000;
+let MAX_IMAGE_URL_LENGTH = 2048;
+let MAX_PRICE = 1000000000;
+let MAX_QUANTITY = 1000000000;
 
 function CatalogServiceError(code, message, statusCode, details) {
   this.name = 'CatalogServiceError';
@@ -42,7 +43,7 @@ function slugify(value) {
 }
 
 function sanitizeName(value, fieldName) {
-  var cleanedValue = toTrimmedString(value);
+  let cleanedValue = toTrimmedString(value);
 
   if (!cleanedValue) {
     throw new CatalogServiceError('validation-error', fieldName + ' is required', 400);
@@ -56,7 +57,7 @@ function sanitizeName(value, fieldName) {
 }
 
 function sanitizeOptionalText(value, maxLength) {
-  var cleanedValue = toTrimmedString(value);
+  let cleanedValue = toTrimmedString(value);
   if (!cleanedValue) {
     return '';
   }
@@ -69,7 +70,7 @@ function sanitizeOptionalText(value, maxLength) {
 }
 
 function sanitizeImageUrl(value) {
-  var cleanedValue = toTrimmedString(value);
+  let cleanedValue = toTrimmedString(value);
 
   if (!cleanedValue) {
     return '';
@@ -91,8 +92,8 @@ function sanitizeImageUrl(value) {
 }
 
 function parseNonNegativeNumber(value, fieldName, required) {
-  var cleanedValue = toTrimmedString(value);
-  var parsedValue = null;
+  let cleanedValue = toTrimmedString(value);
+  let parsedValue = null;
 
   if (!cleanedValue) {
     if (required) {
@@ -110,8 +111,8 @@ function parseNonNegativeNumber(value, fieldName, required) {
 }
 
 function parseQuantity(value, required) {
-  var cleanedValue = toTrimmedString(value);
-  var parsedValue = null;
+  let cleanedValue = toTrimmedString(value);
+  let parsedValue = null;
 
   if (!cleanedValue) {
     if (required) {
@@ -129,8 +130,8 @@ function parseQuantity(value, required) {
 }
 
 function parseStockDelta(value) {
-  var cleanedValue = toTrimmedString(value);
-  var parsedValue = null;
+  let cleanedValue = toTrimmedString(value);
+  let parsedValue = null;
 
   if (!cleanedValue) {
     return null;
@@ -149,8 +150,8 @@ function parseStockDelta(value) {
 }
 
 function sanitizeKeywordList(value) {
-  var rawList = [];
-  var seen = Object.create(null);
+  let rawList = [];
+  let seen = Object.create(null);
 
   if (Array.isArray(value)) {
     rawList = value;
@@ -175,7 +176,7 @@ function sanitizeKeywordList(value) {
 }
 
 function ensureObjectId(value, fieldName) {
-  var cleanedValue = toTrimmedString(value);
+  let cleanedValue = toTrimmedString(value);
 
   if (!cleanedValue || !mongoose.isValidObjectId(cleanedValue)) {
     throw new CatalogServiceError('validation-error', fieldName + ' must be a valid ObjectId', 400);
@@ -190,7 +191,7 @@ function parseBoolean(value, fieldName) {
   }
 
   if (typeof value === 'string') {
-    var normalizedValue = value.trim().toLowerCase();
+    let normalizedValue = value.trim().toLowerCase();
     if (normalizedValue === 'true' || normalizedValue === '1') {
       return true;
     }
@@ -244,6 +245,15 @@ function toPublicProduct(productDoc) {
     spec: productDoc.spec || '',
     price: productDoc.price,
     compareAtPrice: typeof productDoc.compareAtPrice === 'number' ? productDoc.compareAtPrice : null,
+    // compute discount percent from compareAtPrice (actual) and price (final)
+    discountPercent: (function () {
+      var cap = typeof productDoc.compareAtPrice === 'number' ? productDoc.compareAtPrice : null;
+      var p = typeof productDoc.price === 'number' ? productDoc.price : Number(productDoc.price) || 0;
+      if (cap !== null && Number.isFinite(cap) && cap > 0 && cap > p) {
+        return Math.round(((cap - p) / cap) * 10000) / 100;
+      }
+      return 0;
+    })(),
     quantity: productDoc.quantity,
     imageUrl: productDoc.imageUrl || '',
     searchKeywords: Array.isArray(productDoc.searchKeywords) ? productDoc.searchKeywords : [],
@@ -255,16 +265,16 @@ function toPublicProduct(productDoc) {
 }
 
 async function ensureDatabaseConnection() {
-  var connected = await database.connectToDatabase();
+  let connected = await database.connectToDatabase();
   if (!connected) {
     throw new CatalogServiceError('db-unavailable', 'Database unavailable', 503);
   }
 }
 
 async function resolveCategoryReference(input) {
-  var categoryId = toTrimmedString(input.categoryId);
-  var categoryName = toTrimmedString(input.categoryName);
-  var categoryDoc = null;
+  let categoryId = toTrimmedString(input.categoryId);
+  let categoryName = toTrimmedString(input.categoryName);
+  let categoryDoc = null;
 
   if (categoryId) {
     categoryDoc = await Category.findById(ensureObjectId(categoryId, 'categoryId')).lean();
@@ -287,9 +297,9 @@ async function resolveCategoryReference(input) {
 }
 
 async function resolveBrandReference(input, categoryDoc) {
-  var brandId = toTrimmedString(input.brandId);
-  var brandName = toTrimmedString(input.brandName);
-  var brandDoc = null;
+  let brandId = toTrimmedString(input.brandId);
+  let brandName = toTrimmedString(input.brandName);
+  let brandDoc = null;
 
   if (brandId) {
     brandDoc = await Brand.findById(ensureObjectId(brandId, 'brandId')).lean();
@@ -318,11 +328,11 @@ async function resolveBrandReference(input, categoryDoc) {
 }
 
 async function createCategory(input) {
-  var name = sanitizeName(input && input.name, 'name');
-  var description = sanitizeOptionalText(input && input.description, 500);
-  var normalizedName = normalizeName(name);
-  var writeResult = null;
-  var categoryDoc = null;
+  let name = sanitizeName(input && input.name, 'name');
+  let description = sanitizeOptionalText(input && input.description, 500);
+  let normalizedName = normalizeName(name);
+  let writeResult = null;
+  let categoryDoc = null;
 
   await ensureDatabaseConnection();
 
@@ -359,12 +369,12 @@ async function createCategory(input) {
 }
 
 async function createBrand(input) {
-  var categoryDoc = null;
-  var name = sanitizeName(input && input.name, 'name');
-  var description = sanitizeOptionalText(input && input.description, 500);
-  var normalizedName = normalizeName(name);
-  var writeResult = null;
-  var brandDoc = null;
+  let categoryDoc = null;
+  let name = sanitizeName(input && input.name, 'name');
+  let description = sanitizeOptionalText(input && input.description, 500);
+  let normalizedName = normalizeName(name);
+  let writeResult = null;
+  let brandDoc = null;
 
   await ensureDatabaseConnection();
   categoryDoc = await resolveCategoryReference(input || {});
@@ -411,22 +421,22 @@ async function createBrand(input) {
 }
 
 async function createProduct(input) {
-  var productInput = input && typeof input === 'object' ? input : {};
-  var categoryDoc = null;
-  var brandDoc = null;
-  var name = sanitizeName(productInput.name, 'name');
-  var normalizedName = normalizeName(name);
-  var description = sanitizeOptionalText(productInput.description, MAX_DESCRIPTION_LENGTH);
-  var spec = sanitizeOptionalText(productInput.spec, MAX_DESCRIPTION_LENGTH);
-  var price = parseNonNegativeNumber(productInput.price, 'price', true);
-  var compareAtPrice = parseNonNegativeNumber(productInput.compareAtPrice, 'compareAtPrice', false);
-  var quantity = parseQuantity(productInput.quantity, true);
-  var imageUrl = sanitizeImageUrl(productInput.imageUrl);
-  var searchKeywords = sanitizeKeywordList(productInput.searchKeywords);
-  var sku = toTrimmedString(productInput.sku).toUpperCase();
-  var legacyId = toTrimmedString(productInput.legacyId);
-  var writeResult = null;
-  var productDoc = null;
+  let productInput = input && typeof input === 'object' ? input : {};
+  let categoryDoc = null;
+  let brandDoc = null;
+  let name = sanitizeName(productInput.name, 'name');
+  let normalizedName = normalizeName(name);
+  let description = sanitizeOptionalText(productInput.description, MAX_DESCRIPTION_LENGTH);
+  let spec = sanitizeOptionalText(productInput.spec, MAX_DESCRIPTION_LENGTH);
+  let price = parseNonNegativeNumber(productInput.price, 'price', true);
+  let compareAtPrice = parseNonNegativeNumber(productInput.compareAtPrice, 'compareAtPrice', false);
+  let quantity = parseQuantity(productInput.quantity, true);
+  let imageUrl = sanitizeImageUrl(productInput.imageUrl);
+  let searchKeywords = sanitizeKeywordList(productInput.searchKeywords);
+  let sku = toTrimmedString(productInput.sku).toUpperCase();
+  let legacyId = toTrimmedString(productInput.legacyId);
+  let writeResult = null;
+  let productDoc = null;
 
   if (compareAtPrice !== null && compareAtPrice < price) {
     throw new CatalogServiceError('validation-error', 'compareAtPrice cannot be lower than price', 400);
@@ -491,20 +501,20 @@ async function createProduct(input) {
 }
 
 function buildProductSetPayload(payload) {
-  var setPayload = {};
-  var unsetPayload = {};
-  var hasAnyChanges = false;
-  var hasQuantity = false;
-  var hasStockDelta = false;
-  var stockDelta = parseStockDelta(payload.stockDelta);
-  var quantity = parseQuantity(payload.quantity, false);
-  var price = parseNonNegativeNumber(payload.price, 'price', false);
-  var compareAtPrice = parseNonNegativeNumber(payload.compareAtPrice, 'compareAtPrice', false);
-  var imageUrl = payload.imageUrl === null ? '' : sanitizeImageUrl(payload.imageUrl);
-  var sku = toTrimmedString(payload.sku).toUpperCase();
+  let setPayload = {};
+  let unsetPayload = {};
+  let hasAnyChanges = false;
+  let hasQuantity = false;
+  let hasStockDelta = false;
+  let stockDelta = parseStockDelta(payload.stockDelta);
+  let quantity = parseQuantity(payload.quantity, false);
+  let price = parseNonNegativeNumber(payload.price, 'price', false);
+  let compareAtPrice = parseNonNegativeNumber(payload.compareAtPrice, 'compareAtPrice', false);
+  let imageUrl = payload.imageUrl === null ? '' : sanitizeImageUrl(payload.imageUrl);
+  let sku = toTrimmedString(payload.sku).toUpperCase();
 
   if (toTrimmedString(payload.name)) {
-    var cleanName = sanitizeName(payload.name, 'name');
+    let cleanName = sanitizeName(payload.name, 'name');
     setPayload.name = cleanName;
     setPayload.normalizedName = normalizeName(cleanName);
     setPayload.slug = slugify(cleanName);
@@ -547,7 +557,7 @@ function buildProductSetPayload(payload) {
   }
 
   if (typeof payload.status !== 'undefined') {
-    var status = toTrimmedString(payload.status).toLowerCase();
+    let status = toTrimmedString(payload.status).toLowerCase();
     if (status !== 'active' && status !== 'inactive') {
       throw new CatalogServiceError('validation-error', 'status must be active or inactive', 400);
     }
@@ -591,16 +601,16 @@ function buildProductSetPayload(payload) {
 }
 
 async function updateProduct(productId, payload) {
-  var productObjectId = ensureObjectId(productId, 'productId');
-  var existingProduct = null;
-  var nextCategory = null;
-  var nextBrand = null;
-  var updatePlan = null;
-  var filter = { _id: productObjectId };
-  var updateDoc = {};
-  var updatedProduct = null;
-  var shouldApplyCategoryChange = false;
-  var shouldApplyBrandChange = false;
+  let productObjectId = ensureObjectId(productId, 'productId');
+  let existingProduct = null;
+  let nextCategory = null;
+  let nextBrand = null;
+  let updatePlan = null;
+  let filter = { _id: productObjectId };
+  let updateDoc = {};
+  let updatedProduct = null;
+  let shouldApplyCategoryChange = false;
+  let shouldApplyBrandChange = false;
 
   await ensureDatabaseConnection();
 
@@ -653,7 +663,7 @@ async function updateProduct(productId, payload) {
     updatePlan.setPayload.compareAtPrice !== undefined &&
     updatePlan.setPayload.compareAtPrice !== null
   ) {
-    var comparePriceCheckValue = Number.isFinite(updatePlan.setPayload.price)
+    let comparePriceCheckValue = Number.isFinite(updatePlan.setPayload.price)
       ? updatePlan.setPayload.price
       : existingProduct.price;
 
@@ -669,15 +679,16 @@ async function updateProduct(productId, payload) {
     }
   }
 
-  var targetCategoryId = shouldApplyCategoryChange ? nextCategory._id : existingProduct.category;
-  var targetNormalizedName = updatePlan.setPayload.normalizedName || existingProduct.normalizedName;
-  var duplicateProduct = await Product.findOne({
-    _id: mongoose.trusted({ $ne: productObjectId }),
+  let targetCategoryId = shouldApplyCategoryChange ? nextCategory._id : existingProduct.category;
+  let targetNormalizedName = updatePlan.setPayload.normalizedName || existingProduct.normalizedName;
+  let dupQuery = {
     category: targetCategoryId,
     normalizedName: targetNormalizedName,
-  }).select('_id').lean();
+  };
+  console.debug('catalogCrudService duplicateProduct lookup:', dupQuery, 'excludeId:', productObjectId);
+  let duplicateProduct = await Product.findOne(dupQuery).select('_id').lean();
 
-  if (duplicateProduct) {
+  if (duplicateProduct && String(duplicateProduct._id) !== String(productObjectId)) {
     throw new CatalogServiceError('duplicate-product', 'Product name already exists in this category', 409);
   }
 
@@ -687,7 +698,7 @@ async function updateProduct(productId, payload) {
       updateDoc,
       {
         lean: true,
-        new: true,
+        returnDocument: 'after',
         runValidators: true,
         context: 'query',
       }
@@ -713,8 +724,8 @@ async function updateProduct(productId, payload) {
 }
 
 async function deleteProduct(productId) {
-  var productObjectId = ensureObjectId(productId, 'productId');
-  var deletedProduct = null;
+  let productObjectId = ensureObjectId(productId, 'productId');
+  let deletedProduct = null;
 
   await ensureDatabaseConnection();
 
@@ -728,8 +739,7 @@ async function deleteProduct(productId) {
     product: toPublicProduct(deletedProduct),
   };
 }
-
-module.exports = {
+export default {
   CatalogServiceError: CatalogServiceError,
   createBrand: createBrand,
   createCategory: createCategory,

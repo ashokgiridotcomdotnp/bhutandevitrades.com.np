@@ -1,14 +1,14 @@
 (function () {
   function initUserMenu() {
-    var menuRoots = document.querySelectorAll('[data-user-menu-root]');
+    let menuRoots = document.querySelectorAll('[data-user-menu-root]');
 
     if (!menuRoots.length) {
       return;
     }
 
     function closeMenu(root) {
-      var toggleButton = root.querySelector('[data-user-menu-toggle]');
-      var menuPanel = root.querySelector('[data-user-menu-panel]');
+      let toggleButton = root.querySelector('[data-user-menu-toggle]');
+      let menuPanel = root.querySelector('[data-user-menu-panel]');
 
       if (!toggleButton || !menuPanel) {
         return;
@@ -25,8 +25,8 @@
     }
 
     menuRoots.forEach(function (root) {
-      var toggleButton = root.querySelector('[data-user-menu-toggle]');
-      var menuPanel = root.querySelector('[data-user-menu-panel]');
+      let toggleButton = root.querySelector('[data-user-menu-toggle]');
+      let menuPanel = root.querySelector('[data-user-menu-panel]');
 
       if (!toggleButton || !menuPanel) {
         return;
@@ -34,7 +34,7 @@
 
       toggleButton.addEventListener('click', function (event) {
         event.preventDefault();
-        var isClosed = menuPanel.classList.contains('hidden');
+        let isClosed = menuPanel.classList.contains('hidden');
 
         closeAllMenus();
 
@@ -46,7 +46,7 @@
     });
 
     document.addEventListener('click', function (event) {
-      var clickedInsideMenu = false;
+      let clickedInsideMenu = false;
 
       menuRoots.forEach(function (root) {
         if (root.contains(event.target)) {
@@ -67,8 +67,8 @@
   }
 
   function initCategoryScrollArrow() {
-    var categoriesScroller = document.querySelector('[data-nav-categories-scroller]');
-    var categoriesNextButton = document.querySelector('[data-nav-categories-next]');
+    let categoriesScroller = document.querySelector('[data-nav-categories-scroller]');
+    let categoriesNextButton = document.querySelector('[data-nav-categories-next]');
 
     if (!categoriesScroller || !categoriesNextButton) {
       return;
@@ -88,7 +88,7 @@
 
     categoriesNextButton.addEventListener('click', function (event) {
       event.preventDefault();
-      var scrollDistance = Math.max(120, Math.round(categoriesScroller.clientWidth * 0.72));
+      let scrollDistance = Math.max(120, Math.round(categoriesScroller.clientWidth * 0.72));
       categoriesScroller.scrollBy({
         left: scrollDistance,
         behavior: 'smooth',
@@ -101,12 +101,12 @@
   }
 
   function initMobileNavAutoHide() {
-    var nav = document.getElementById('site-navbar');
-    var lastScrollY = window.scrollY || 0;
-    var isHidden = false;
-    var isTicking = false;
-    var minScrollDelta = 8;
-    var revealOffset = 12;
+    let nav = document.getElementById('site-navbar');
+    let lastScrollY = window.scrollY || 0;
+    let isHidden = false;
+    let isTicking = false;
+    let minScrollDelta = 8;
+    let revealOffset = 12;
 
     if (!nav) {
       return;
@@ -138,8 +138,8 @@
     }
 
     function syncNavVisibility() {
-      var currentScrollY = window.scrollY || 0;
-      var scrollDelta = currentScrollY - lastScrollY;
+      let currentScrollY = window.scrollY || 0;
+      let scrollDelta = currentScrollY - lastScrollY;
 
       isTicking = false;
 
@@ -187,9 +187,9 @@
   }
 
   function initMobileBottomNav() {
-    var mobileBottomNav = document.querySelector('[data-mobile-bottom-nav]');
-    var categoriesButton = document.getElementById('mobile-nav-categories');
-    var sidebarOpenButton = document.getElementById('mobile-sidebar-open');
+    let mobileBottomNav = document.querySelector('[data-mobile-bottom-nav]');
+    let categoriesButton = document.getElementById('mobile-nav-categories');
+    let sidebarOpenButton = document.getElementById('mobile-sidebar-open');
 
     document.body.classList.toggle('has-mobile-bottom-nav', Boolean(mobileBottomNav));
 

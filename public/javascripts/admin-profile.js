@@ -1,6 +1,71 @@
 (function () {
     'use strict';
 
+    function isSuccessResponsePayload(payload) {
+        return Boolean(payload && (payload.success === true || payload.ok === true));
+    }
+
+    function buildResponseMessage(payload, fallbackMessage) {
+        if (payload && typeof payload === 'object') {
+            let message = String(payload.message || payload.error || payload.errorCode || '').trim();
+            let requestId = String(payload.requestId || '').trim();
+
+            if (message && requestId) {
+                return message + ' (Request ID: ' + requestId + ')';
+            }
+
+            if (message) {
+                return message;
+            }
+        }
+
+        return String(fallbackMessage || '').trim() || 'Request failed. Please try again.';
+    }
+
+    async function readResponsePayload(response) {
+        let text = '';
+
+        try {
+            text = await response.text();
+        } catch (error) {
+            return { payload: null, text: '' };
+        }
+
+        if (!text) {
+            return { payload: null, text: '' };
+        }
+
+        try {
+            return { payload: JSON.parse(text), text: text };
+        } catch (error) {
+            return { payload: null, text: text };
+        }
+    }
+
+    async function fetchAdminJson(url, options) {
+        let response = await fetch(url, options);
+
+        if (response && response.url) {
+            try {
+                let finalUrl = new URL(response.url, window.location.href);
+                if (finalUrl.pathname === '/admin/login') {
+                    window.location.href = '/admin/login';
+                    return { response: response, payload: null, redirectedToLogin: true };
+                }
+            } catch (error) {
+                // ignore URL parsing issues
+            }
+        }
+
+        let payloadResult = await readResponsePayload(response);
+
+        return {
+            response: response,
+            payload: payloadResult.payload,
+            redirectedToLogin: false,
+        };
+    }
+
     function showToast(message, type) {
         if (typeof bdShowToast === 'function') {
             bdShowToast(message, type);
@@ -10,22 +75,22 @@
     }
 
     function setLoadingOverlay(show) {
-        var overlay = document.getElementById('bd-page-loading');
+        let overlay = document.getElementById('bd-page-loading');
         if (overlay) {
             overlay.classList.toggle('hidden', !show);
         }
     }
 
     function setButtonLoading(button, loading) {
-        var btnText = button.querySelector('.btn-text');
-        var btnLoading = button.querySelector('.btn-loading');
+        let btnText = button.querySelector('.btn-text');
+        let btnLoading = button.querySelector('.btn-loading');
         if (btnText) btnText.classList.toggle('hidden', loading);
         if (btnLoading) btnLoading.classList.toggle('hidden', !loading);
         button.disabled = loading;
     }
 
     function showFormError(message) {
-        var errorDiv = document.getElementById('password-error');
+        let errorDiv = document.getElementById('password-error');
         if (errorDiv) {
             errorDiv.textContent = message;
             errorDiv.classList.remove('hidden');
@@ -33,18 +98,18 @@
     }
 
     function hideFormError() {
-        var errorDiv = document.getElementById('password-error');
+        let errorDiv = document.getElementById('password-error');
         if (errorDiv) {
             errorDiv.classList.add('hidden');
         }
     }
 
     function validatePassword(password) {
-        var minLength = 8;
-        var hasUpper = /[A-Z]/.test(password);
-        var hasLower = /[a-z]/.test(password);
-        var hasNumber = /\d/.test(password);
-        var hasSpecial = /[@$!%*?&]/.test(password);
+        let minLength = 8;
+        let hasUpper = /[A-Z]/.test(password);
+        let hasLower = /[a-z]/.test(password);
+        let hasNumber = /\d/.test(password);
+        let hasSpecial = /[@$!%*?&]/.test(password);
 
         if (password.length < minLength) {
             return 'Password must be at least 8 characters long';
@@ -65,11 +130,11 @@
     }
 
     async function submitPasswordFormAsync(form) {
-        var formData = new FormData(form);
-        var currentPassword = String(formData.get('currentPassword') || '');
-        var newPassword = String(formData.get('newPassword') || '');
-        var confirmPassword = String(formData.get('confirmPassword') || '');
-        var submitBtn = document.getElementById('submit-btn');
+        let formData = new FormData(form);
+        let currentPassword = String(formData.get('currentPassword') || '');
+        let newPassword = String(formData.get('newPassword') || '');
+        let confirmPassword = String(formData.get('confirmPassword') || '');
+        let submitBtn = document.getElementById('submit-btn');
 
         hideFormError();
 
@@ -79,7 +144,7 @@
             return;
         }
 
-        var passwordError = validatePassword(newPassword);
+        let passwordError = validatePassword(newPassword);
         if (passwordError) {
             showFormError(passwordError);
             return;
@@ -99,11 +164,12 @@
         setLoadingOverlay(true);
 
         try {
-            var response = await fetch(form.action, {
+            let fetchResult = await fetchAdminJson(form.action, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/x-www-form-urlencoded',
                     'X-Requested-With': 'XMLHttpRequest',
+                    'Accept': 'application/json',
                 },
                 body: new URLSearchParams({
                     currentPassword: currentPassword,
@@ -113,10 +179,20 @@
                 credentials: 'same-origin',
             });
 
-            var result = await response.json();
+            if (fetchResult.redirectedToLogin) {
+                return;
+            }
 
-            if (result.success) {
-                showToast(result.message || 'Password updated successfully', 'success');
+            let result = fetchResult.payload;
+
+            if (!result || typeof result !== 'object') {
+                showFormError('Unexpected server response. Please refresh and try again.');
+                showToast('Unexpected server response. Please refresh and try again.', 'error');
+                return;
+            }
+
+            if (isSuccessResponsePayload(result)) {
+                showToast(buildResponseMessage(result, 'Password updated successfully'), 'success');
                 form.reset();
                 // Redirect to login after successful password change
                 if (result.redirectUrl) {
@@ -125,11 +201,10 @@
                     }, 1500);
                 }
             } else {
-                showFormError(result.message || 'Failed to update password');
-                showToast(result.message || 'Failed to update password', 'error');
+                showFormError(buildResponseMessage(result, 'Failed to update password'));
+                showToast(buildResponseMessage(result, 'Failed to update password'), 'error');
             }
         } catch (error) {
-            console.error('Password update error:', error);
             showFormError('An error occurred. Please try again.');
             showToast('An error occurred. Please try again.', 'error');
         } finally {
@@ -139,7 +214,7 @@
     }
 
     function initPasswordForm() {
-        var form = document.getElementById('admin-password-form');
+        let form = document.getElementById('admin-password-form');
         if (!form) return;
 
         form.addEventListener('submit', function (event) {

@@ -1,6 +1,74 @@
 (function () {
+  function isSuccessResponsePayload(payload) {
+    return Boolean(payload && (payload.success === true || payload.ok === true));
+  }
+
+  function buildResponseMessage(payload, fallbackMessage) {
+    if (payload && typeof payload === 'object') {
+      let message = String(payload.message || payload.error || payload.errorCode || '').trim();
+      let requestId = String(payload.requestId || '').trim();
+
+      if (message && requestId) {
+        return message + ' (Request ID: ' + requestId + ')';
+      }
+
+      if (message) {
+        return message;
+      }
+    }
+
+    return String(fallbackMessage || '').trim() || 'Request failed. Please try again.';
+  }
+
+  async function readResponsePayload(response) {
+    let text = '';
+
+    try {
+      text = await response.text();
+    } catch (error) {
+      return { payload: null, text: '' };
+    }
+
+    if (!text) {
+      return { payload: null, text: '' };
+    }
+
+    try {
+      return { payload: JSON.parse(text), text: text };
+    } catch (error) {
+      return { payload: null, text: text };
+    }
+  }
+
+  async function fetchAdminJson(url, options) {
+    let response = null;
+    let payloadResult = { payload: null, text: '' };
+
+    response = await fetch(url, options);
+
+    if (response && response.url) {
+      try {
+        let finalUrl = new URL(response.url, window.location.href);
+        if (finalUrl.pathname === '/admin/login') {
+          window.location.href = '/admin/login';
+          return { response: response, payload: null, redirectedToLogin: true };
+        }
+      } catch (error) {
+        // ignore URL parsing issues
+      }
+    }
+
+    payloadResult = await readResponsePayload(response);
+
+    return {
+      response: response,
+      payload: payloadResult.payload,
+      redirectedToLogin: false,
+    };
+  }
+
   function getPageData() {
-    var dataScript = document.getElementById('admin-page-data');
+    let dataScript = document.getElementById('admin-page-data');
     if (!dataScript) {
       return {};
     }
@@ -12,43 +80,154 @@
     }
   }
 
-  var pageData = getPageData();
-  var subcategoryOptionsByCategory = pageData && typeof pageData === 'object' && pageData.subcategoryOptionsByCategory
+  let pageData = getPageData();
+  let subcategoryOptionsByCategory = pageData && typeof pageData === 'object' && pageData.subcategoryOptionsByCategory
     ? pageData.subcategoryOptionsByCategory
     : {};
-  var deleteAlert = document.getElementById('delete-alert');
-  var deleteAlertTitle = document.getElementById('delete-alert-title');
-  var deleteAlertMessage = document.getElementById('delete-alert-message');
-  var deleteAlertCancel = document.getElementById('delete-alert-cancel');
-  var deleteAlertConfirm = document.getElementById('delete-alert-confirm');
-  var pendingDeleteForm = null;
-  var quickAddCategoryInput = document.querySelector('[data-product-category-input]');
-  var quickAddSubcategoryPicker = document.querySelector('[data-product-subcategory-picker]');
-  var quickAddSubcategoryCustomInput = document.querySelector('[data-product-subcategory-custom-input]');
-  var quickAddMrpInput = document.querySelector('[data-product-mrp-input]');
-  var quickAddDiscountInput = document.querySelector('[data-product-discount-input]');
-  var quickAddPricePreview = document.querySelector('[data-product-price-preview]');
-  var quickAddPriceOriginal = document.querySelector('[data-product-price-original]');
-  var quickAddPriceFinal = document.querySelector('[data-product-price-final]');
-  var quickAddProductForm = document.querySelector('form[action="/admin/products"][enctype="multipart/form-data"]');
-  var productOverviewRoot = document.querySelector('[data-product-overview-root]');
-  var categorySection = document.querySelector('[data-category-section]');
-  var categoryCardsGrid = document.querySelector('[data-category-card-grid]');
-  var categoryEmptyState = document.querySelector('[data-category-empty-state]');
-  var categoryCountBadge = document.querySelector('[data-category-count-badge]');
-  var dashboardTotalCategories = document.querySelector('[data-dashboard-total-categories]');
-  var dashboardEmptyCategories = document.querySelector('[data-dashboard-empty-categories]');
-  var statusTooltip = document.querySelector('[data-status-tooltip]');
-  var hasDeleteModal = Boolean(deleteAlert && deleteAlertTitle && deleteAlertMessage && deleteAlertCancel && deleteAlertConfirm);
+  let deleteAlert = document.getElementById('delete-alert');
+  let deleteAlertTitle = document.getElementById('delete-alert-title');
+  let deleteAlertMessage = document.getElementById('delete-alert-message');
+  let deleteAlertCancel = document.getElementById('delete-alert-cancel');
+  let deleteAlertConfirm = document.getElementById('delete-alert-confirm');
+  let pendingDeleteForm = null;
+  let quickAddCategoryInput = document.querySelector('[data-product-category-input]');
+  let quickAddSubcategoryPicker = document.querySelector('[data-product-subcategory-picker]');
+  let quickAddSubcategoryCustomInput = document.querySelector('[data-product-subcategory-custom-input]');
+  let quickAddMrpInput = document.querySelector('[data-product-mrp-input]');
+  let quickAddDiscountInput = document.querySelector('[data-product-discount-input]');
+  let quickAddPricePreview = document.querySelector('[data-product-price-preview]');
+  let quickAddPriceOriginal = document.querySelector('[data-product-price-original]');
+  let quickAddPriceFinal = document.querySelector('[data-product-price-final]');
+  let quickAddProductForm = document.querySelector('form[action="/admin/products"][enctype="multipart/form-data"]');
+  let productOverviewRoot = document.querySelector('[data-product-overview-root]');
+  let categorySection = document.querySelector('[data-category-section]');
+  let categoryManageDetails = categorySection ? categorySection.querySelector('[data-category-manage-details]') : null;
+  let categoryManageBody = categoryManageDetails ? categoryManageDetails.querySelector('[data-category-manage-body]') : null;
+  let categoryCardsGrid = document.querySelector('[data-category-card-grid]');
+  let categoryEmptyState = document.querySelector('[data-category-empty-state]');
+  let categoryFilterButtons = categorySection ? categorySection.querySelector('[data-category-filter-buttons]') : null;
+  let categoryCountBadge = document.querySelector('[data-category-count-badge]');
+  let dashboardTotalCategories = document.querySelector('[data-dashboard-total-categories]');
+  let dashboardEmptyCategories = document.querySelector('[data-dashboard-empty-categories]');
+  let statusTooltip = document.querySelector('[data-status-tooltip]');
+  let hasDeleteModal = Boolean(deleteAlert && deleteAlertTitle && deleteAlertMessage && deleteAlertCancel && deleteAlertConfirm);
+  let isCategoryFilterMode = Boolean(categorySection && categorySection.getAttribute('data-category-filter-mode') === 'products');
+
+  function getCategoryManageContainer() {
+    return categoryManageBody || categorySection;
+  }
+
+  function getActiveCategorySlugFromLocation() {
+    if (!isCategoryFilterMode) {
+      return '';
+    }
+
+    try {
+      let url = new URL(window.location.href);
+      return normalizeCategoryKey(url.searchParams.get('category'));
+    } catch (error) {
+      return '';
+    }
+  }
+
+  function getCategoryCardProductCount(card) {
+    let badge = card ? card.querySelector('[data-category-product-count]') : null;
+    let match = badge ? String(badge.textContent || '').match(/\d+/) : null;
+    return match ? parseInt(match[0], 10) || 0 : 0;
+  }
+
+  function createCategoryFilterButton(config) {
+    let data = config && typeof config === 'object' ? config : {};
+    let label = String(data.label || '').trim();
+    let count = Number(data.count);
+    let href = String(data.href || '').trim();
+    let isActive = Boolean(data.isActive);
+    let key = String(data.key || '').trim();
+
+    if (!label || !href) {
+      return null;
+    }
+
+    let el = document.createElement('a');
+    el.href = href;
+    el.className = (isActive ? 'pro-btn-primary' : 'pro-btn-secondary') + ' pro-btn-xs';
+    el.setAttribute('data-category-filter-button', key || '');
+
+    if (isActive) {
+      el.setAttribute('aria-current', 'page');
+    }
+
+    el.innerHTML =
+      '<span class="max-w-[10rem] truncate">' + escapeHtml(label) + '</span>' +
+      '<span class="ml-1 inline-flex items-center justify-center rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[11px] font-bold text-slate-700">' + (Number.isFinite(count) ? String(count) : '0') + '</span>';
+
+    return el;
+  }
+
+  function syncCategoryFilterButtons() {
+    if (!isCategoryFilterMode || !categoryFilterButtons) {
+      return;
+    }
+
+    let activeSlug = getActiveCategorySlugFromLocation();
+    let cards = categoryCardsGrid ? Array.prototype.slice.call(categoryCardsGrid.querySelectorAll('[data-category-card]')) : [];
+    let totalProductCount = 0;
+
+    cards.forEach(function (card) {
+      totalProductCount += getCategoryCardProductCount(card);
+    });
+
+    let declaredAllCount = Number(categoryFilterButtons.getAttribute('data-all-product-count'));
+    let allCount = Number.isFinite(declaredAllCount) && declaredAllCount >= 0
+      ? declaredAllCount
+      : totalProductCount;
+
+    categoryFilterButtons.innerHTML = '';
+
+    let allButton = createCategoryFilterButton({
+      key: '__all__',
+      label: 'All',
+      count: allCount,
+      href: '/admin/products',
+      isActive: !activeSlug,
+    });
+
+    if (allButton) {
+      categoryFilterButtons.appendChild(allButton);
+    }
+
+    cards.forEach(function (card) {
+      let slug = normalizeCategoryKey(card.getAttribute('data-category-card'));
+      let title = card.querySelector('[data-category-card-title]');
+      let name = String(title && title.textContent ? title.textContent : '').trim();
+      let count = getCategoryCardProductCount(card);
+
+      if (!slug || !name) {
+        return;
+      }
+
+      let button = createCategoryFilterButton({
+        key: slug,
+        label: name,
+        count: count,
+        href: '/admin/products?category=' + encodeURIComponent(slug),
+        isActive: slug === activeSlug,
+      });
+
+      if (button) {
+        categoryFilterButtons.appendChild(button);
+      }
+    });
+  }
 
   function clearAdminFlashQueryParams() {
     if (!window.history || typeof window.history.replaceState !== 'function') {
       return;
     }
 
-    var currentUrl = new URL(window.location.href);
-    var hasStatus = currentUrl.searchParams.has('status');
-    var hasError = currentUrl.searchParams.has('error');
+    let currentUrl = new URL(window.location.href);
+    let hasStatus = currentUrl.searchParams.has('status');
+    let hasError = currentUrl.searchParams.has('error');
 
     if (!hasStatus && !hasError) {
       return;
@@ -57,23 +236,23 @@
     currentUrl.searchParams.delete('status');
     currentUrl.searchParams.delete('error');
 
-    var nextQuery = currentUrl.searchParams.toString();
-    var nextUrl = currentUrl.pathname + (nextQuery ? '?' + nextQuery : '') + currentUrl.hash;
+    let nextQuery = currentUrl.searchParams.toString();
+    let nextUrl = currentUrl.pathname + (nextQuery ? '?' + nextQuery : '') + currentUrl.hash;
     window.history.replaceState({}, document.title, nextUrl);
   }
 
   function bindFileInputLabel(input) {
-    var inputId = input && input.id ? input.id : '';
-    var preview = inputId ? document.querySelector('[data-image-preview-for="' + inputId + '"]') : null;
-    var previewPlaceholder = inputId ? document.querySelector('[data-image-preview-placeholder-for="' + inputId + '"]') : null;
-    var fileName = inputId ? document.querySelector('[data-file-name-for="' + inputId + '"]') : null;
-    var defaultFileName = fileName
+    let inputId = input && input.id ? input.id : '';
+    let preview = inputId ? document.querySelector('[data-image-preview-for="' + inputId + '"]') : null;
+    let previewPlaceholder = inputId ? document.querySelector('[data-image-preview-placeholder-for="' + inputId + '"]') : null;
+    let fileName = inputId ? document.querySelector('[data-file-name-for="' + inputId + '"]') : null;
+    let defaultFileName = fileName
       ? String(fileName.getAttribute('data-file-default-text') || fileName.textContent || 'No file selected').trim()
       : '';
-    var defaultPreviewSrc = preview
+    let defaultPreviewSrc = preview
       ? String(preview.getAttribute('data-image-preview-default-src') || preview.getAttribute('src') || '').trim()
       : '';
-    var objectUrl = '';
+    let objectUrl = '';
 
     if (!inputId || (!preview && !previewPlaceholder && !fileName)) {
       return;
@@ -109,7 +288,7 @@
     }
 
     function syncFileName() {
-      var selectedFile = input.files && input.files.length ? input.files[0] : null;
+      let selectedFile = input.files && input.files.length ? input.files[0] : null;
 
       if (!selectedFile) {
         clearPreview();
@@ -179,8 +358,8 @@
   }
 
   function sortQuickAddCategoryOptions() {
-    var placeholderOption = null;
-    var categoryOptions = [];
+    let placeholderOption = null;
+    let categoryOptions = [];
 
     if (!quickAddCategoryInput || !quickAddCategoryInput.options.length) {
       return;
@@ -199,10 +378,10 @@
   }
 
   function upsertQuickAddCategoryOption(categoryName, originalCategoryName) {
-    var cleanedName = String(categoryName || '').trim();
-    var previousName = String(originalCategoryName || '').trim();
-    var currentSelection = quickAddCategoryInput ? String(quickAddCategoryInput.value || '').trim() : '';
-    var option = null;
+    let cleanedName = String(categoryName || '').trim();
+    let previousName = String(originalCategoryName || '').trim();
+    let currentSelection = quickAddCategoryInput ? String(quickAddCategoryInput.value || '').trim() : '';
+    let option = null;
 
     if (!quickAddCategoryInput || !cleanedName) {
       return;
@@ -227,7 +406,7 @@
   }
 
   function removeQuickAddCategoryOption(categoryName) {
-    var cleanedName = String(categoryName || '').trim();
+    let cleanedName = String(categoryName || '').trim();
 
     if (!quickAddCategoryInput || !cleanedName) {
       return;
@@ -245,11 +424,11 @@
   }
 
   function syncCategorySubcategoryMap(categoryName, categoryItems, originalCategoryName) {
-    var cleanedName = String(categoryName || '').trim();
-    var previousName = String(originalCategoryName || '').trim();
-    var newKey = normalizeCategoryKey(cleanedName);
-    var oldKey = normalizeCategoryKey(previousName);
-    var normalizedItems = Array.isArray(categoryItems)
+    let cleanedName = String(categoryName || '').trim();
+    let previousName = String(originalCategoryName || '').trim();
+    let newKey = normalizeCategoryKey(cleanedName);
+    let oldKey = normalizeCategoryKey(previousName);
+    let normalizedItems = Array.isArray(categoryItems)
       ? categoryItems
         .map(function (item) {
           return String(item || '').replace(/\s+/g, ' ').trim();
@@ -272,7 +451,7 @@
     subcategoryOptionsByCategory[newKey] = normalizedItems;
 
     if (quickAddCategoryInput) {
-      var currentCategoryKey = normalizeCategoryKey(quickAddCategoryInput.value);
+      let currentCategoryKey = normalizeCategoryKey(quickAddCategoryInput.value);
       if (currentCategoryKey === oldKey || currentCategoryKey === newKey) {
         quickAddCategoryInput.value = cleanedName;
         syncQuickAddSubcategoryOptions();
@@ -285,14 +464,16 @@
       return categoryCardsGrid;
     }
 
-    if (!categorySection) {
+    let container = getCategoryManageContainer();
+
+    if (!container) {
       return null;
     }
 
     categoryCardsGrid = document.createElement('div');
     categoryCardsGrid.className = 'grid auto-rows-fr gap-3 [grid-template-columns:repeat(auto-fit,minmax(18rem,1fr))] pro-stagger';
     categoryCardsGrid.setAttribute('data-category-card-grid', '');
-    categorySection.appendChild(categoryCardsGrid);
+    container.appendChild(categoryCardsGrid);
     return categoryCardsGrid;
   }
 
@@ -301,7 +482,9 @@
       return categoryEmptyState;
     }
 
-    if (!categorySection) {
+    let container = getCategoryManageContainer();
+
+    if (!container) {
       return null;
     }
 
@@ -309,20 +492,18 @@
     categoryEmptyState.className = 'rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600';
     categoryEmptyState.setAttribute('data-category-empty-state', '');
     categoryEmptyState.textContent = 'No categories available yet. Create your first category above.';
-    categorySection.appendChild(categoryEmptyState);
+    container.appendChild(categoryEmptyState);
     return categoryEmptyState;
   }
 
-  function getCategoryCardProductCount(card) {
-    var badge = card ? card.querySelector('[data-category-product-count]') : null;
-    var match = badge ? String(badge.textContent || '').match(/\d+/) : null;
-    return match ? parseInt(match[0], 10) || 0 : 0;
-  }
-
   function updateDashboardCategoryCounts() {
-    var cards = categoryCardsGrid ? categoryCardsGrid.querySelectorAll('[data-category-card]') : [];
-    var totalCount = cards.length;
-    var emptyCount = 0;
+    if (!categorySection) {
+      return;
+    }
+
+    let cards = categoryCardsGrid ? categoryCardsGrid.querySelectorAll('[data-category-card]') : [];
+    let totalCount = cards.length;
+    let emptyCount = 0;
 
     Array.prototype.forEach.call(cards, function (card) {
       if (getCategoryCardProductCount(card) === 0) {
@@ -346,7 +527,14 @@
       if (categoryCardsGrid) {
         categoryCardsGrid.classList.add('hidden');
       }
-      ensureCategoryEmptyState().classList.remove('hidden');
+      let emptyState = ensureCategoryEmptyState();
+      if (emptyState) {
+        emptyState.classList.remove('hidden');
+      }
+      if (categoryManageDetails) {
+        categoryManageDetails.open = true;
+      }
+      syncCategoryFilterButtons();
       return;
     }
 
@@ -357,6 +545,8 @@
     if (categoryEmptyState) {
       categoryEmptyState.classList.add('hidden');
     }
+
+    syncCategoryFilterButtons();
   }
 
   function renderCategoryItemChips(container, items) {
@@ -373,7 +563,7 @@
 
     container.classList.remove('hidden');
     items.slice(0, 4).forEach(function (itemName) {
-      var chip = document.createElement('span');
+      let chip = document.createElement('span');
       chip.className = 'rounded-full border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-700';
       chip.textContent = itemName;
       container.appendChild(chip);
@@ -387,8 +577,8 @@
 
     button.setAttribute('data-bound-edit-category', '1');
     button.addEventListener('click', function () {
-      var categoryName = button.getAttribute('data-category-name') || '';
-      var categoryItems = button.getAttribute('data-category-items') || '';
+      let categoryName = button.getAttribute('data-category-name') || '';
+      let categoryItems = button.getAttribute('data-category-items') || '';
       setCategoryFormToEditMode(categoryName, categoryItems);
     });
   }
@@ -400,9 +590,9 @@
 
     button.setAttribute('data-bound-delete-category', '1');
     button.addEventListener('click', function () {
-      var categoryKey = button.getAttribute('data-delete-category-trigger');
-      var categoryName = button.getAttribute('data-category-name') || 'this category';
-      var form = document.querySelector('[data-delete-category-form="' + categoryKey + '"]');
+      let categoryKey = button.getAttribute('data-delete-category-trigger');
+      let categoryName = button.getAttribute('data-category-name') || 'this category';
+      let form = document.querySelector('[data-delete-category-form="' + categoryKey + '"]');
 
       showDeleteAlert(
         form,
@@ -413,10 +603,10 @@
   }
 
   function createCategoryCardElement(categoryName, categoryItems) {
-    var cleanedName = String(categoryName || '').trim();
-    var normalizedItems = Array.isArray(categoryItems) ? categoryItems.filter(Boolean) : [];
-    var categoryKey = normalizeCategoryKey(cleanedName);
-    var article = document.createElement('article');
+    let cleanedName = String(categoryName || '').trim();
+    let normalizedItems = Array.isArray(categoryItems) ? categoryItems.filter(Boolean) : [];
+    let categoryKey = normalizeCategoryKey(cleanedName);
+    let article = document.createElement('article');
 
     article.className = 'grid h-full gap-3 overflow-hidden rounded-2xl border border-slate-200 bg-slate-50/90 p-4 shadow-sm transition duration-200 hover:-translate-y-0.5 hover:shadow-md';
     article.setAttribute('data-category-card', categoryKey);
@@ -437,13 +627,20 @@
       'No products mapped yet. You can still edit or delete this category.' +
       '</div>' +
       '<div class="grid gap-2 sm:grid-cols-3">' +
+      (isCategoryFilterMode
+        ? ('<a href="/admin/products?category=' + encodeURIComponent(categoryKey) + '" data-category-filter-link class="pro-btn-secondary w-full justify-center px-3 py-1.5 text-xs">Filter</a>')
+        : '<span class="hidden sm:block"></span>') +
       '<a href="/admin/categories/' + categoryKey + '" data-category-manage-link class="pro-btn-secondary w-full justify-center px-3 py-1.5 text-xs">Manage</a>' +
       '<button type="button" data-edit-category-trigger data-category-name="' + escapeHtml(cleanedName) + '" data-category-items="' + escapeHtml(normalizedItems.join(', ')) + '" class="pro-btn-secondary w-full justify-center px-3 py-1.5 text-xs">Edit</button>' +
+      '</div>' +
+      '<div class="grid gap-2 sm:grid-cols-3">' +
+      '<span class="hidden sm:block"></span>' +
+      '<span class="hidden sm:block"></span>' +
       '<button type="button" data-delete-category-trigger="' + categoryKey + '" data-category-name="' + escapeHtml(cleanedName) + '" class="pro-btn-danger-muted w-full justify-center px-3 py-1.5 text-xs">Delete</button>' +
       '</div>' +
       '<form action="/admin/categories/delete" method="post" class="hidden" data-delete-category-form="' + categoryKey + '">' +
       '<input type="hidden" name="categoryName" value="' + escapeHtml(cleanedName) + '" />' +
-      '<input type="hidden" name="redirectTo" value="/admin" />' +
+      '<input type="hidden" name="redirectTo" value="' + (isCategoryFilterMode ? '/admin/products' : '/admin') + '" />' +
       '</form>';
 
     renderCategoryItemChips(article.querySelector('[data-category-items-list]'), normalizedItems);
@@ -453,21 +650,21 @@
   }
 
   function upsertDashboardCategoryCard(categoryName, categoryItems, originalCategoryName) {
-    var cleanedName = String(categoryName || '').trim();
-    var previousName = String(originalCategoryName || '').trim();
-    var categoryKey = normalizeCategoryKey(cleanedName);
-    var previousKey = normalizeCategoryKey(previousName);
-    var normalizedItems = Array.isArray(categoryItems) ? categoryItems.filter(Boolean) : [];
-    var card = null;
-    var isNewCard = false;
-    var title = null;
-    var summary = null;
-    var chips = null;
-    var manageLink = null;
-    var editButton = null;
-    var deleteButton = null;
-    var deleteForm = null;
-    var deleteFormCategoryInput = null;
+    let cleanedName = String(categoryName || '').trim();
+    let previousName = String(originalCategoryName || '').trim();
+    let categoryKey = normalizeCategoryKey(cleanedName);
+    let previousKey = normalizeCategoryKey(previousName);
+    let normalizedItems = Array.isArray(categoryItems) ? categoryItems.filter(Boolean) : [];
+    let card = null;
+    let isNewCard = false;
+    let title = null;
+    let summary = null;
+    let chips = null;
+    let manageLink = null;
+    let editButton = null;
+    let deleteButton = null;
+    let deleteForm = null;
+    let deleteFormCategoryInput = null;
 
     if (!cleanedName) {
       return;
@@ -476,8 +673,12 @@
     card = document.querySelector('[data-category-card="' + previousKey + '"]') || document.querySelector('[data-category-card="' + categoryKey + '"]');
 
     if (!card) {
+      let cardsGrid = ensureCategoryCardsGrid();
+      if (!cardsGrid) {
+        return;
+      }
       card = createCategoryCardElement(cleanedName, normalizedItems);
-      ensureCategoryCardsGrid().prepend(card);
+      cardsGrid.prepend(card);
       isNewCard = true;
     }
 
@@ -487,6 +688,7 @@
     summary = card.querySelector('[data-category-card-summary]');
     chips = card.querySelector('[data-category-items-list]');
     manageLink = card.querySelector('[data-category-manage-link]');
+    let filterLink = card.querySelector('[data-category-filter-link]');
     editButton = card.querySelector('[data-edit-category-trigger]');
     deleteButton = card.querySelector('[data-delete-category-trigger]');
     deleteForm = card.querySelector('form[action="/admin/categories/delete"]');
@@ -506,6 +708,10 @@
 
     if (manageLink) {
       manageLink.href = '/admin/categories/' + categoryKey;
+    }
+
+    if (filterLink && isCategoryFilterMode) {
+      filterLink.href = '/admin/products?category=' + encodeURIComponent(categoryKey);
     }
 
     if (editButton) {
@@ -536,8 +742,8 @@
   }
 
   function getCategorySubcategoryOptions(categoryName) {
-    var categoryKey = normalizeCategoryKey(categoryName);
-    var options = categoryKey ? subcategoryOptionsByCategory[categoryKey] : [];
+    let categoryKey = normalizeCategoryKey(categoryName);
+    let options = categoryKey ? subcategoryOptionsByCategory[categoryKey] : [];
     return Array.isArray(options) ? options : [];
   }
 
@@ -574,7 +780,7 @@
   function resetSubcategoryInputs() {
     if (quickAddSubcategoryPicker) {
       quickAddSubcategoryPicker.innerHTML = '';
-      var placeholderOption = document.createElement('option');
+      let placeholderOption = document.createElement('option');
       placeholderOption.value = '';
       placeholderOption.textContent = 'Select category first';
       quickAddSubcategoryPicker.appendChild(placeholderOption);
@@ -601,19 +807,19 @@
       return;
     }
 
-    var options = getCategorySubcategoryOptions(quickAddCategoryInput.value);
-    var previousValue = String(quickAddSubcategoryPicker.value || '').trim();
-    var hasPreviousValue = false;
+    let options = getCategorySubcategoryOptions(quickAddCategoryInput.value);
+    let previousValue = String(quickAddSubcategoryPicker.value || '').trim();
+    let hasPreviousValue = false;
 
     quickAddSubcategoryPicker.innerHTML = '';
 
-    var placeholderOption = document.createElement('option');
+    let placeholderOption = document.createElement('option');
     placeholderOption.value = '';
     placeholderOption.textContent = options.length ? 'Select subcategory' : 'No subcategory available';
     quickAddSubcategoryPicker.appendChild(placeholderOption);
 
     options.forEach(function (option) {
-      var optionElement = document.createElement('option');
+      let optionElement = document.createElement('option');
       optionElement.value = option;
       optionElement.textContent = option;
 
@@ -638,10 +844,10 @@
   }
 
   function parsePositiveNumber(value) {
-    var cleanedValue = String(value || '')
+    let cleanedValue = String(value || '')
       .replace(/,/g, '')
       .trim();
-    var parsedValue = Number(cleanedValue);
+    let parsedValue = Number(cleanedValue);
 
     if (!cleanedValue || !Number.isFinite(parsedValue) || parsedValue < 0) {
       return NaN;
@@ -651,8 +857,8 @@
   }
 
   function formatNpr(value) {
-    var normalizedValue = Math.round(value * 100) / 100;
-    var hasDecimal = Math.abs(normalizedValue % 1) > 0;
+    let normalizedValue = Math.round(value * 100) / 100;
+    let hasDecimal = Math.abs(normalizedValue % 1) > 0;
 
     return 'NPR ' + normalizedValue.toLocaleString('en-US', {
       minimumFractionDigits: hasDecimal ? 2 : 0,
@@ -665,8 +871,8 @@
       return;
     }
 
-    var mrpValue = parsePositiveNumber(quickAddMrpInput.value);
-    var discountValue = parsePositiveNumber(quickAddDiscountInput.value);
+    let mrpValue = parsePositiveNumber(quickAddMrpInput.value);
+    let discountValue = parsePositiveNumber(quickAddDiscountInput.value);
 
     if (!Number.isFinite(mrpValue)) {
       quickAddPricePreview.classList.add('hidden');
@@ -681,7 +887,7 @@
     }
 
     discountValue = Math.min(Math.max(discountValue, 0), 100);
-    var discountedValue = mrpValue * ((100 - discountValue) / 100);
+    let discountedValue = mrpValue * ((100 - discountValue) / 100);
 
     quickAddPricePreview.classList.remove('hidden');
     quickAddPriceFinal.textContent = formatNpr(discountedValue);
@@ -726,7 +932,7 @@
   }
 
   function setLoadingOverlay(isVisible) {
-    var globalLoading = window.bdLoading || null;
+    let globalLoading = window.bdLoading || null;
 
     if (!globalLoading || typeof globalLoading !== 'object') {
       return;
@@ -759,12 +965,12 @@
   }
 
   function extractAlertMessageFromHtml(htmlText) {
-    var parser = null;
-    var doc = null;
-    var errorAlert = null;
-    var warningAlert = null;
-    var successAlert = null;
-    var extractText = function (node) {
+    let parser = null;
+    let doc = null;
+    let errorAlert = null;
+    let warningAlert = null;
+    let successAlert = null;
+    let extractText = function (node) {
       return String(node && node.textContent ? node.textContent : '').replace(/\s+/g, ' ').trim();
     };
 
@@ -802,14 +1008,14 @@
   }
 
   function setSubmitButtonState(form, isSubmitting, activeSubmitter) {
-    var submitButtons = Array.prototype.slice.call(form.querySelectorAll('button[type="submit"]'));
+    let submitButtons = Array.prototype.slice.call(form.querySelectorAll('button[type="submit"]'));
 
     if (!submitButtons.length) {
       return;
     }
 
     submitButtons.forEach(function (button) {
-      var defaultLabel = String(button.getAttribute('data-default-label') || '').trim();
+      let defaultLabel = String(button.getAttribute('data-default-label') || '').trim();
 
       if (!defaultLabel) {
         defaultLabel = String(button.textContent || '').trim() || 'Save';
@@ -844,11 +1050,11 @@
   }
 
   function addProductToOverviewTable(product) {
-    var tbody = productOverviewRoot ? productOverviewRoot.querySelector('table tbody') : null;
-    var noProductsMsg = productOverviewRoot ? productOverviewRoot.querySelector('[data-product-overview-empty]') : null;
-    var tableContainer = productOverviewRoot ? productOverviewRoot.querySelector('[data-product-overview-table]') : null;
-    var categoryName = product.categoryName || product.type || 'Other';
-    var currentOverviewPath = productOverviewRoot ? String(productOverviewRoot.getAttribute('data-product-overview-path') || '/admin/products').trim() : '/admin/products';
+    let tbody = productOverviewRoot ? productOverviewRoot.querySelector('table tbody') : null;
+    let noProductsMsg = productOverviewRoot ? productOverviewRoot.querySelector('[data-product-overview-empty]') : null;
+    let tableContainer = productOverviewRoot ? productOverviewRoot.querySelector('[data-product-overview-table]') : null;
+    let categoryName = product.categoryName || product.type || 'Other';
+    let currentOverviewPath = productOverviewRoot ? String(productOverviewRoot.getAttribute('data-product-overview-path') || '/admin/products').trim() : '/admin/products';
 
     if (!productOverviewRoot || !product || !product.id) {
       return;
@@ -866,7 +1072,7 @@
       return;
     }
 
-    var row = document.createElement('tr');
+    let row = document.createElement('tr');
     row.className = 'transition-colors hover:bg-slate-50';
     row.innerHTML =
       '<td class="border border-slate-200 px-3 py-2">' +
@@ -910,12 +1116,12 @@
     tbody.insertBefore(row, tbody.firstChild);
 
     // Bind delete button event
-    var deleteBtn = row.querySelector('[data-delete-product-trigger]');
+    let deleteBtn = row.querySelector('[data-delete-product-trigger]');
     if (deleteBtn) {
       deleteBtn.addEventListener('click', function () {
-        var productKey = deleteBtn.getAttribute('data-delete-product-trigger');
-        var productName = deleteBtn.getAttribute('data-product-name') || 'this product';
-        var form = document.querySelector('[data-delete-product-form="' + productKey + '"]');
+        let productKey = deleteBtn.getAttribute('data-delete-product-trigger');
+        let productName = deleteBtn.getAttribute('data-product-name') || 'this product';
+        let form = document.querySelector('[data-delete-product-form="' + productKey + '"]');
 
         showDeleteAlert(
           form,
@@ -926,20 +1132,19 @@
     }
 
     // Update product count badge
-    var productCountBadge = productOverviewRoot.querySelector('[data-product-overview-count]');
+    let productCountBadge = productOverviewRoot.querySelector('[data-product-overview-count]');
     if (productCountBadge) {
-      var currentText = productCountBadge.textContent || '';
-      var currentCount = parseInt(currentText.match(/\d+/)?.[0] || '0', 10);
+      let currentText = productCountBadge.textContent || '';
+      let currentCount = parseInt(currentText.match(/\d+/)?.[0] || '0', 10);
       productCountBadge.textContent = (currentCount + 1) + ' products';
     }
   }
 
   async function submitQuickAddProductForm(form, activeSubmitter) {
-    var response = null;
-    var result = null;
-    var finalUrl = null;
-    var hasError = false;
-    var message = '';
+    let response = null;
+    let result = null;
+    let hasError = false;
+    let message = '';
 
     if (!form || form.getAttribute('data-is-submitting') === '1') {
       return;
@@ -954,7 +1159,7 @@
     setLoadingOverlay(true);
 
     try {
-      response = await fetch(form.action, {
+      let fetchResult = await fetchAdminJson(form.action, {
         method: 'POST',
         body: new FormData(form),
         credentials: 'same-origin',
@@ -964,28 +1169,32 @@
         },
       });
 
-      finalUrl = new URL(response.url, window.location.href);
-      if (finalUrl.pathname === '/admin/login') {
-        window.location.href = '/admin/login';
+      if (fetchResult.redirectedToLogin) {
         return;
       }
 
-      // Parse JSON response
-      result = await response.json();
-      hasError = !result.success;
+      response = fetchResult.response;
+      result = fetchResult.payload;
+
+      if (!result || typeof result !== 'object') {
+        showToast('error', 'Unexpected server response. Please refresh and try again.');
+        return;
+      }
+
+      hasError = !isSuccessResponsePayload(result);
 
       if (hasError) {
         // Handle validation errors (array of errors) or single error message
         if (result.errors && Array.isArray(result.errors) && result.errors.length > 0) {
           message = result.errors.map(function (err) { return err.message; }).join(', ');
         } else {
-          message = result.message || result.error || 'Could not save product. Please try again.';
+          message = buildResponseMessage(result, 'Could not save product. Please try again.');
         }
         showToast('error', message);
         return;
       }
 
-      message = result.message || 'Product saved successfully.';
+      message = buildResponseMessage(result, 'Product saved successfully.');
       showToast('success', message);
       resetQuickAddProductForm();
       // Add product to overview table if returned
@@ -1012,10 +1221,10 @@
   }
 
   async function submitDeleteFormAsync(form) {
-    var response = null;
-    var result = null;
-    var formData = null;
-    var urlEncodedData = null;
+    let response = null;
+    let result = null;
+    let formData = null;
+    let urlEncodedData = null;
 
     if (!form) {
       return;
@@ -1027,7 +1236,7 @@
       formData = new FormData(form);
       urlEncodedData = new URLSearchParams(formData).toString();
 
-      response = await fetch(form.action, {
+      let fetchResult = await fetchAdminJson(form.action, {
         method: 'POST',
         body: urlEncodedData,
         credentials: 'same-origin',
@@ -1038,39 +1247,44 @@
         },
       });
 
-      if (response.url && response.url.indexOf('/admin/login') !== -1) {
-        window.location.href = '/admin/login';
+      if (fetchResult.redirectedToLogin) {
         return;
       }
 
-      result = await response.json();
+      response = fetchResult.response;
+      result = fetchResult.payload;
 
-      if (result.success) {
-        var productId = form.querySelector('input[name="productId"]')?.value;
-        var categoryName = form.querySelector('input[name="categoryName"]')?.value;
-        var deleteMessage = categoryName ? 'Category deleted successfully' : (productId ? 'Product deleted successfully' : 'Deleted successfully');
-        showToast('success', result.message || deleteMessage);
+      if (!result || typeof result !== 'object') {
+        showToast('error', 'Unexpected server response. Please refresh and try again.');
+        return;
+      }
+
+      if (isSuccessResponsePayload(result)) {
+        let productId = form.querySelector('input[name="productId"]')?.value;
+        let categoryName = form.querySelector('input[name="categoryName"]')?.value;
+        let deleteMessage = categoryName ? 'Category deleted successfully' : (productId ? 'Product deleted successfully' : 'Deleted successfully');
+        showToast('success', buildResponseMessage(result, deleteMessage));
 
         // Remove the deleted product rows immediately (both view and edit rows)
         if (productId) {
           try {
-            var viewRow = document.querySelector('[data-view-panel="' + productId + '"]');
-            var editRow = document.querySelector('[data-edit-row="' + productId + '"]');
+            let viewRow = document.querySelector('[data-view-panel="' + productId + '"]');
+            let editRow = document.querySelector('[data-edit-row="' + productId + '"]');
             if (viewRow) viewRow.remove();
             if (editRow) editRow.remove();
 
             // Also remove any card representation (if present)
-            var triggerBtn = document.querySelector('[data-delete-product-trigger="' + productId + '"]');
+            let triggerBtn = document.querySelector('[data-delete-product-trigger="' + productId + '"]');
             if (triggerBtn) {
-              var card = triggerBtn.closest('article') || triggerBtn.closest('tr');
+              let card = triggerBtn.closest('article') || triggerBtn.closest('tr');
               if (card) card.remove();
             }
 
             // Update product count badges if present
-            var productCountBadge = document.querySelector('[data-product-overview-count]') || document.querySelector('[data-managed-product-count-badge]');
+            let productCountBadge = document.querySelector('[data-product-overview-count]') || document.querySelector('[data-managed-product-count-badge]');
             if (productCountBadge) {
-              var currentText = productCountBadge.textContent || '';
-              var currentCount = parseInt((currentText.match(/\d+/) || ['0'])[0], 10) || 0;
+              let currentText = productCountBadge.textContent || '';
+              let currentCount = parseInt((currentText.match(/\d+/) || ['0'])[0], 10) || 0;
               if (currentCount > 0) {
                 productCountBadge.textContent = (currentCount - 1) + ' products';
               }
@@ -1081,8 +1295,8 @@
         }
 
         if (categoryName) {
-          var categoryKey = categoryName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
-          var categoryCard = document.querySelector('[data-delete-category-form="' + categoryKey + '"]')?.closest('article');
+          let categoryKey = categoryName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+          let categoryCard = document.querySelector('[data-delete-category-form="' + categoryKey + '"]')?.closest('article');
           if (categoryCard) {
             categoryCard.remove();
           }
@@ -1091,7 +1305,7 @@
           updateDashboardCategoryCounts();
         }
       } else {
-        showToast('error', result.message || 'Failed to delete');
+        showToast('error', buildResponseMessage(result, 'Failed to delete'));
       }
     } catch (error) {
       showToast('error', 'Failed to delete. Please try again.');
@@ -1130,9 +1344,9 @@
 
   document.querySelectorAll('[data-delete-product-trigger]').forEach(function (button) {
     button.addEventListener('click', function () {
-      var productKey = button.getAttribute('data-delete-product-trigger');
-      var productName = button.getAttribute('data-product-name') || 'this product';
-      var form = document.querySelector('[data-delete-product-form="' + productKey + '"]');
+      let productKey = button.getAttribute('data-delete-product-trigger');
+      let productName = button.getAttribute('data-product-name') || 'this product';
+      let form = document.querySelector('[data-delete-product-form="' + productKey + '"]');
 
       showDeleteAlert(
         form,
@@ -1167,7 +1381,7 @@
   if (quickAddProductForm) {
     quickAddProductForm.setAttribute('data-skip-global-loading', 'true');
     quickAddProductForm.addEventListener('submit', function (event) {
-      var submitter = event.submitter && event.submitter.form === quickAddProductForm
+      let submitter = event.submitter && event.submitter.form === quickAddProductForm
         ? event.submitter
         : null;
 
@@ -1176,7 +1390,7 @@
     });
 
     // Handle clear button
-    var clearQuickAddBtn = document.querySelector('[data-clear-quick-add]');
+    let clearQuickAddBtn = document.querySelector('[data-clear-quick-add]');
     if (clearQuickAddBtn) {
       clearQuickAddBtn.addEventListener('click', function () {
         resetQuickAddProductForm();
@@ -1189,15 +1403,15 @@
     function isQuickAddFormDirty() {
       if (!quickAddProductForm) return false;
       try {
-        var cat = quickAddCategoryInput && String(quickAddCategoryInput.value || '').trim();
-        var sub = quickAddSubcategoryPicker && String(quickAddSubcategoryPicker.value || '').trim();
-        var mrp = quickAddMrpInput && String(quickAddMrpInput.value || '').trim();
-        var qtyEl = quickAddProductForm.querySelector('[name="productQuantity"]');
-        var qty = qtyEl ? String(qtyEl.value || '').trim() : '';
-        var specEl = quickAddProductForm.querySelector('[name="productSpec"]');
-        var spec = specEl ? String(specEl.value || '').trim() : '';
-        var fileEl = quickAddProductForm.querySelector('[data-file-input]');
-        var hasFile = fileEl && fileEl.files && fileEl.files.length > 0;
+        let cat = quickAddCategoryInput && String(quickAddCategoryInput.value || '').trim();
+        let sub = quickAddSubcategoryPicker && String(quickAddSubcategoryPicker.value || '').trim();
+        let mrp = quickAddMrpInput && String(quickAddMrpInput.value || '').trim();
+        let qtyEl = quickAddProductForm.querySelector('[name="productQuantity"]');
+        let qty = qtyEl ? String(qtyEl.value || '').trim() : '';
+        let specEl = quickAddProductForm.querySelector('[name="productSpec"]');
+        let spec = specEl ? String(specEl.value || '').trim() : '';
+        let fileEl = quickAddProductForm.querySelector('[data-file-input]');
+        let hasFile = fileEl && fileEl.files && fileEl.files.length > 0;
 
         return Boolean(cat || sub || mrp || qty || spec || hasFile);
       } catch (e) {
@@ -1229,16 +1443,16 @@
   }
 
   // Handle category create/edit form async
-  var categoryForm = document.querySelector('form[action="/admin/categories"]');
-  var categoryOriginalNameInput = categoryForm ? categoryForm.querySelector('[data-category-original-name-input]') : null;
-  var categoryReplaceItemsInput = categoryForm ? categoryForm.querySelector('[data-category-replace-items-input]') : null;
-  var categoryNameInput = categoryForm ? categoryForm.querySelector('[data-category-name-input]') : null;
-  var categoryItemsInput = categoryForm ? categoryForm.querySelector('[data-category-items-input]') : null;
-  var categorySubmitButton = categoryForm ? categoryForm.querySelector('[data-category-submit-button]') : null;
-  var categoryEditCancelButton = categoryForm ? categoryForm.querySelector('[data-category-edit-cancel]') : null;
+  let categoryForm = document.querySelector('form[action="/admin/categories"]');
+  let categoryOriginalNameInput = categoryForm ? categoryForm.querySelector('[data-category-original-name-input]') : null;
+  let categoryReplaceItemsInput = categoryForm ? categoryForm.querySelector('[data-category-replace-items-input]') : null;
+  let categoryNameInput = categoryForm ? categoryForm.querySelector('[data-category-name-input]') : null;
+  let categoryItemsInput = categoryForm ? categoryForm.querySelector('[data-category-items-input]') : null;
+  let categorySubmitButton = categoryForm ? categoryForm.querySelector('[data-category-submit-button]') : null;
+  let categoryEditCancelButton = categoryForm ? categoryForm.querySelector('[data-category-edit-cancel]') : null;
 
   function setCategorySubmitButtonLabel(label) {
-    var cleanedLabel = String(label || '').trim();
+    let cleanedLabel = String(label || '').trim();
 
     if (!categorySubmitButton || !cleanedLabel) {
       return;
@@ -1316,10 +1530,10 @@
   }
 
   async function submitCategoryFormAsync(form) {
-    var response = null;
-    var result = null;
-    var formData = null;
-    var urlEncodedData = null;
+    let response = null;
+    let result = null;
+    let formData = null;
+    let urlEncodedData = null;
 
     if (!form || form.getAttribute('data-is-submitting') === '1') {
       return;
@@ -1338,7 +1552,7 @@
     urlEncodedData = new URLSearchParams(formData).toString();
 
     try {
-      response = await fetch(form.action, {
+      let fetchResult = await fetchAdminJson(form.action, {
         method: 'POST',
         body: urlEncodedData,
         credentials: 'same-origin',
@@ -1349,31 +1563,36 @@
         },
       });
 
-      if (response.url && response.url.indexOf('/admin/login') !== -1) {
-        window.location.href = '/admin/login';
+      if (fetchResult.redirectedToLogin) {
         return;
       }
 
-      result = await response.json();
+      response = fetchResult.response;
+      result = fetchResult.payload;
 
-      if (result.success) {
-        var resolvedCategoryName = String(result.categoryName || formData.get('categoryName') || '').trim();
-        var resolvedOriginalCategoryName = String(result.originalCategoryName || categoryOriginalNameInput && categoryOriginalNameInput.value || '').trim();
-        var resolvedCategoryItems = Array.isArray(result.categoryItems)
+      if (!result || typeof result !== 'object') {
+        showToast('error', 'Unexpected server response. Please refresh and try again.');
+        return;
+      }
+
+      if (isSuccessResponsePayload(result)) {
+        let resolvedCategoryName = String(result.categoryName || formData.get('categoryName') || '').trim();
+        let resolvedOriginalCategoryName = String(result.originalCategoryName || categoryOriginalNameInput && categoryOriginalNameInput.value || '').trim();
+        let resolvedCategoryItems = Array.isArray(result.categoryItems)
           ? result.categoryItems
           : parseCategoryItemsInput(formData.get('categoryItems'));
 
-        showToast('success', result.message || 'Category saved successfully');
+        showToast('success', buildResponseMessage(result, 'Category saved successfully'));
         syncCategorySubcategoryMap(resolvedCategoryName, resolvedCategoryItems, resolvedOriginalCategoryName);
         upsertQuickAddCategoryOption(resolvedCategoryName, resolvedOriginalCategoryName);
 
         // Ensure quick-add category select contains the new category and sync subcategory picker
         if (quickAddCategoryInput && resolvedCategoryName) {
-          var cleanedName = String(resolvedCategoryName || '').trim();
+          let cleanedName = String(resolvedCategoryName || '').trim();
           if (cleanedName) {
-            var exists = Array.prototype.slice.call(quickAddCategoryInput.options).some(function (opt) { return String(opt.value || '').trim() === cleanedName; });
+            let exists = Array.prototype.slice.call(quickAddCategoryInput.options).some(function (opt) { return String(opt.value || '').trim() === cleanedName; });
             if (!exists) {
-              var newOpt = document.createElement('option');
+              let newOpt = document.createElement('option');
               newOpt.value = cleanedName;
               newOpt.textContent = cleanedName;
               quickAddCategoryInput.appendChild(newOpt);
@@ -1401,7 +1620,7 @@
         if (!categoryForm || !categoryForm.hasAttribute('data-category-form')) {
           // Follow the backend redirect when a rename changes the category slug.
           setTimeout(function () {
-            var redirectPath = result && result.redirectPath ? String(result.redirectPath).trim() : '';
+            let redirectPath = result && result.redirectPath ? String(result.redirectPath).trim() : '';
 
             if (redirectPath) {
               window.location.assign(redirectPath);
@@ -1412,7 +1631,7 @@
           }, 800);
         }
       } else {
-        showToast('error', result.message || 'Failed to save category');
+        showToast('error', buildResponseMessage(result, 'Failed to save category'));
       }
     } catch (error) {
       showToast('error', 'Failed to save category. Please try again.');

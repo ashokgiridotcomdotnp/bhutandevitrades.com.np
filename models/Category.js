@@ -1,4 +1,5 @@
-var mongoose = require('mongoose');
+import mongoose from 'mongoose';
+
 
 function toTrimmedString(value) {
   if (value === null || typeof value === 'undefined') {
@@ -19,7 +20,7 @@ function slugify(value) {
     .replace(/^-+|-+$/g, '');
 }
 
-var categorySchema = new mongoose.Schema(
+let categorySchema = new mongoose.Schema(
   {
     name: {
       type: String,
@@ -46,7 +47,16 @@ var categorySchema = new mongoose.Schema(
       type: String,
       trim: true,
       default: '',
-      maxlength: 500,
+      maxlength: 1000,
+    },
+    items: {
+      type: [String],
+      default: [],
+    },
+    sortOrder: {
+      type: Number,
+      default: 0,
+      min: 0,
     },
     isActive: {
       type: Boolean,
@@ -57,20 +67,36 @@ var categorySchema = new mongoose.Schema(
   {
     strict: 'throw',
     versionKey: false,
+    minimize: false,
     timestamps: true,
   }
 );
+categorySchema.pre('validate', async function () {
+  const seenItems = Object.create(null);
 
-categorySchema.pre('validate', function (next) {
   this.name = toTrimmedString(this.name);
   this.normalizedName = normalizeName(this.name);
   this.slug = slugify(this.name || this.slug);
-  next();
+
+  if (typeof this.sortOrder === 'number' && Number.isFinite(this.sortOrder)) {
+    this.sortOrder = Math.floor(this.sortOrder);
+  }
+
+  this.items = (this.items || [])
+    .map(item => toTrimmedString(item))
+    .filter(item => {
+      const itemKey = normalizeName(item);
+      if (!item || item.length > 120 || seenItems[itemKey]) return false;
+      seenItems[itemKey] = true;
+      return true;
+    });
+
+  // ❌ No next() here
 });
 
 categorySchema.index({ normalizedName: 1 }, { unique: true, name: 'uq_category_normalized_name' });
 categorySchema.index({ slug: 1 }, { unique: true, name: 'uq_category_slug' });
-categorySchema.index({ name: 'text', description: 'text' }, { name: 'idx_category_text' });
-categorySchema.index({ isActive: 1, createdAt: -1 }, { name: 'idx_category_active_created' });
-
-module.exports = mongoose.models.Category || mongoose.model('Category', categorySchema);
+categorySchema.index({ isActive: 1, sortOrder: 1, name: 1 }, { name: 'idx_category_active_sort_name' });
+categorySchema.index({ updatedAt: -1 }, { name: 'idx_category_updated_at' });
+categorySchema.index({ name: 'text', description: 'text', items: 'text' }, { name: 'idx_category_text_search' });
+export default mongoose.models.Category || mongoose.model('Category', categorySchema);

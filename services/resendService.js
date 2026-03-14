@@ -1,14 +1,18 @@
+import config from '../lib/config.js';
+import logger from '../lib/logger.js';
+
+
 function toTrimmedString(value) {
   return String(value || '').trim();
 }
 
 function sanitizeFromEmail(value) {
-  var fromEmail = toTrimmedString(value);
+  let fromEmail = toTrimmedString(value);
   return fromEmail || 'onboarding@resend.dev';
 }
 
 function parseTimeoutMs(value, fallbackMs) {
-  var parsedValue = Number(value);
+  let parsedValue = Number(value);
 
   if (!Number.isFinite(parsedValue) || parsedValue < 1) {
     return fallbackMs;
@@ -18,17 +22,17 @@ function parseTimeoutMs(value, fallbackMs) {
 }
 
 async function sendEmail(options) {
-  var apiKey = toTrimmedString(process.env.RESEND_API_KEY);
-  var fromEmail = sanitizeFromEmail(process.env.RESEND_FROM_EMAIL);
-  var timeoutMs = parseTimeoutMs(process.env.RESEND_TIMEOUT_MS, 9000);
-  var toEmail = toTrimmedString(options && options.to);
-  var subject = toTrimmedString(options && options.subject);
-  var html = String(options && options.html ? options.html : '');
-  var text = String(options && options.text ? options.text : '');
-  var response = null;
-  var responseBody = null;
-  var controller = typeof AbortController === 'function' ? new AbortController() : null;
-  var timeoutId = null;
+  let apiKey = config.resend.apiKey;
+  let fromEmail = sanitizeFromEmail(config.resend.fromEmail);
+  let timeoutMs = parseTimeoutMs(config.resend.timeoutMs, 9000);
+  let toEmail = toTrimmedString(options && options.to);
+  let subject = toTrimmedString(options && options.subject);
+  let html = String(options && options.html ? options.html : '');
+  let text = String(options && options.text ? options.text : '');
+  let response = null;
+  let responseBody = null;
+  let controller = typeof AbortController === 'function' ? new AbortController() : null;
+  let timeoutId = null;
 
   if (!apiKey) {
     return {
@@ -72,6 +76,10 @@ async function sendEmail(options) {
     });
 
     if (!response.ok) {
+      logger.warn('Resend request failed', {
+        status: response.status,
+        errorCode: 'resend-request-failed',
+      });
       return {
         ok: false,
         errorCode: 'resend-request-failed',
@@ -110,7 +118,6 @@ async function sendEmail(options) {
     }
   }
 }
-
-module.exports = {
+export default {
   sendEmail: sendEmail,
 };

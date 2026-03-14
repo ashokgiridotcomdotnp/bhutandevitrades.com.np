@@ -1,15 +1,15 @@
 <%
-  var currentBasePath = basePath === '/home' ? '/home' : '/';
-  var shouldShowUserAuthActions = typeof showUserAuthActions !== 'undefined' ? Boolean(showUserAuthActions) : true;
-  var authenticatedUser = currentUser && currentUser.email ? currentUser : null;
-  var currentPathname = typeof currentPath === 'string' ? currentPath : '';
-  var isLoginPath = currentPathname === '/login';
-  var isSignupPath = currentPathname === '/signup';
-  var normalizedOpenCategoryName = String(openCategoryName || '').trim().toLowerCase();
-  var resolvedCategoryGroups = Array.isArray(categoryGroups) ? categoryGroups : [];
+  let currentBasePath = basePath === '/home' ? '/home' : '/';
+  let shouldShowUserAuthActions = typeof showUserAuthActions !== 'undefined' ? Boolean(showUserAuthActions) : true;
+  let authenticatedUser = currentUser && currentUser.email ? currentUser : null;
+  let currentPathname = typeof currentPath === 'string' ? currentPath : '';
+  let isLoginPath = currentPathname === '/login';
+  let isSignupPath = currentPathname === '/signup';
+  let normalizedOpenCategoryName = String(openCategoryName || '').trim().toLowerCase();
+  let resolvedCategoryGroups = Array.isArray(categoryGroups) ? categoryGroups : [];
 
   function buildCategoryHref(categoryName) {
-    var params = [];
+    let params = [];
     if (categoryName) {
       params.push('category=' + encodeURIComponent(categoryName));
     }
@@ -17,7 +17,7 @@
   }
 
   function buildSubcategoryHref(categoryName, subCategoryName) {
-    var params = [];
+    let params = [];
     if (categoryName) {
       params.push('category=' + encodeURIComponent(categoryName));
     }
@@ -75,7 +75,7 @@
       <% } %>
 
       <% resolvedCategoryGroups.forEach(function(group) { %>
-      <% var isOpenByPath = normalizedOpenCategoryName && normalizedOpenCategoryName === String(group.name || '').trim().toLowerCase(); %>
+      <% let isOpenByPath = normalizedOpenCategoryName && normalizedOpenCategoryName === String(group.name || '').trim().toLowerCase(); %>
       <details
         data-category-accordion-item
         data-category-name="<%= group.name %>"

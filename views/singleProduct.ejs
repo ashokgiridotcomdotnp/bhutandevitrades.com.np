@@ -1,5 +1,5 @@
 <%
-  var sectionBasedCatalog = [];
+  let sectionBasedCatalog = [];
 
   if (Array.isArray(productSections)) {
     productSections.forEach(function(section) {
@@ -25,10 +25,10 @@
   }
 
   sectionBasedCatalog.sort(function(left, right) {
-    var leftOrder = Number(left && left.addedOrder);
-    var rightOrder = Number(right && right.addedOrder);
-    var normalizedLeftOrder = Number.isFinite(leftOrder) ? leftOrder : 0;
-    var normalizedRightOrder = Number.isFinite(rightOrder) ? rightOrder : 0;
+    let leftOrder = Number(left && left.addedOrder);
+    let rightOrder = Number(right && right.addedOrder);
+    let normalizedLeftOrder = Number.isFinite(leftOrder) ? leftOrder : 0;
+    let normalizedRightOrder = Number.isFinite(rightOrder) ? rightOrder : 0;
 
     return (
       (normalizedRightOrder - normalizedLeftOrder) ||
@@ -37,27 +37,27 @@
     );
   });
 
-  var visibleCatalog = sectionBasedCatalog;
-  var pageSize = Number(storePageSize);
-  var safePageSize = Number.isFinite(pageSize) && pageSize > 0 ? Math.floor(pageSize) : 10;
-  var requestedPage = Number(storeCurrentPage);
-  var totalPagesFromController = Number(storeTotalPages);
-  var totalPages = Number.isFinite(totalPagesFromController) && totalPagesFromController > 0
+  let visibleCatalog = sectionBasedCatalog;
+  let pageSize = Number(storePageSize);
+  let safePageSize = Number.isFinite(pageSize) && pageSize > 0 ? Math.floor(pageSize) : 10;
+  let requestedPage = Number(storeCurrentPage);
+  let totalPagesFromController = Number(storeTotalPages);
+  let totalPages = Number.isFinite(totalPagesFromController) && totalPagesFromController > 0
     ? Math.floor(totalPagesFromController)
     : Math.max(1, Math.ceil(visibleCatalog.length / safePageSize));
-  var currentPage = Number.isFinite(requestedPage) && requestedPage > 0 ? Math.floor(requestedPage) : 1;
-  var basePathForPagination = typeof basePath === 'string' && basePath ? basePath : '/';
-  var normalizedWhatsappNumber = String(storeWhatsappNumber || '').replace(/[^0-9]/g, '');
-  var whatsappBaseUrl = normalizedWhatsappNumber ? ('https://wa.me/' + normalizedWhatsappNumber) : 'https://wa.me/';
-  var hasStoreContactNumber = Boolean(normalizedWhatsappNumber);
-  var callHref = hasStoreContactNumber ? ('tel:+' + normalizedWhatsappNumber) : '#';
-  var authenticatedUser = currentUser && currentUser.email ? currentUser : null;
-  var canPlaceOrder = Boolean(authenticatedUser);
-  var loginToOrderHref = '/login';
+  let currentPage = Number.isFinite(requestedPage) && requestedPage > 0 ? Math.floor(requestedPage) : 1;
+  let basePathForPagination = typeof basePath === 'string' && basePath ? basePath : '/';
+  let normalizedWhatsappNumber = String(storeWhatsappNumber || '').replace(/[^0-9]/g, '');
+  let whatsappBaseUrl = normalizedWhatsappNumber ? ('https://wa.me/' + normalizedWhatsappNumber) : 'https://wa.me/';
+  let hasStoreContactNumber = Boolean(normalizedWhatsappNumber);
+  let callHref = hasStoreContactNumber ? ('tel:+' + normalizedWhatsappNumber) : '#';
+  let authenticatedUser = currentUser && currentUser.email ? currentUser : null;
+  let canPlaceOrder = Boolean(authenticatedUser);
+  let loginToOrderHref = '/login';
 
   function extractNumericPrice(value) {
-    var normalizedValue = String(value || '').replace(/,/g, '').replace(/[^0-9.]/g, '');
-    var parsedValue = Number(normalizedValue);
+    let normalizedValue = String(value || '').replace(/,/g, '').replace(/[^0-9.]/g, '');
+    let parsedValue = Number(normalizedValue);
 
     if (!Number.isFinite(parsedValue) || parsedValue <= 0) {
       return 0;
@@ -67,7 +67,7 @@
   }
 
   function formatNprAmount(value) {
-    var parsedValue = Number(value);
+    let parsedValue = Number(value);
 
     if (!Number.isFinite(parsedValue) || parsedValue < 0) {
       return '';
@@ -83,12 +83,12 @@
     currentPage = totalPages;
   }
 
-  var startIndex = (currentPage - 1) * safePageSize;
-  var paginatedCatalog = visibleCatalog.slice(startIndex, startIndex + safePageSize);
+  let startIndex = (currentPage - 1) * safePageSize;
+  let paginatedCatalog = visibleCatalog.slice(startIndex, startIndex + safePageSize);
 
   function buildStorePageHref(targetPage) {
-    var safeTargetPage = Number(targetPage);
-    var params = [];
+    let safeTargetPage = Number(targetPage);
+    let params = [];
 
     if (!Number.isFinite(safeTargetPage) || safeTargetPage < 1) {
       safeTargetPage = 1;
@@ -111,7 +111,7 @@
     return basePathForPagination + (params.length ? '?' + params.join('&') : '');
   }
 
-  var nextPageHref = currentPage < totalPages ? buildStorePageHref(currentPage + 1) : '';
+  let nextPageHref = currentPage < totalPages ? buildStorePageHref(currentPage + 1) : '';
 %>
 
 <section
@@ -189,19 +189,19 @@
   <div id="products-grid" class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 pro-stagger">
     <% paginatedCatalog.forEach(function(item) { %>
     <%
-      var productHref = item.id ? '/products/' + encodeURIComponent(item.id) : '#';
-      var orderPageHref = item.id ? '/order/' + encodeURIComponent(item.id) : '#';
-      var parsedStockQuantity = Number(String(item && typeof item.quantity !== 'undefined' ? item.quantity : '').trim());
-      var hasStockQuantity = Number.isFinite(parsedStockQuantity) && parsedStockQuantity > 0;
-      var canOrderItem = Boolean(item.id) && hasStockQuantity;
-      var orderActionHref = canOrderItem ? orderPageHref : '#';
-      var hasDiscountedPrice = item.originalMrp && item.originalMrp !== item.mrp;
-      var normalizedDiscount = Number(item.discountPercent);
-      var hasValidDiscount = Number.isFinite(normalizedDiscount) && normalizedDiscount > 0;
-      var unitPriceValue = extractNumericPrice(item.mrp);
-      var hasUnitPriceValue = unitPriceValue > 0;
-      var whatsappInquiryMessage = 'Hello, I want details about "' + item.title + '" (' + item.type + ').';
-      var whatsappInquiryHref = whatsappBaseUrl + '?text=' + encodeURIComponent(whatsappInquiryMessage);
+      let productHref = item.id ? '/products/' + encodeURIComponent(item.id) : '#';
+      let orderPageHref = item.id ? '/order/' + encodeURIComponent(item.id) : '#';
+      let parsedStockQuantity = Number(String(item && typeof item.quantity !== 'undefined' ? item.quantity : '').trim());
+      let hasStockQuantity = Number.isFinite(parsedStockQuantity) && parsedStockQuantity > 0;
+      let canOrderItem = Boolean(item.id) && hasStockQuantity;
+      let orderActionHref = canOrderItem ? orderPageHref : '#';
+      let hasDiscountedPrice = item.originalMrp && item.originalMrp !== item.mrp;
+      let normalizedDiscount = Number(item.discountPercent);
+      let hasValidDiscount = Number.isFinite(normalizedDiscount) && normalizedDiscount > 0;
+      let unitPriceValue = extractNumericPrice(item.mrp);
+      let hasUnitPriceValue = unitPriceValue > 0;
+      let whatsappInquiryMessage = 'Hello, I want details about "' + item.title + '" (' + item.type + ').';
+      let whatsappInquiryHref = whatsappBaseUrl + '?text=' + encodeURIComponent(whatsappInquiryMessage);
     %>
     <article class="pro-grid-card is-loading group relative flex h-full flex-col overflow-hidden" data-product-card>
       <div class="pro-card-skeleton" aria-hidden="true">
@@ -307,7 +307,7 @@
     </a>
 
     <div class="flex flex-wrap items-center justify-center gap-1.5">
-      <% for (var pageNumber = 1; pageNumber <= totalPages; pageNumber += 1) { %>
+      <% for (let pageNumber = 1; pageNumber <= totalPages; pageNumber += 1) { %>
       <% if (pageNumber === 1 || pageNumber === totalPages || Math.abs(pageNumber - currentPage) <= 1) { %>
       <a
         href="<%= buildStorePageHref(pageNumber) %>"

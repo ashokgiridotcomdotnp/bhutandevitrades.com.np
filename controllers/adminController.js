@@ -1,85 +1,88 @@
-var mongoose = require('mongoose');
-var fs = require('fs');
-var catalogService = require('../services/catalogService');
-var database = require('../lib/db');
-var resendService = require('../services/resendService');
-var Order = require('../models/Order');
-var defaultAdminPath = '/admin';
-var maxCategoryNameLength = 80;
-var maxCategoryDescriptionLength = 240;
-var maxCategoryItemsCount = 50;
-var maxProductNameLength = 120;
-var maxProductSpecLength = 600;
-var maxPriceValue = 100000000;
-var maxQuantityValue = 1000000;
-var adminProductOverviewPageSize = 20;
-var adminCategoryItemsPageSize = 12;
-var maxAdminOrderMessageLength = 1000;
-var adminOrderRequestsLimit = 150;
-var adminOrderRequestsPageSize = 10;
-var defaultAdminOrdersPath = '/admin/orders';
-var parsedAdminRefreshCooldownMs = Number(process.env.ADMIN_DATA_REFRESH_COOLDOWN_MS);
-var adminRefreshCooldownMs = Number.isFinite(parsedAdminRefreshCooldownMs) && parsedAdminRefreshCooldownMs >= 0
-  ? Math.floor(parsedAdminRefreshCooldownMs)
-  : 15000;
-var isAdminRefreshInProgress = false;
-var lastAdminRefreshAt = 0;
-var adminMutationQueue = Promise.resolve();
+import fs from 'fs';
+import mongoose from 'mongoose';
+import catalogService from '../services/catalogService.js';
+import Category from '../models/Category.js';
+import Order from '../models/Order.js';
+import Product from '../models/Product.js';
+import database from '../lib/db.js';
+import resendService from '../services/resendService.js';
+
+
+
+let defaultAdminPath = '/admin';
+let defaultAdminOrdersPath = '/admin/orders';
+let maxCategoryNameLength = 80;
+let maxCategoryDescriptionLength = 240;
+let maxCategoryItemsCount = 50;
+let maxProductNameLength = 120;
+let maxProductSpecLength = 600;
+let maxPriceValue = 100000000;
+let maxQuantityValue = 1000000;
+let adminProductOverviewPageSize = 20;
+let adminCategoryItemsPageSize = 12;
+let maxAdminOrderMessageLength = 1000;
+let adminOrderRequestsLimit = 150;
+let adminOrderRequestsPageSize = 10;
+let adminOrderListSelectFields = 'productId productName productType quantity totalLabel customerName customerEmail phoneNumber note createdAt adminMessage adminAcceptedAt adminStatus';
+let adminMutationQueue = Promise.resolve();
 
 function toCategorySlug(value) {
   return catalogService.normalizeForSearch(value).replace(/\s+/g, '-');
 }
 
 function buildCategoryAdminPath(categoryName) {
-  var categorySlug = toCategorySlug(categoryName);
+  let categorySlug = toCategorySlug(categoryName);
+
   if (!categorySlug) {
     return defaultAdminPath;
   }
+
   return '/admin/categories/' + categorySlug;
 }
 
-function buildAdminProductsPagePath(page) {
-  var parsedPage = Number(page);
-  var safePage = Number.isFinite(parsedPage) && parsedPage > 0 ? Math.floor(parsedPage) : 1;
+function buildAdminProductsPagePath(page, categorySlug) {
+  let parsedPage = Number(page);
+  let safePage = Number.isFinite(parsedPage) && parsedPage > 0 ? Math.floor(parsedPage) : 1;
+  let safeCategorySlug = toCategorySlug(categorySlug);
+  let basePath = '';
 
   if (safePage <= 1) {
-    return '/admin/products';
+    basePath = '/admin/products';
+  } else {
+    basePath = '/admin/products?page=' + safePage;
   }
 
-  return '/admin/products?page=' + safePage;
+  if (!safeCategorySlug) {
+    return basePath;
+  }
+
+  return appendRedirectParam(basePath, 'category', safeCategorySlug);
 }
 
 function getSafeRedirectPath(req, fallbackPath) {
-  var targetPath = catalogService.toTrimmedString(req && req.body ? req.body.redirectTo : '');
-  var safeFallbackPath = fallbackPath || defaultAdminPath;
+  let targetPath = catalogService.toTrimmedString(req && req.body ? req.body.redirectTo : '');
+  let safeFallbackPath = fallbackPath || defaultAdminPath;
 
-  if (!targetPath) {
-    return safeFallbackPath;
-  }
-
-  if (targetPath.charAt(0) !== '/') {
-    return safeFallbackPath;
-  }
-
-  if (targetPath.indexOf('/admin') !== 0) {
+  if (!targetPath || targetPath.charAt(0) !== '/' || targetPath.indexOf('/admin') !== 0) {
     return safeFallbackPath;
   }
 
   return targetPath;
 }
 
-function appendRedirectParam(path, key, value) {
-  var safePath = path || defaultAdminPath;
-  var separator = safePath.indexOf('?') === -1 ? '?' : '&';
+function appendRedirectParam(targetPath, key, value) {
+  let safePath = targetPath || defaultAdminPath;
+  let separator = safePath.indexOf('?') === -1 ? '?' : '&';
+
   return safePath + separator + key + '=' + encodeURIComponent(value);
 }
 
-function buildErrorRedirect(path, errorCode) {
-  return appendRedirectParam(path, 'error', errorCode);
+function buildErrorRedirect(targetPath, errorCode) {
+  return appendRedirectParam(targetPath, 'error', errorCode);
 }
 
-function buildStatusRedirect(path, statusCode) {
-  return appendRedirectParam(path, 'status', statusCode);
+function buildStatusRedirect(targetPath, statusCode) {
+  return appendRedirectParam(targetPath, 'status', statusCode);
 }
 
 function normalizeSingleLineText(value) {
@@ -88,14 +91,14 @@ function normalizeSingleLineText(value) {
     .trim();
 }
 
-function normalizeEmail(value) {
-  return String(value || '').trim().toLowerCase();
-}
-
 function normalizeMultilineText(value) {
   return String(value || '')
     .replace(/\r\n/g, '\n')
     .trim();
+}
+
+function normalizeEmail(value) {
+  return String(value || '').trim().toLowerCase();
 }
 
 function isLikelyEmailAddress(value) {
@@ -129,11 +132,13 @@ function isWithinLength(value, maxLength) {
 }
 
 function isValidEntityId(value) {
-  return /^[a-z0-9][a-z0-9-]*$/i.test(catalogService.toTrimmedString(value));
+  let normalizedValue = catalogService.toTrimmedString(value);
+
+  return /^[a-z0-9][a-z0-9-]*$/i.test(normalizedValue) || mongoose.isValidObjectId(normalizedValue);
 }
 
 function parsePositiveInteger(value, fallbackValue) {
-  var parsedValue = Number(value);
+  let parsedValue = Number(value);
 
   if (!Number.isFinite(parsedValue) || parsedValue < 1) {
     return fallbackValue;
@@ -142,31 +147,87 @@ function parsePositiveInteger(value, fallbackValue) {
   return Math.floor(parsedValue);
 }
 
+function parseNonNegativeNumber(value) {
+  let rawValue = catalogService.toTrimmedString(value).replace(/,/g, '');
+  let matchedValue = rawValue.match(/-?\d+(\.\d+)?/);
+  let parsedValue = matchedValue ? Number(matchedValue[0]) : NaN;
+
+  if (!matchedValue || !Number.isFinite(parsedValue) || parsedValue < 0) {
+    return NaN;
+  }
+
+  return parsedValue;
+}
+
 function hasValidPriceValue(value) {
-  var parsedValue = parseNonNegativeNumber(value);
+  let parsedValue = parseNonNegativeNumber(value);
+
   return Number.isFinite(parsedValue) && parsedValue <= maxPriceValue;
 }
 
 function hasValidQuantityValue(value) {
-  var parsedValue = parseNonNegativeNumber(value);
+  let parsedValue = parseNonNegativeNumber(value);
+
   return Number.isFinite(parsedValue) && parsedValue <= maxQuantityValue;
 }
 
-function parseStoredStockQuantity(value) {
-  var quantityText = catalogService.toTrimmedString(value);
-  var parsedValue = parseNonNegativeNumber(quantityText);
+function normalizeDiscountPercent(value) {
+  let parsedValue = parseNonNegativeNumber(value);
 
-  if (!quantityText || !Number.isFinite(parsedValue)) {
+  if (!Number.isFinite(parsedValue)) {
     return 0;
   }
 
-  return Math.floor(parsedValue);
+  return Math.min(Math.round(parsedValue * 100) / 100, 100);
+}
+
+function resolveProductPricing(rawPrice, rawDiscountPercent) {
+  let parsedMrp = parseNonNegativeNumber(rawPrice);
+  let discountPercent = normalizeDiscountPercent(rawDiscountPercent);
+  let discountedValue = 0;
+  let hasDiscount = false;
+
+  if (!catalogService.toTrimmedString(rawPrice)) {
+    return {
+      isPriceMissing: true,
+      priceValue: NaN,
+      compareAtPriceValue: null,
+      discountPercent: 0,
+    };
+  }
+
+  if (!Number.isFinite(parsedMrp)) {
+    return {
+      isPriceMissing: false,
+      priceValue: NaN,
+      compareAtPriceValue: null,
+      discountPercent: 0,
+    };
+  }
+
+  discountedValue = Math.round(parsedMrp * ((100 - discountPercent) / 100) * 100) / 100;
+  hasDiscount = discountPercent > 0 && discountedValue < parsedMrp;
+
+  return {
+    isPriceMissing: false,
+    priceValue: discountedValue,
+    compareAtPriceValue: hasDiscount ? parsedMrp : null,
+    discountPercent: hasDiscount ? discountPercent : 0,
+  };
+}
+
+function buildProductSpec(categoryName, rawSpec) {
+  let specText = catalogService.toTrimmedString(rawSpec);
+
+  if (/^n\/?a$/i.test(specText)) {
+    return '';
+  }
+
+  return specText;
 }
 
 function sanitizeCategoryItems(rawItems) {
-  var parsedItems = catalogService.parseCommaSeparatedList(rawItems);
-
-  return parsedItems
+  return catalogService.parseCommaSeparatedList(rawItems)
     .slice(0, maxCategoryItemsCount)
     .map(function (item) {
       return normalizeSingleLineText(item);
@@ -176,219 +237,10 @@ function sanitizeCategoryItems(rawItems) {
     });
 }
 
-function hasDuplicateProductName(categoryName, productName, productSections, productIdToIgnore) {
-  var categoryKey = catalogService.normalizeForSearch(categoryName);
-  var productNameKey = catalogService.normalizeForSearch(productName);
-
-  if (!categoryKey || !productNameKey) {
-    return false;
-  }
-
-  return (productSections || []).some(function (section) {
-    return (section.items || []).some(function (item) {
-      if (!item || item.id === productIdToIgnore) {
-        return false;
-      }
-
-      return (
-        catalogService.normalizeForSearch(item.type) === categoryKey &&
-        catalogService.normalizeForSearch(item.name) === productNameKey
-      );
-    });
-  });
-}
-
-function hasDuplicateCategoryName(categoryName, categoryBoards, originalCategoryName) {
-  var categoryKey = catalogService.normalizeForSearch(categoryName);
-  var originalCategoryKey = catalogService.normalizeForSearch(originalCategoryName);
-
-  if (!categoryKey) {
-    return false;
-  }
-
-  return (categoryBoards || []).some(function (board) {
-    var boardKey = catalogService.normalizeForSearch(board && board.name);
-
-    if (!boardKey || boardKey !== categoryKey) {
-      return false;
-    }
-
-    if (originalCategoryKey && boardKey === originalCategoryKey) {
-      return false;
-    }
-
-    return true;
-  });
-}
-
-function buildAdminCategoryRecordsByKey(adminData) {
-  var categoryRecordsByKey = Object.create(null);
-
-  if (!adminData || !Array.isArray(adminData.categories)) {
-    return categoryRecordsByKey;
-  }
-
-  adminData.categories.forEach(function (category) {
-    var categoryName = normalizeSingleLineText(category && category.name);
-    var categoryKey = toCategorySlug(categoryName);
-
-    if (!categoryKey || categoryRecordsByKey[categoryKey]) {
-      return;
-    }
-
-    categoryRecordsByKey[categoryKey] = {
-      name: categoryName,
-      description: normalizeMultilineText(category && category.description),
-      items: sanitizeCategoryItems(category && category.items),
-    };
-  });
-
-  return categoryRecordsByKey;
-}
-
-function resolveCategorySaveRedirectPath(categoryName, redirectPath, shouldReplaceCategoryItems) {
-  var safeRedirectPath = catalogService.toTrimmedString(redirectPath) || defaultAdminPath;
-
-  if (shouldReplaceCategoryItems && safeRedirectPath.indexOf('/admin/categories') === 0) {
-    return buildCategoryAdminPath(categoryName);
-  }
-
-  return safeRedirectPath;
-}
-
-function isAjaxRequest(req) {
-  var acceptHeader = String(req && req.headers ? req.headers.accept || '' : '').toLowerCase();
-  var requestedWithHeader = String(req && req.headers ? req.headers['x-requested-with'] || '' : '');
-
-  return Boolean(
-    (req && req.xhr) ||
-    requestedWithHeader === 'XMLHttpRequest' ||
-    acceptHeader.indexOf('application/json') !== -1
-  );
-}
-
-function runAdminMutation(task) {
-  var queuedTask = adminMutationQueue.then(function () {
-    return Promise.resolve().then(task);
-  });
-
-  adminMutationQueue = queuedTask.catch(function () {
-    return undefined;
-  });
-
-  return queuedTask;
-}
-
-function removeProductNameFromAdminCategory(adminData, categoryName, productName) {
-  var categoryKey = catalogService.normalizeForSearch(categoryName);
-  var productNameKey = catalogService.normalizeForSearch(productName);
-
-  if (!categoryKey || !productNameKey || !adminData || !Array.isArray(adminData.categories)) {
-    return;
-  }
-
-  adminData.categories.forEach(function (category) {
-    if (catalogService.normalizeForSearch(category && category.name) !== categoryKey) {
-      return;
-    }
-
-    if (!Array.isArray(category.items)) {
-      return;
-    }
-
-    category.items = category.items.filter(function (itemName) {
-      return catalogService.normalizeForSearch(itemName) !== productNameKey;
-    });
-  });
-}
-
-function buildProductSpec(categoryName, rawSpec) {
-  var specText = catalogService.toTrimmedString(rawSpec);
-  if (/^n\/?a$/i.test(specText)) {
-    return '';
-  }
-
-  return specText;
-}
-
-function parseNonNegativeNumber(value) {
-  var rawValue = catalogService.toTrimmedString(value).replace(/,/g, '');
-  var matchedValue = rawValue.match(/-?\d+(\.\d+)?/);
-  var parsedValue = matchedValue ? Number(matchedValue[0]) : NaN;
-
-  if (!matchedValue || !Number.isFinite(parsedValue) || parsedValue < 0) {
-    return NaN;
-  }
-
-  return parsedValue;
-}
-
-function formatNprAmount(value) {
-  var normalizedValue = Math.round(value * 100) / 100;
-  var hasDecimals = Math.abs(normalizedValue % 1) > 0;
-
-  return 'NPR ' + normalizedValue.toLocaleString('en-US', {
-    minimumFractionDigits: hasDecimals ? 2 : 0,
-    maximumFractionDigits: 2,
-  });
-}
-
-function normalizeDiscountPercent(value) {
-  var parsedValue = parseNonNegativeNumber(value);
-  if (!Number.isFinite(parsedValue)) {
-    return 0;
-  }
-
-  return Math.min(Math.round(parsedValue * 100) / 100, 100);
-}
-
-function normalizeProductQuantity(value) {
-  var parsedValue = parseNonNegativeNumber(value);
-  if (!Number.isFinite(parsedValue)) {
-    return '';
-  }
-
-  return String(Math.floor(parsedValue));
-}
-
-function resolveProductPricing(rawPrice, rawDiscountPercent) {
-  var priceInput = catalogService.toTrimmedString(rawPrice);
-  var parsedMrp = parseNonNegativeNumber(priceInput);
-  var discountPercent = normalizeDiscountPercent(rawDiscountPercent);
-
-  if (!priceInput) {
-    return {
-      isPriceMissing: true,
-      price: '',
-      originalPrice: '',
-      discountPercent: 0,
-    };
-  }
-
-  if (!Number.isFinite(parsedMrp)) {
-    return {
-      isPriceMissing: false,
-      price: priceInput,
-      originalPrice: '',
-      discountPercent: 0,
-    };
-  }
-
-  var discountedValue = parsedMrp * ((100 - discountPercent) / 100);
-  var hasDiscount = discountPercent > 0 && discountedValue < parsedMrp;
-
-  return {
-    isPriceMissing: false,
-    price: formatNprAmount(discountedValue),
-    originalPrice: hasDiscount ? formatNprAmount(parsedMrp) : '',
-    discountPercent: hasDiscount ? discountPercent : 0,
-  };
-}
-
 function findCategoryBoardBySlug(categorySlug, categoryBoards) {
-  var slug = catalogService.toTrimmedString(categorySlug).toLowerCase();
-  var normalizedSlug = catalogService.normalizeForSearch(slug.replace(/-/g, ' '));
-  var matchedBySlug = null;
+  let slug = catalogService.toTrimmedString(categorySlug).toLowerCase();
+  let normalizedSlug = catalogService.normalizeForSearch(slug.replace(/-/g, ' '));
+  let matchedBySlug = null;
 
   if (!slug) {
     return null;
@@ -408,7 +260,7 @@ function findCategoryBoardBySlug(categorySlug, categoryBoards) {
 }
 
 function findCategoryBoardByName(categoryName, categoryBoards) {
-  var normalizedName = catalogService.normalizeForSearch(categoryName);
+  let normalizedName = catalogService.normalizeForSearch(categoryName);
 
   if (!normalizedName) {
     return null;
@@ -419,145 +271,200 @@ function findCategoryBoardByName(categoryName, categoryBoards) {
   }) || null;
 }
 
-function refreshAdminDataMiddleware(req, res, next) {
-  var requestMethod = String(req && req.method ? req.method : '').toUpperCase();
-  var now = Date.now();
-  if (requestMethod && requestMethod !== 'GET' && requestMethod !== 'HEAD') {
-    return next();
-  }
+function buildAdminCategoryRecordsByKey(categoryDocs) {
+  let categoryRecordsByKey = Object.create(null);
 
-  if (isAdminRefreshInProgress || ((now - lastAdminRefreshAt) < adminRefreshCooldownMs)) {
-    return next();
-  }
+  (categoryDocs || []).forEach(function (categoryDoc) {
+    let categoryName = normalizeSingleLineText(categoryDoc && categoryDoc.name);
+    let categoryKey = toCategorySlug(categoryName);
 
-  isAdminRefreshInProgress = true;
-  lastAdminRefreshAt = now;
+    if (!categoryKey) {
+      return;
+    }
 
-  catalogService
-    .refreshAdminData()
-    .catch(function (error) {
-      console.error('Failed to refresh admin data:', error.message);
-    })
-    .finally(function () {
-      isAdminRefreshInProgress = false;
-    });
+    categoryRecordsByKey[categoryKey] = {
+      name: categoryName,
+      description: normalizeMultilineText(categoryDoc && categoryDoc.description),
+      items: Array.isArray(categoryDoc && categoryDoc.items) ? categoryDoc.items.slice() : [],
+    };
+  });
 
-  return next();
+  return categoryRecordsByKey;
 }
 
-function countObjectKeys(value) {
-  if (!value || typeof value !== 'object') {
-    return 0;
-  }
-
-  return Object.keys(value).length;
-}
-
-function buildDashboardStats(categoryBoards, adminData) {
-  var boards = Array.isArray(categoryBoards) ? categoryBoards : [];
-  var safeAdminData = adminData && typeof adminData === 'object' ? adminData : {};
-  var totalCategories = boards.length;
-  var totalProducts = boards.reduce(function (total, board) {
+function buildDashboardStats(categoryBoards) {
+  let boards = Array.isArray(categoryBoards) ? categoryBoards : [];
+  let totalCategories = boards.length;
+  let totalProducts = boards.reduce(function (total, board) {
     return total + (Array.isArray(board && board.items) ? board.items.length : 0);
   }, 0);
-  var emptyCategories = boards.reduce(function (total, board) {
-    var itemCount = Array.isArray(board && board.items) ? board.items.length : 0;
-    return total + (itemCount === 0 ? 1 : 0);
+  let emptyCategories = boards.reduce(function (total, board) {
+    return total + (Array.isArray(board && board.items) && board.items.length === 0 ? 1 : 0);
   }, 0);
-  var averageProductsPerCategory = totalCategories > 0 ? (totalProducts / totalCategories) : 0;
+  let averageProductsPerCategory = totalCategories > 0 ? (totalProducts / totalCategories) : 0;
 
   return {
     totalCategories: totalCategories,
     totalProducts: totalProducts,
     emptyCategories: emptyCategories,
     averageProductsPerCategory: Number(averageProductsPerCategory.toFixed(1)),
-    adminOnlyCategories: Array.isArray(safeAdminData.categories) ? safeAdminData.categories.length : 0,
-    adminOnlyProducts: Array.isArray(safeAdminData.products) ? safeAdminData.products.length : 0,
-    priceOverrides: countObjectKeys(safeAdminData.priceOverrides),
-    imageOverrides: countObjectKeys(safeAdminData.imageOverrides),
-    productOverrides: countObjectKeys(safeAdminData.productOverrides),
-    deletedProductIds: Array.isArray(safeAdminData.deletedProductIds) ? safeAdminData.deletedProductIds.length : 0,
-    deletedCategoryNames: Array.isArray(safeAdminData.deletedCategoryNames) ? safeAdminData.deletedCategoryNames.length : 0,
+    adminOnlyCategories: 0,
+    adminOnlyProducts: 0,
+    priceOverrides: 0,
+    imageOverrides: 0,
+    productOverrides: 0,
+    deletedProductIds: 0,
+    deletedCategoryNames: 0,
   };
 }
 
-function buildRecentAdminProducts(adminData) {
-  if (!adminData || !Array.isArray(adminData.products)) {
-    return [];
+function parseNumericText(value) {
+  let cleanedValue = String(value === null || typeof value === 'undefined' ? '' : value)
+    .replace(/,/g, '')
+    .replace(/[^0-9.\-]/g, '')
+    .trim();
+  let parsedValue = Number(cleanedValue);
+
+  if (!cleanedValue || !Number.isFinite(parsedValue)) {
+    return NaN;
   }
 
-  return adminData.products
-    .slice(-6)
-    .reverse()
-    .map(function (product) {
-      return {
-        id: catalogService.toTrimmedString(product.id),
-        type: catalogService.toTrimmedString(product.type),
-        name: catalogService.toTrimmedString(product.name),
-        price: catalogService.toTrimmedString(product.price) || 'Contact for price',
-        originalPrice: catalogService.toTrimmedString(product.originalPrice),
-        discountPercent: catalogService.toTrimmedString(product.discountPercent),
-        quantity: catalogService.toTrimmedString(product.quantity),
-        image: catalogService.normalizeAssetPath(product.image),
-      };
-    });
+  return parsedValue;
 }
 
-function buildAdminProductOrderById(adminData) {
-  var orderById = {};
+function formatDiscountPercent(value) {
+  let numericValue = Number(value);
+  let roundedValue = 0;
 
-  if (!adminData || !Array.isArray(adminData.products)) {
-    return orderById;
+  if (!Number.isFinite(numericValue) || numericValue <= 0) {
+    return '';
   }
 
-  adminData.products.forEach(function (product, index) {
-    var productId = catalogService.toTrimmedString(product && product.id);
+  roundedValue = Math.round(numericValue * 100) / 100;
+  return String(roundedValue)
+    .replace(/\.0+$/, '')
+    .replace(/(\.\d*[1-9])0+$/, '$1');
+}
 
-    if (!productId) {
-      return;
+function computeDiscountPercent(finalPriceValue, actualPriceValue) {
+  let numericFinal = Number(finalPriceValue);
+  let numericActual = Number(actualPriceValue);
+
+  if (!Number.isFinite(numericFinal) || numericFinal <= 0) {
+    return NaN;
+  }
+
+  if (!Number.isFinite(numericActual) || numericActual <= numericFinal) {
+    return NaN;
+  }
+
+  return ((numericActual - numericFinal) / numericActual) * 100;
+}
+
+function normalizePriceLabel(value) {
+  let trimmedValue = String(value === null || typeof value === 'undefined' ? '' : value).trim();
+  let parsedValue = NaN;
+
+  if (!trimmedValue) {
+    return '';
+  }
+
+  if (/^contact for price$/i.test(trimmedValue)) {
+    return 'Contact for price';
+  }
+
+  parsedValue = parseNumericText(trimmedValue);
+  if (Number.isFinite(parsedValue)) {
+    return catalogService.formatNprAmount(parsedValue);
+  }
+
+  return trimmedValue;
+}
+
+function resolveAdminRowPricing(item) {
+  let record = item && typeof item === 'object' ? item : {};
+  let rawFinalPrice = record.price;
+  let rawOriginalPrice = record.originalPrice;
+  let rawCompareAtPrice = record.compareAtPrice;
+  let rawDiscountPercent = record.discountPercent;
+  let finalPriceValue = parseNumericText(rawFinalPrice);
+  let compareAtValue = parseNumericText(rawCompareAtPrice);
+  let originalPriceValue = parseNumericText(rawOriginalPrice);
+  let discountPercentValue = parseNumericText(rawDiscountPercent);
+  let actualPriceValue = Number.isFinite(compareAtValue) ? compareAtValue : originalPriceValue;
+  let computedDiscountValue = NaN;
+  let hasDiscount = false;
+  let finalPriceLabel = normalizePriceLabel(rawFinalPrice);
+  let originalPriceLabel = '';
+  let discountPercentLabel = '';
+
+  if (!finalPriceLabel && Number.isFinite(finalPriceValue)) {
+    finalPriceLabel = catalogService.formatNprAmount(finalPriceValue);
+  }
+
+  if (!finalPriceLabel) {
+    finalPriceLabel = 'Contact for price';
+  }
+
+  if (!Number.isFinite(actualPriceValue) && Number.isFinite(finalPriceValue) && Number.isFinite(discountPercentValue) && discountPercentValue > 0 && discountPercentValue < 100) {
+    actualPriceValue = Math.round((finalPriceValue / ((100 - discountPercentValue) / 100)) * 100) / 100;
+  }
+
+  if (!Number.isFinite(discountPercentValue)) {
+    computedDiscountValue = computeDiscountPercent(finalPriceValue, actualPriceValue);
+    if (Number.isFinite(computedDiscountValue)) {
+      discountPercentValue = computedDiscountValue;
+    }
+  }
+
+  hasDiscount = Number.isFinite(finalPriceValue) && Number.isFinite(actualPriceValue) && actualPriceValue > finalPriceValue;
+
+  if (hasDiscount) {
+    originalPriceLabel = normalizePriceLabel(rawOriginalPrice || rawCompareAtPrice);
+
+    if (!originalPriceLabel && Number.isFinite(actualPriceValue)) {
+      originalPriceLabel = catalogService.formatNprAmount(actualPriceValue);
     }
 
-    // Higher index means added later; view uses this to show newest first.
-    orderById[productId] = index + 1;
-  });
+    discountPercentLabel = formatDiscountPercent(discountPercentValue);
+  }
 
-  return orderById;
+  return {
+    price: finalPriceLabel,
+    originalPrice: originalPriceLabel,
+    discountPercent: discountPercentLabel,
+  };
 }
 
-function buildAdminProductRows(categoryBoards, adminData) {
-  var rows = [];
-  var safeBoards = Array.isArray(categoryBoards) ? categoryBoards : [];
-  var productOrderById = buildAdminProductOrderById(adminData);
+function buildAdminProductRows(categoryBoards) {
+  let rows = [];
 
-  safeBoards.forEach(function (board) {
-    var boardName = catalogService.toTrimmedString(board && board.name);
-    var boardItems = Array.isArray(board && board.items) ? board.items : [];
+  (categoryBoards || []).forEach(function (board) {
+    let categoryName = catalogService.toTrimmedString(board && board.name);
 
-    boardItems.forEach(function (item) {
-      var productId = catalogService.toTrimmedString(item && item.id);
-
-      if (!productId) {
-        return;
-      }
+    (board && board.items || []).forEach(function (item) {
+      let pricing = resolveAdminRowPricing(item);
 
       rows.push({
-        id: productId,
-        categoryName: boardName,
+        id: catalogService.toTrimmedString(item && item.id),
+        categoryName: categoryName,
+        type: categoryName,
         name: catalogService.toTrimmedString(item && item.name),
         spec: catalogService.toTrimmedString(item && item.spec),
-        price: catalogService.toTrimmedString(item && item.price) || 'Contact for price',
-        quantity: parseStoredStockQuantity(item && item.quantity),
+        price: pricing.price,
+        originalPrice: pricing.originalPrice,
+        discountPercent: pricing.discountPercent,
+        quantity: Number(item && item.quantity) || 0,
         image: catalogService.normalizeAssetPath(item && item.image),
-        addedOrder: Number(productOrderById[productId]) || 0,
+        addedOrder: Number(item && item.addedOrder) || 0,
       });
     });
   });
 
   rows.sort(function (left, right) {
     return (
-      (Number(right.addedOrder) - Number(left.addedOrder)) ||
-      String(left.categoryName || '').localeCompare(String(right.categoryName || '')) ||
-      String(left.name || '').localeCompare(String(right.name || ''))
+      String(left && left.name ? left.name : '').localeCompare(String(right && right.name ? right.name : '')) ||
+      String(left && left.categoryName ? left.categoryName : '').localeCompare(String(right && right.categoryName ? right.categoryName : ''))
     );
   });
 
@@ -565,13 +472,13 @@ function buildAdminProductRows(categoryBoards, adminData) {
 }
 
 function paginateAdminProductRows(productRows, requestedPage, pageSize) {
-  var rows = Array.isArray(productRows) ? productRows : [];
-  var parsedPageSize = Number(pageSize);
-  var safePageSize = Number.isFinite(parsedPageSize) && parsedPageSize > 0 ? Math.floor(parsedPageSize) : adminProductOverviewPageSize;
-  var totalPages = Math.max(1, Math.ceil(rows.length / safePageSize));
-  var parsedPage = Number(requestedPage);
-  var safePage = Number.isFinite(parsedPage) && parsedPage > 0 ? Math.floor(parsedPage) : 1;
-  var startIndex = 0;
+  let rows = Array.isArray(productRows) ? productRows : [];
+  let parsedPageSize = Number(pageSize);
+  let safePageSize = Number.isFinite(parsedPageSize) && parsedPageSize > 0 ? Math.floor(parsedPageSize) : adminProductOverviewPageSize;
+  let totalPages = Math.max(1, Math.ceil(rows.length / safePageSize));
+  let parsedPage = Number(requestedPage);
+  let safePage = Number.isFinite(parsedPage) && parsedPage > 0 ? Math.floor(parsedPage) : 1;
+  let startIndex = 0;
 
   if (safePage > totalPages) {
     safePage = totalPages;
@@ -588,14 +495,62 @@ function paginateAdminProductRows(productRows, requestedPage, pageSize) {
   };
 }
 
+function buildCategoryFilterOptionsFromRows(productRows) {
+  let rows = Array.isArray(productRows) ? productRows : [];
+  let countBySlug = Object.create(null);
+  let nameBySlug = Object.create(null);
+
+  rows.forEach(function (row) {
+    let rawName = catalogService.toTrimmedString(row && row.categoryName);
+    let categoryName = rawName || catalogService.toTrimmedString(row && row.type) || '';
+    let slug = toCategorySlug(categoryName);
+
+    if (!slug || !categoryName) {
+      return;
+    }
+
+    if (!nameBySlug[slug]) {
+      nameBySlug[slug] = categoryName;
+    }
+
+    countBySlug[slug] = (Number(countBySlug[slug]) || 0) + 1;
+  });
+
+  return Object.keys(nameBySlug).map(function (slug) {
+    return {
+      slug: slug,
+      name: nameBySlug[slug],
+      count: Number(countBySlug[slug]) || 0,
+    };
+  }).sort(function (left, right) {
+    return String(left && left.name ? left.name : '').localeCompare(String(right && right.name ? right.name : ''));
+  });
+}
+
+function buildCategoryFilterOptionsFromSections(productSections) {
+  let sections = Array.isArray(productSections) ? productSections : [];
+
+  return sections.map(function (section) {
+    let name = catalogService.toTrimmedString(section && section.title);
+    let slug = toCategorySlug(name);
+    let count = Array.isArray(section && section.items) ? section.items.length : 0;
+
+    return { slug: slug, name: name, count: count };
+  }).filter(function (option) {
+    return Boolean(option && option.slug && option.name);
+  }).sort(function (left, right) {
+    return String(left && left.name ? left.name : '').localeCompare(String(right && right.name ? right.name : ''));
+  });
+}
+
 function buildAdminOrderAcceptedEmailText(orderRecord, adminMessage) {
-  var productName = catalogService.toTrimmedString(orderRecord && orderRecord.productName) || 'Product';
-  var productType = catalogService.toTrimmedString(orderRecord && orderRecord.productType) || 'Category';
-  var quantity = Number(orderRecord && orderRecord.quantity);
-  var safeQuantity = Number.isFinite(quantity) && quantity > 0 ? Math.floor(quantity) : 1;
-  var totalLabel = catalogService.toTrimmedString(orderRecord && orderRecord.totalLabel) || 'Contact for price';
-  var messageText = catalogService.toTrimmedString(adminMessage);
-  var lines = [];
+  let productName = catalogService.toTrimmedString(orderRecord && orderRecord.productName) || 'Product';
+  let productType = catalogService.toTrimmedString(orderRecord && orderRecord.productType) || 'Category';
+  let quantity = Number(orderRecord && orderRecord.quantity);
+  let safeQuantity = Number.isFinite(quantity) && quantity > 0 ? Math.floor(quantity) : 1;
+  let totalLabel = catalogService.toTrimmedString(orderRecord && orderRecord.totalLabel) || 'Contact for price';
+  let messageText = catalogService.toTrimmedString(adminMessage);
+  let lines = [];
 
   lines.push('Your order request has been accepted.');
   lines.push('');
@@ -616,13 +571,13 @@ function buildAdminOrderAcceptedEmailText(orderRecord, adminMessage) {
 }
 
 function buildAdminOrderAcceptedEmailHtml(orderRecord, adminMessage) {
-  var productName = catalogService.toTrimmedString(orderRecord && orderRecord.productName) || 'Product';
-  var productType = catalogService.toTrimmedString(orderRecord && orderRecord.productType) || 'Category';
-  var quantity = Number(orderRecord && orderRecord.quantity);
-  var safeQuantity = Number.isFinite(quantity) && quantity > 0 ? Math.floor(quantity) : 1;
-  var totalLabel = catalogService.toTrimmedString(orderRecord && orderRecord.totalLabel) || 'Contact for price';
-  var messageText = catalogService.toTrimmedString(adminMessage);
-  var messageBlock = '';
+  let productName = catalogService.toTrimmedString(orderRecord && orderRecord.productName) || 'Product';
+  let productType = catalogService.toTrimmedString(orderRecord && orderRecord.productType) || 'Category';
+  let quantity = Number(orderRecord && orderRecord.quantity);
+  let safeQuantity = Number.isFinite(quantity) && quantity > 0 ? Math.floor(quantity) : 1;
+  let totalLabel = catalogService.toTrimmedString(orderRecord && orderRecord.totalLabel) || 'Contact for price';
+  let messageText = catalogService.toTrimmedString(adminMessage);
+  let messageBlock = '';
 
   if (messageText) {
     messageBlock = '<p style="margin:0 0 10px;"><strong>Admin message:</strong> ' + escapeHtml(messageText) + '</p>';
@@ -643,26 +598,26 @@ function buildAdminOrderAcceptedEmailHtml(orderRecord, adminMessage) {
 }
 
 async function loadAdminOrdersForDashboard(options) {
-  var config = options && typeof options === 'object' ? options : {};
-  var requestedView = catalogService.normalizeForSearch(config.view);
-  var requestedPage = parsePositiveInteger(config.page, 1);
-  var requestedPageSize = parsePositiveInteger(config.pageSize, adminOrderRequestsPageSize);
-  var safePageSize = Math.max(1, Math.min(requestedPageSize, adminOrderRequestsLimit));
-  var resolvedView = 'pending';
-  var page = 1;
-  var totalPages = 1;
-  var counts = {
+  let config = options && typeof options === 'object' ? options : {};
+  let requestedView = catalogService.normalizeForSearch(config.view);
+  let requestedPage = parsePositiveInteger(config.page, 1);
+  let requestedPageSize = parsePositiveInteger(config.pageSize, adminOrderRequestsPageSize);
+  let safePageSize = Math.max(1, Math.min(requestedPageSize, adminOrderRequestsLimit));
+  let resolvedView = 'pending';
+  let page = 1;
+  let totalPages = 1;
+  let counts = {
     total: 0,
     pending: 0,
     accepted: 0,
   };
-  var orders = [];
-  var loadError = '';
-  var selectedFilter = {
-    adminStatus: mongoose.trusted({ $ne: 'accepted' }),
-  };
-  var selectedCount = 0;
-  var skipCount = 0;
+  let orders = [];
+  let loadError = '';
+  let pendingFilter = { adminStatus: mongoose.trusted({ $in: ['pending', 'processing'] }) };
+  let acceptedFilter = { adminStatus: 'accepted' };
+  let selectedFilter = pendingFilter;
+  let selectedCount = 0;
+  let skipCount = 0;
 
   try {
     if (!await ensureDatabaseConnection()) {
@@ -677,8 +632,13 @@ async function loadAdminOrdersForDashboard(options) {
       };
     }
 
-    counts.pending = await Order.countDocuments({ adminStatus: mongoose.trusted({ $ne: 'accepted' }) });
-    counts.accepted = await Order.countDocuments({ adminStatus: 'accepted' });
+    let countResults = await Promise.all([
+      Order.countDocuments(pendingFilter),
+      Order.countDocuments(acceptedFilter),
+    ]);
+
+    counts.pending = Number(countResults[0]) || 0;
+    counts.accepted = Number(countResults[1]) || 0;
     counts.total = counts.pending + counts.accepted;
 
     if (requestedView === 'pending' || requestedView === 'accepted') {
@@ -687,15 +647,14 @@ async function loadAdminOrdersForDashboard(options) {
       resolvedView = 'accepted';
     }
 
-    selectedFilter = resolvedView === 'accepted'
-      ? { adminStatus: 'accepted' }
-      : { adminStatus: mongoose.trusted({ $ne: 'accepted' }) };
+    selectedFilter = resolvedView === 'accepted' ? acceptedFilter : pendingFilter;
     selectedCount = resolvedView === 'accepted' ? counts.accepted : counts.pending;
     totalPages = Math.max(1, Math.ceil(selectedCount / safePageSize));
     page = Math.min(requestedPage, totalPages);
     skipCount = Math.max(0, (page - 1) * safePageSize);
 
     orders = await Order.find(selectedFilter)
+      .select(adminOrderListSelectFields)
       .sort({ createdAt: -1 })
       .skip(skipCount)
       .limit(safePageSize)
@@ -716,29 +675,128 @@ async function loadAdminOrdersForDashboard(options) {
   };
 }
 
-function buildAdminOrderCounts(orderRows) {
-  var rows = Array.isArray(orderRows) ? orderRows : [];
-  var pendingOrderRequestsCount = rows.reduce(function (total, orderItem) {
-    var orderStatus = catalogService.toTrimmedString(orderItem && orderItem.adminStatus).toLowerCase();
-    return total + (orderStatus === 'accepted' ? 0 : 1);
-  }, 0);
-  var acceptedOrderRequestsCount = rows.reduce(function (total, orderItem) {
-    var orderStatus = catalogService.toTrimmedString(orderItem && orderItem.adminStatus).toLowerCase();
-    return total + (orderStatus === 'accepted' ? 1 : 0);
-  }, 0);
+function isAjaxRequest(req) {
+  let acceptHeader = String(req && req.headers ? req.headers.accept || '' : '').toLowerCase();
+  let requestedWithHeader = String(req && req.headers ? req.headers['x-requested-with'] || '' : '');
 
-  return {
-    pending: pendingOrderRequestsCount,
-    accepted: acceptedOrderRequestsCount,
-  };
+  return Boolean(
+    (req && req.xhr) ||
+    requestedWithHeader === 'XMLHttpRequest' ||
+    acceptHeader.indexOf('application/json') !== -1
+  );
 }
 
-function renderAdminPage(req, res) {
-  var catalog = catalogService.getCatalogContext();
-  var status = catalogService.toTrimmedString(req.query.status);
-  var error = catalogService.toTrimmedString(req.query.error);
-  var adminData = catalogService.getAdminData();
-  var categoryBoards = catalogService.buildAdminCategoryBoards(
+function runAdminMutation(task) {
+  let queuedTask = adminMutationQueue.then(function () {
+    return Promise.resolve().then(task);
+  });
+
+  adminMutationQueue = queuedTask.catch(function () {
+    return undefined;
+  });
+
+  return queuedTask;
+}
+
+function buildProductIdentifierFilter(productId) {
+  let normalizedProductId = catalogService.toTrimmedString(productId);
+  let filters = [{ legacyId: normalizedProductId }];
+
+  if (mongoose.isValidObjectId(normalizedProductId)) {
+    filters.push({ _id: normalizedProductId });
+  }
+
+  return { $or: filters };
+}
+
+async function loadProductDtoById(productId) {
+  return catalogService.getCatalogProductByIdentifier(productId);
+}
+
+async function loadSoldCountMap(productIds) {
+  let normalizedProductIds = (productIds || []).map(function (productId) {
+    return catalogService.toTrimmedString(productId);
+  }).filter(Boolean);
+  let soldGroups = [];
+  let soldById = {};
+
+  if (!normalizedProductIds.length || !await ensureDatabaseConnection()) {
+    return soldById;
+  }
+
+  soldGroups = await Order.aggregate([
+    { $match: { productId: { $in: normalizedProductIds }, adminStatus: 'accepted' } },
+    { $group: { _id: '$productId', sold: { $sum: '$quantity' } } },
+  ]).allowDiskUse(true);
+
+  (soldGroups || []).forEach(function (group) {
+    if (!group || !group._id) {
+      return;
+    }
+
+    soldById[String(group._id)] = Number.isFinite(Number(group.sold)) ? Number(group.sold) : 0;
+  });
+
+  return soldById;
+}
+
+function resolveCategorySaveRedirectPath(categoryName, redirectPath, shouldReplaceCategoryItems) {
+  let safeRedirectPath = catalogService.toTrimmedString(redirectPath) || defaultAdminPath;
+
+  if (shouldReplaceCategoryItems && safeRedirectPath.indexOf('/admin/categories') === 0) {
+    return buildCategoryAdminPath(categoryName);
+  }
+
+  return safeRedirectPath;
+}
+
+function isDuplicateKeyError(error) {
+  return Boolean(error) && Number(error.code) === 11000;
+}
+
+async function findCategoryDocByName(categoryName) {
+  let normalizedCategoryName = catalogService.normalizeForSearch(categoryName);
+
+  if (!normalizedCategoryName) {
+    return null;
+  }
+
+  return Category.findOne({ normalizedName: normalizedCategoryName });
+}
+
+async function findOrCreateCategoryDocByName(categoryName) {
+  let existing = await findCategoryDocByName(categoryName);
+
+  if (existing) {
+    return existing;
+  }
+
+  try {
+    return await Category.create({
+      name: categoryName,
+      description: '',
+      items: [],
+      sortOrder: 0,
+      isActive: true,
+    });
+  } catch (error) {
+    if (isDuplicateKeyError(error)) {
+      return await findCategoryDocByName(categoryName);
+    }
+
+    throw error;
+  }
+}
+
+function refreshAdminDataMiddleware(req, res, next) {
+  return next();
+}
+
+async function renderAdminPage(req, res) {
+  let catalog = await catalogService.getCatalogContext();
+  let status = catalogService.toTrimmedString(req.query.status);
+  let error = catalogService.toTrimmedString(req.query.error);
+  let categoryBoards = catalogService.buildAdminCategoryBoards(
     catalog.categoryGroups,
     catalog.productSections,
     catalog.categoryKeywordMap
@@ -751,8 +809,8 @@ function renderAdminPage(req, res) {
     statusMessage: catalogService.getAdminStatusMessage(status),
     errorMessage: catalogService.getAdminErrorMessage(error),
     categoryBoards: categoryBoards,
-    adminCategoryRecords: buildAdminCategoryRecordsByKey(adminData),
-    dashboardStats: buildDashboardStats(categoryBoards, adminData),
+    adminCategoryRecords: buildAdminCategoryRecordsByKey(catalog.categoryGroups),
+    dashboardStats: buildDashboardStats(categoryBoards),
     topNavCategories: catalog.categoryGroups,
     searchSuggestions: catalogService.buildSearchSuggestions(catalog.categoryGroups, catalog.productSections),
     basePath: '/',
@@ -760,76 +818,83 @@ function renderAdminPage(req, res) {
 }
 
 async function renderAdminProductsPage(req, res) {
-  var catalog = catalogService.getCatalogContext();
-  var status = catalogService.toTrimmedString(req.query.status);
-  var error = catalogService.toTrimmedString(req.query.error);
-  var requestedPage = parsePositiveInteger(req.query.page, 1);
-  var adminData = catalogService.getAdminData();
-  var categoryBoards = catalogService.buildAdminCategoryBoards(
+  let catalog = await catalogService.getCatalogContext({ forceRefresh: true });
+  let status = catalogService.toTrimmedString(req.query.status);
+  let error = catalogService.toTrimmedString(req.query.error);
+  let requestedPage = parsePositiveInteger(req.query.page, 1);
+  let requestedCategorySlug = toCategorySlug(req.query.category);
+  let categoryBoards = catalogService.buildAdminCategoryBoards(
     catalog.categoryGroups,
     catalog.productSections,
     catalog.categoryKeywordMap
   );
-  var productRows = buildAdminProductRows(categoryBoards, adminData);
-  // Sort product overview A -> Z by product name to match admin-category listing
-  productRows.sort(function (a, b) {
-    return String(a.name || '').localeCompare(String(b.name || ''));
-  });
-  var pagination = paginateAdminProductRows(productRows, requestedPage, adminProductOverviewPageSize);
+  let allProductRows = buildAdminProductRows(categoryBoards);
+  let filteredProductRows = requestedCategorySlug
+    ? allProductRows.filter(function (row) {
+        return toCategorySlug(row && row.categoryName) === requestedCategorySlug;
+      })
+    : allProductRows;
+  let pagination = paginateAdminProductRows(filteredProductRows, requestedPage, adminProductOverviewPageSize);
+  let soldById = {};
+  let selectedCategoryBoard = requestedCategorySlug
+    ? findCategoryBoardBySlug(requestedCategorySlug, categoryBoards)
+    : null;
+  let selectedCategoryName = selectedCategoryBoard && selectedCategoryBoard.name
+    ? String(selectedCategoryBoard.name)
+    : '';
 
-  // Attach sold counts for products on the current page (sum of accepted orders)
   try {
-    var pageRows = Array.isArray(pagination.rows) ? pagination.rows : [];
-    var productIds = pageRows.map(function (r) { return catalogService.toTrimmedString(r && r.id); }).filter(Boolean);
-
-    if (productIds.length && await ensureDatabaseConnection()) {
-      var soldGroups = await Order.aggregate([
-        { $match: { productId: { $in: productIds }, adminStatus: 'accepted' } },
-        { $group: { _id: '$productId', sold: { $sum: '$quantity' } } },
-      ]).allowDiskUse(true);
-
-      var soldById = {};
-      (soldGroups || []).forEach(function (grp) {
-        if (grp && grp._id) {
-          soldById[String(grp._id)] = Number.isFinite(Number(grp.sold)) ? Number(grp.sold) : 0;
-        }
-      });
-
-      pageRows.forEach(function (r) {
-        var pid = catalogService.toTrimmedString(r && r.id);
-        r.sold = soldById[pid] || 0;
-      });
-    }
-  } catch (err) {
-    console.error('Failed to attach sold counts for admin products page:', err && err.message ? err.message : err);
+    soldById = await loadSoldCountMap(pagination.rows.map(function (row) {
+      return row && row.id;
+    }));
+  } catch (error) {
+    console.error('Failed to attach sold counts for admin products page:', error.message);
   }
+
+  pagination.rows.forEach(function (row) {
+    row.sold = soldById[row.id] || 0;
+  });
 
   return res.render('admin-products', {
     title: 'Products | Admin Panel | BhutanDevi Trade and Suppliers',
     statusMessage: catalogService.getAdminStatusMessage(status),
     errorMessage: catalogService.getAdminErrorMessage(error),
+    categoryBoards: categoryBoards,
+    categoryFilterOptions: (function () {
+      let fromSections = buildCategoryFilterOptionsFromSections(catalog && catalog.productSections);
+      return fromSections && fromSections.length ? fromSections : buildCategoryFilterOptionsFromRows(allProductRows);
+    })(),
+    adminCategoryRecords: buildAdminCategoryRecordsByKey(catalog.categoryGroups),
+    selectedCategorySlug: requestedCategorySlug,
+    selectedCategoryName: selectedCategoryName,
     productRows: pagination.rows,
     totalProductCount: pagination.totalCount,
+    totalProductCountAll: allProductRows.length,
     adminProductsPage: pagination.page,
     adminProductsTotalPages: pagination.totalPages,
-    adminProductsPagePath: buildAdminProductsPagePath(pagination.page),
-    dashboardStats: buildDashboardStats(categoryBoards, adminData),
+    adminProductsPagePath: buildAdminProductsPagePath(pagination.page, requestedCategorySlug),
+    dashboardStats: buildDashboardStats(categoryBoards),
   });
 }
 
 async function renderAdminOrdersPage(req, res) {
-  var catalog = catalogService.getCatalogContext();
-  var status = catalogService.toTrimmedString(req.query.status);
-  var error = catalogService.toTrimmedString(req.query.error);
-  var orderView = catalogService.normalizeForSearch(req.query.view);
-  var orderPage = parsePositiveInteger(req.query.page, 1);
-  var adminOrdersData = await loadAdminOrdersForDashboard({
-    view: orderView,
-    page: orderPage,
-    pageSize: adminOrderRequestsPageSize,
-  });
-  var adminOrderRequests = Array.isArray(adminOrdersData.orders) ? adminOrdersData.orders : [];
-  var orderCounts = adminOrdersData && adminOrdersData.counts ? adminOrdersData.counts : { total: 0, pending: 0, accepted: 0 };
+  let status = catalogService.toTrimmedString(req.query.status);
+  let error = catalogService.toTrimmedString(req.query.error);
+  let orderView = catalogService.normalizeForSearch(req.query.view);
+  let orderPage = parsePositiveInteger(req.query.page, 1);
+  let pageData = await Promise.all([
+    catalogService.getCatalogContext(),
+    loadAdminOrdersForDashboard({
+      view: orderView,
+      page: orderPage,
+      pageSize: adminOrderRequestsPageSize,
+    }),
+  ]);
+  let catalog = pageData[0];
+  let adminOrdersData = pageData[1];
+  let orderCounts = adminOrdersData && adminOrdersData.counts
+    ? adminOrdersData.counts
+    : { total: 0, pending: 0, accepted: 0 };
 
   return res.render('admin-orders', {
     title: 'Order Requests | Admin Panel | BhutanDevi Trade and Suppliers',
@@ -837,7 +902,7 @@ async function renderAdminOrdersPage(req, res) {
     activeCategory: '',
     statusMessage: catalogService.getAdminStatusMessage(status),
     errorMessage: catalogService.getAdminErrorMessage(error),
-    adminOrderRequests: adminOrderRequests,
+    adminOrderRequests: Array.isArray(adminOrdersData.orders) ? adminOrdersData.orders : [],
     adminOrderRequestsError: adminOrdersData.loadError || '',
     totalOrderRequestsCount: orderCounts.total,
     pendingOrderRequestsCount: orderCounts.pending,
@@ -852,55 +917,35 @@ async function renderAdminOrdersPage(req, res) {
 }
 
 async function renderAdminCategoryPage(req, res) {
-  var categorySlug = catalogService.toTrimmedString(req.params.categorySlug);
-  var catalog = catalogService.getCatalogContext();
-  var status = catalogService.toTrimmedString(req.query.status);
-  var error = catalogService.toTrimmedString(req.query.error);
-  var categoryItemsPage = parsePositiveInteger(req.query.itemsPage, 1);
-  var adminData = catalogService.getAdminData() || {};
-  var categoryBoards = catalogService.buildAdminCategoryBoards(
+  let categorySlug = catalogService.toTrimmedString(req.params.categorySlug);
+  let catalog = await catalogService.getCatalogContext();
+  let status = catalogService.toTrimmedString(req.query.status);
+  let error = catalogService.toTrimmedString(req.query.error);
+  let categoryItemsPage = parsePositiveInteger(req.query.itemsPage, 1);
+  let categoryBoards = catalogService.buildAdminCategoryBoards(
     catalog.categoryGroups,
     catalog.productSections,
     catalog.categoryKeywordMap
   );
-  var categoryBoard = findCategoryBoardBySlug(categorySlug, categoryBoards);
-  var categoryRecord = null;
+  let categoryBoard = findCategoryBoardBySlug(categorySlug, categoryBoards);
+  let categoryRecordsByKey = buildAdminCategoryRecordsByKey(catalog.categoryGroups);
+  let soldById = {};
 
   if (!categoryBoard) {
     return res.redirect(buildErrorRedirect(defaultAdminPath, 'category-not-found'));
   }
 
-  if (Array.isArray(adminData.categories)) {
-    categoryRecord = adminData.categories.find(function (category) {
-      return catalogService.normalizeForSearch(category && category.name) === catalogService.normalizeForSearch(categoryBoard.name);
-    }) || null;
-  }
-
-  // Attach sold counts (sum of quantities for accepted orders) to each product item when possible.
   try {
-    var productIds = Array.isArray(categoryBoard.items) ? categoryBoard.items.map(function (it) { return catalogService.toTrimmedString(it && it.id); }).filter(Boolean) : [];
-
-    if (productIds.length && await ensureDatabaseConnection()) {
-      var soldGroups = await Order.aggregate([
-        { $match: { productId: { $in: productIds }, adminStatus: 'accepted' } },
-        { $group: { _id: '$productId', sold: { $sum: '$quantity' } } },
-      ]).allowDiskUse(true);
-
-      var soldById = {};
-      (soldGroups || []).forEach(function (grp) {
-        if (grp && grp._id) {
-          soldById[String(grp._id)] = Number.isFinite(Number(grp.sold)) ? Number(grp.sold) : 0;
-        }
-      });
-
-      (categoryBoard.items || []).forEach(function (it) {
-        var pid = catalogService.toTrimmedString(it && it.id);
-        it.sold = soldById[pid] || 0;
-      });
-    }
-  } catch (err) {
-    console.error('Failed to attach sold counts for admin category page:', err && err.message ? err.message : err);
+    soldById = await loadSoldCountMap((categoryBoard.items || []).map(function (item) {
+      return item && item.id;
+    }));
+  } catch (error) {
+    console.error('Failed to attach sold counts for admin category page:', error.message);
   }
+
+  (categoryBoard.items || []).forEach(function (item) {
+    item.sold = soldById[item.id] || 0;
+  });
 
   return res.render('admin-category', {
     title: categoryBoard.name + ' | Admin Panel | BhutanDevi Trade and Suppliers',
@@ -909,7 +954,7 @@ async function renderAdminCategoryPage(req, res) {
     statusMessage: catalogService.getAdminStatusMessage(status),
     errorMessage: catalogService.getAdminErrorMessage(error),
     categoryBoard: categoryBoard,
-    categoryRecord: categoryRecord,
+    categoryRecord: categoryRecordsByKey[toCategorySlug(categoryBoard.name)] || null,
     categoryBoards: categoryBoards,
     categoryPagePath: buildCategoryAdminPath(categoryBoard.name),
     categoryItemsPage: categoryItemsPage,
@@ -925,18 +970,17 @@ function redirectAdminCategoryRoot(req, res) {
 }
 
 async function saveProductPrice(req, res) {
-  var productId = catalogService.toTrimmedString(req.body.productId);
-  var parsedPrice = parseNonNegativeNumber(req.body.productPrice);
-  var productPrice = Number.isFinite(parsedPrice) ? formatNprAmount(parsedPrice) : '';
-  var redirectPath = getSafeRedirectPath(req, defaultAdminPath);
-  var hasMongoConfiguration = Boolean(String(process.env.MONGODB_URI || '').trim());
-  var isAjax = isAjaxRequest(req);
-  var mutationResult = null;
+  let productId = catalogService.toTrimmedString(req.body.productId);
+  let parsedPrice = parseNonNegativeNumber(req.body.productPrice);
+  let redirectPath = getSafeRedirectPath(req, defaultAdminPath);
+  let isAjax = isAjaxRequest(req);
+  let mutationResult = null;
 
-  if (hasMongoConfiguration && !await ensureDatabaseConnection()) {
+  if (!await ensureDatabaseConnection()) {
     if (isAjax) {
       return res.status(503).json({ success: false, error: 'db-unavailable', message: 'Database unavailable' });
     }
+
     return res.redirect(buildErrorRedirect(redirectPath, 'db-unavailable'));
   }
 
@@ -944,6 +988,7 @@ async function saveProductPrice(req, res) {
     if (isAjax) {
       return res.status(400).json({ success: false, error: 'product-id-required', message: 'Product ID required' });
     }
+
     return res.redirect(buildErrorRedirect(redirectPath, 'product-id-required'));
   }
 
@@ -951,14 +996,14 @@ async function saveProductPrice(req, res) {
     if (isAjax) {
       return res.status(400).json({ success: false, error: 'product-price-required', message: 'Valid price required' });
     }
+
     return res.redirect(buildErrorRedirect(redirectPath, 'product-price-required'));
   }
 
   mutationResult = await runAdminMutation(async function () {
-    var latestCatalog = catalogService.getCatalogContext();
-    var latestAdminData = catalogService.getAdminData();
+    let productDoc = await Product.findOne(buildProductIdentifierFilter(productId));
 
-    if (!catalogService.findProductById(productId, latestCatalog.productSections)) {
+    if (!productDoc) {
       return {
         ok: false,
         errorCode: 'product-not-found',
@@ -967,23 +1012,17 @@ async function saveProductPrice(req, res) {
       };
     }
 
-    if (!latestAdminData.priceOverrides || typeof latestAdminData.priceOverrides !== 'object') {
-      latestAdminData.priceOverrides = {};
+    productDoc.price = parsedPrice;
+    if (Number(productDoc.compareAtPrice) <= Number(productDoc.price)) {
+      productDoc.compareAtPrice = null;
     }
 
-    latestAdminData.priceOverrides[productId] = productPrice;
-
-    if (!await catalogService.saveAdminData()) {
-      return {
-        ok: false,
-        errorCode: 'save-failed',
-        message: 'Failed to save price',
-        statusCode: 500,
-      };
-    }
+    await productDoc.save();
+    catalogService.clearCatalogContextCache();
 
     return {
       ok: true,
+      price: catalogService.formatNprAmount(parsedPrice),
     };
   });
 
@@ -995,74 +1034,81 @@ async function saveProductPrice(req, res) {
         message: mutationResult && mutationResult.message ? mutationResult.message : 'Failed to save price',
       });
     }
+
     return res.redirect(buildErrorRedirect(redirectPath, mutationResult && mutationResult.errorCode ? mutationResult.errorCode : 'save-failed'));
   }
 
   if (isAjax) {
-    return res.json({ success: true, message: 'Price saved successfully', price: productPrice });
+    return res.json({
+      success: true,
+      message: 'Price saved successfully',
+      price: mutationResult.price,
+    });
   }
+
   return res.redirect(buildStatusRedirect(redirectPath, 'price-saved'));
 }
 
 function saveProductImage(req, res) {
   catalogService.imageUpload.single('productImageFile')(req, res, async function (uploadError) {
-    var redirectPath = getSafeRedirectPath(req, defaultAdminPath);
-    var hasMongoConfiguration = Boolean(String(process.env.MONGODB_URI || '').trim());
-    var isAjax = isAjaxRequest(req);
-    var mutationResult = null;
+    let redirectPath = getSafeRedirectPath(req, defaultAdminPath);
+    let isAjax = isAjaxRequest(req);
+    let mutationResult = null;
+    let uploadedImagePath = '';
 
     if (uploadError) {
-      var errorCode = 'save-failed';
-      var errorMessage = 'Save failed';
-      if (uploadError.code === 'LIMIT_FILE_SIZE') {
-        errorCode = 'image-too-large';
-        errorMessage = 'Image too large';
-      } else if (uploadError.message === 'invalid-image-file') {
-        errorCode = 'invalid-image-file';
-        errorMessage = 'Invalid image file';
-      }
+      let uploadErrorCode = uploadError.code === 'LIMIT_FILE_SIZE' ? 'image-too-large' : 'invalid-image-file';
+      let uploadErrorMessage = uploadError.code === 'LIMIT_FILE_SIZE' ? 'Image too large' : 'Invalid image file';
+
       if (isAjax) {
-        return res.status(400).json({ success: false, error: errorCode, message: errorMessage });
+        return res.status(400).json({ success: false, error: uploadErrorCode, message: uploadErrorMessage });
       }
-      return res.redirect(buildErrorRedirect(redirectPath, errorCode));
+
+      return res.redirect(buildErrorRedirect(redirectPath, uploadErrorCode));
     }
 
     if (!req.file) {
       if (isAjax) {
         return res.status(400).json({ success: false, error: 'product-image-file-required', message: 'Image file required' });
       }
+
       return res.redirect(buildErrorRedirect(redirectPath, 'product-image-file-required'));
     }
 
-    if (hasMongoConfiguration && !await ensureDatabaseConnection()) {
+    if (!await ensureDatabaseConnection()) {
       if (isAjax) {
         return res.status(503).json({ success: false, error: 'db-unavailable', message: 'Database unavailable' });
       }
+
       return res.redirect(buildErrorRedirect(redirectPath, 'db-unavailable'));
     }
 
-    var productId = catalogService.toTrimmedString(req.body.productId);
-    var uploadedImagePath = await catalogService.optimizeAndPromoteUploadedImage(req.file);
-
-    if (!productId || !isValidEntityId(productId)) {
-      if (isAjax) {
-        return res.status(400).json({ success: false, error: 'product-id-required', message: 'Product ID required' });
-      }
-      return res.redirect(buildErrorRedirect(redirectPath, 'product-id-required'));
-    }
+    uploadedImagePath = await catalogService.optimizeAndPromoteUploadedImage(req.file);
 
     if (!uploadedImagePath) {
       if (isAjax) {
         return res.status(500).json({ success: false, error: 'cloudinary-upload-failed', message: 'Image upload failed' });
       }
+
       return res.redirect(buildErrorRedirect(redirectPath, 'cloudinary-upload-failed'));
     }
 
     mutationResult = await runAdminMutation(async function () {
-      var latestCatalog = catalogService.getCatalogContext();
-      var latestAdminData = catalogService.getAdminData();
+      let productId = catalogService.toTrimmedString(req.body.productId);
+      let productDoc = null;
 
-      if (!catalogService.findProductById(productId, latestCatalog.productSections)) {
+      if (!productId || !isValidEntityId(productId)) {
+        return {
+          ok: false,
+          errorCode: 'product-id-required',
+          message: 'Product ID required',
+          statusCode: 400,
+        };
+      }
+
+      productDoc = await Product.findOne(buildProductIdentifierFilter(productId));
+
+      if (!productDoc) {
         return {
           ok: false,
           errorCode: 'product-not-found',
@@ -1071,27 +1117,20 @@ function saveProductImage(req, res) {
         };
       }
 
-      if (!latestAdminData.imageOverrides || typeof latestAdminData.imageOverrides !== 'object') {
-        latestAdminData.imageOverrides = {};
-      }
-
-      latestAdminData.imageOverrides[productId] = uploadedImagePath;
-
-      if (!await catalogService.saveAdminData()) {
-        return {
-          ok: false,
-          errorCode: 'save-failed',
-          message: 'Failed to save image',
-          statusCode: 500,
-        };
-      }
+      productDoc.imageUrl = uploadedImagePath;
+      productDoc.images = catalogService.normalizeImageList([uploadedImagePath].concat(productDoc.images || []), uploadedImagePath);
+      await productDoc.save();
+      catalogService.clearCatalogContextCache();
 
       return {
         ok: true,
+        image: uploadedImagePath,
       };
     });
 
     if (!mutationResult || !mutationResult.ok) {
+      await catalogService.cleanupLocalImageAsset(uploadedImagePath);
+
       if (isAjax) {
         return res.status(mutationResult && mutationResult.statusCode ? mutationResult.statusCode : 500).json({
           success: false,
@@ -1099,266 +1138,129 @@ function saveProductImage(req, res) {
           message: mutationResult && mutationResult.message ? mutationResult.message : 'Failed to save image',
         });
       }
+
       return res.redirect(buildErrorRedirect(redirectPath, mutationResult && mutationResult.errorCode ? mutationResult.errorCode : 'save-failed'));
     }
 
     if (isAjax) {
-      return res.json({ success: true, message: 'Image saved successfully', image: uploadedImagePath });
+      return res.json({ success: true, message: 'Image saved successfully', image: mutationResult.image });
     }
+
     return res.redirect(buildStatusRedirect(redirectPath, 'image-saved'));
   });
 }
 
-function editProduct(req, res) {
-  catalogService.imageUpload.single('productImageFile')(req, res, async function (uploadError) {
-    var redirectPath = getSafeRedirectPath(req, defaultAdminPath);
-    var hasMongoConfiguration = Boolean(String(process.env.MONGODB_URI || '').trim());
-    var isAjax = isAjaxRequest(req);
-    var mutationResult = null;
 
-    function sendErrorResponse(errorCode, message, statusCode) {
-      if (isAjax) {
-        return res.status(statusCode || 400).json({ success: false, error: errorCode, message: message });
-      }
-      return res.redirect(buildErrorRedirect(redirectPath, errorCode));
-    }
+async function editProduct(req, res) {
+  const redirectPath = getSafeRedirectPath(req, defaultAdminPath);
+  const isAjax = isAjaxRequest(req);
+  let uploadedImagePath = '';
 
-    if (uploadError) {
-      var errorCode = 'save-failed';
-      var errorMessage = 'Save failed';
-      if (uploadError.code === 'LIMIT_FILE_SIZE') {
-        errorCode = 'image-too-large';
-        errorMessage = 'Image too large';
-      } else if (uploadError.message === 'invalid-image-file') {
-        errorCode = 'invalid-image-file';
-        errorMessage = 'Invalid image file';
-      }
-      return sendErrorResponse(errorCode, errorMessage, 400);
-    }
-
-    if (hasMongoConfiguration && !await ensureDatabaseConnection()) {
-      return sendErrorResponse('db-unavailable', 'Database unavailable', 503);
-    }
-
-    var productId = catalogService.toTrimmedString(req.body.productId);
-    var requestedProductCategory = normalizeSingleLineText(req.body.productCategory);
-    var productName = normalizeSingleLineText(req.body.productName);
-    var rawProductSpec = normalizeMultilineText(req.body.productSpec);
-    var productSpec = buildProductSpec(requestedProductCategory, rawProductSpec);
-    var productPricing = resolveProductPricing(req.body.productPrice, req.body.productDiscountPercent);
-    var productPrice = productPricing.price;
-    var productQuantity = normalizeProductQuantity(req.body.productQuantity);
-    var currentImagePath = catalogService.normalizeAssetPath(req.body.currentImagePath);
-    var uploadedImagePath = '';
-
-    if (req.file) {
-      uploadedImagePath = await catalogService.optimizeAndPromoteUploadedImage(req.file);
-      if (!uploadedImagePath) {
-        return sendErrorResponse('cloudinary-upload-failed', 'Image upload failed', 500);
-      }
-    }
-
-    if (!productId || !isValidEntityId(productId)) {
-      return sendErrorResponse('product-id-required', 'Product ID required', 400);
-    }
-
-    if (!requestedProductCategory || !isWithinLength(requestedProductCategory, maxCategoryNameLength)) {
-      return sendErrorResponse('product-category-required', 'Product category required', 400);
-    }
-
-    if (!productName || !isWithinLength(productName, maxProductNameLength)) {
-      return sendErrorResponse('product-name-required', 'Product name required', 400);
-    }
-
-    if (!hasValidPriceValue(req.body.productPrice) || productPricing.isPriceMissing) {
-      return sendErrorResponse('product-price-required', 'Valid price required', 400);
-    }
-
-    if (!isWithinLength(rawProductSpec, maxProductSpecLength)) {
-      return sendErrorResponse('invalid-input', 'Invalid input', 400);
-    }
-
-    if (catalogService.toTrimmedString(req.body.productQuantity) && !hasValidQuantityValue(req.body.productQuantity)) {
-      return sendErrorResponse('invalid-input', 'Invalid quantity', 400);
-    }
-
-    mutationResult = await runAdminMutation(async function () {
-      var latestCatalog = catalogService.getCatalogContext();
-      var latestProductMatch = catalogService.findProductById(productId, latestCatalog.productSections);
-      var latestCategoryBoards = catalogService.buildAdminCategoryBoards(
-        latestCatalog.categoryGroups,
-        latestCatalog.productSections,
-        latestCatalog.categoryKeywordMap
+  const sendError = async (errorCode, message, statusCode = 400) => {
+    if (uploadedImagePath) {
+      await catalogService.cleanupLocalImageAsset(uploadedImagePath).catch(err =>
+        console.error('Failed to cleanup rejected uploaded image:', err.message)
       );
-      var matchedCategoryBoard = findCategoryBoardByName(requestedProductCategory, latestCategoryBoards);
-      var adminData = catalogService.getAdminData();
-      var resolvedImagePath = '';
-      var resolvedCategoryName = '';
-      var previousCategoryName = '';
-      var previousProductName = '';
-      var updatedProduct = null;
-      var hasAdminProductEntry = false;
+    }
+    if (isAjax) return res.status(statusCode).json({ success: false, error: errorCode, message });
+    return res.redirect(buildErrorRedirect(redirectPath, errorCode));
+  };
 
-      if (!latestProductMatch || !latestProductMatch.item) {
-        return {
-          ok: false,
-          errorCode: 'product-not-found',
-          message: 'Product not found',
-          statusCode: 404,
-        };
+  // Handle image upload
+  catalogService.imageUpload.single('productImageFile')(req, res, async function (uploadError) {
+    if (uploadError) {
+      const code = uploadError.code === 'LIMIT_FILE_SIZE' ? 'image-too-large' : 'invalid-image-file';
+      const msg = uploadError.code === 'LIMIT_FILE_SIZE' ? 'Image too large' : 'Invalid image file';
+      return sendError(code, msg, 400);
+    }
+
+    if (!await ensureDatabaseConnection()) return sendError('db-unavailable', 'Database unavailable', 503);
+
+    try {
+      const productId = catalogService.toTrimmedString(req.body.productId);
+      const requestedProductCategory = normalizeSingleLineText(req.body.productCategory);
+      const productName = normalizeSingleLineText(req.body.productName);
+      const rawProductSpec = normalizeMultilineText(req.body.productSpec);
+      const productSpec = buildProductSpec(requestedProductCategory, rawProductSpec);
+      const productPricing = resolveProductPricing(req.body.productPrice, req.body.productDiscountPercent);
+      const currentImagePath = catalogService.normalizeAssetPath(req.body.currentImagePath);
+
+      if (req.file) {
+        uploadedImagePath = await catalogService.optimizeAndPromoteUploadedImage(req.file);
+        if (!uploadedImagePath) return sendError('cloudinary-upload-failed', 'Image upload failed', 500);
       }
 
-      if (!matchedCategoryBoard) {
-        matchedCategoryBoard = findCategoryBoardByName(latestProductMatch.item.type, latestCategoryBoards);
-      }
+      // Basic validations
+      if (!productId || !isValidEntityId(productId)) return sendError('product-id-required', 'Product ID required', 400);
+      if (!requestedProductCategory || !isWithinLength(requestedProductCategory, maxCategoryNameLength)) return sendError('product-category-required', 'Product category required', 400);
+      if (!productName || !isWithinLength(productName, maxProductNameLength)) return sendError('product-name-required', 'Product name required', 400);
+      if (!hasValidPriceValue(req.body.productPrice) || productPricing.isPriceMissing || !Number.isFinite(productPricing.priceValue)) return sendError('product-price-required', 'Valid price required', 400);
+      if (!isWithinLength(rawProductSpec, maxProductSpecLength) || !hasValidQuantityValue(req.body.productQuantity)) return sendError('invalid-input', 'Invalid input', 400);
 
-      if (!matchedCategoryBoard) {
-        return {
-          ok: false,
-          errorCode: 'category-not-found',
-          message: 'Category not found',
-          statusCode: 404,
-        };
-      }
+      // Main mutation
+      const mutationResult = await runAdminMutation(async () => {
+        const productDoc = await Product.findOne(buildProductIdentifierFilter(productId));
+        if (!productDoc) return { ok: false, errorCode: 'product-not-found', message: 'Product not found', statusCode: 404 };
 
-      resolvedCategoryName = matchedCategoryBoard.name;
-      previousCategoryName = normalizeSingleLineText(latestProductMatch.item.type);
-      previousProductName = normalizeSingleLineText(latestProductMatch.item.name);
+        const categoryDoc = await findOrCreateCategoryDocByName(requestedProductCategory);
+        if (!categoryDoc) return { ok: false, errorCode: 'category-not-found', message: 'Category not found', statusCode: 404 };
 
-      if (hasDuplicateProductName(resolvedCategoryName, productName, latestCatalog.productSections, productId)) {
-        return {
-          ok: false,
-          errorCode: 'duplicate-product',
-          message: 'Product already exists',
-          statusCode: 409,
-        };
-      }
+        // Duplicate check (avoid ObjectId $ne casting issues)
+        const duplicateProduct = await Product.findOne({
+          category: categoryDoc._id,
+          normalizedName: catalogService.normalizeForSearch(productName),
+        }).select('_id').lean();
 
-      resolvedImagePath =
-        uploadedImagePath ||
-        currentImagePath ||
-        catalogService.normalizeAssetPath(latestProductMatch.item.image);
-
-      if (!Array.isArray(adminData.products)) {
-        adminData.products = [];
-      }
-
-      if (!adminData.productOverrides || typeof adminData.productOverrides !== 'object') {
-        adminData.productOverrides = {};
-      }
-
-      updatedProduct = {
-        type: resolvedCategoryName,
-        name: productName,
-        spec: productSpec,
-        price: productPrice,
-        originalPrice: productPricing.originalPrice,
-        discountPercent: productPricing.discountPercent ? String(productPricing.discountPercent) : '',
-        quantity: productQuantity,
-        image: resolvedImagePath,
-      };
-
-      adminData.products.forEach(function (product) {
-        if (catalogService.toTrimmedString(product && product.id) !== productId) {
-          return;
+        if (duplicateProduct && String(duplicateProduct._id) !== String(productDoc._id)) {
+          return { ok: false, errorCode: 'duplicate-product', message: 'Product already exists', statusCode: 409 };
         }
 
-        product.type = updatedProduct.type;
-        product.name = updatedProduct.name;
-        product.spec = updatedProduct.spec;
-        product.price = updatedProduct.price;
-        product.originalPrice = updatedProduct.originalPrice;
-        product.discountPercent = updatedProduct.discountPercent;
-        product.quantity = updatedProduct.quantity;
-        product.image = updatedProduct.image;
-        product.images = catalogService.normalizeImageList([updatedProduct.image], updatedProduct.image);
-        hasAdminProductEntry = true;
+        // Update fields
+        const resolvedImagePath = uploadedImagePath || currentImagePath || '';
+        productDoc.category = categoryDoc._id;
+        productDoc.name = productName;
+        productDoc.spec = productSpec;
+        productDoc.description = productSpec;
+        productDoc.price = productPricing.priceValue;
+        productDoc.compareAtPrice = productPricing.compareAtPriceValue;
+        productDoc.quantity = Math.max(0, Math.floor(parseNonNegativeNumber(req.body.productQuantity)));
+
+        if (resolvedImagePath) {
+          productDoc.imageUrl = resolvedImagePath;
+          productDoc.images = catalogService.normalizeImageList([resolvedImagePath, ...(productDoc.images || [])], resolvedImagePath);
+        }
+
+        productDoc.searchKeywords = [categoryDoc.name, productName];
+        await productDoc.save();
+        catalogService.clearCatalogContextCache();
+
+        const productDto = await loadProductDtoById(productDoc.legacyId || String(productDoc._id));
+        return { ok: true, productId: productDoc.legacyId || String(productDoc._id), product: productDto };
       });
 
-      if (hasAdminProductEntry) {
-        delete adminData.productOverrides[productId];
-      } else {
-        adminData.productOverrides[productId] = updatedProduct;
-      }
+      if (!mutationResult.ok) return sendError(mutationResult.errorCode || 'save-failed', mutationResult.message || 'Failed to update product', mutationResult.statusCode || 500);
 
-      catalogService.upsertAdminCategory(resolvedCategoryName, '', [productName]);
+      if (isAjax) return res.json({ success: true, message: 'Product updated successfully', productId: mutationResult.productId, product: mutationResult.product });
+      return res.redirect(buildStatusRedirect(redirectPath, 'product-updated'));
 
-      if (
-        previousCategoryName &&
-        previousProductName &&
-        (
-          catalogService.normalizeForSearch(previousCategoryName) !== catalogService.normalizeForSearch(resolvedCategoryName) ||
-          catalogService.normalizeForSearch(previousProductName) !== catalogService.normalizeForSearch(productName)
-        )
-      ) {
-        removeProductNameFromAdminCategory(adminData, previousCategoryName, previousProductName);
-      }
-
-      if (adminData.priceOverrides && typeof adminData.priceOverrides === 'object') {
-        delete adminData.priceOverrides[productId];
-      }
-
-      if (adminData.imageOverrides && typeof adminData.imageOverrides === 'object') {
-        delete adminData.imageOverrides[productId];
-      }
-
-      if (Array.isArray(adminData.deletedProductIds)) {
-        adminData.deletedProductIds = adminData.deletedProductIds.filter(function (id) {
-          return id !== productId;
-        });
-      }
-
-      if (!await catalogService.saveAdminData()) {
-        return {
-          ok: false,
-          errorCode: 'save-failed',
-          message: 'Failed to update product',
-          statusCode: 500,
-        };
-      }
-
-      return {
-        ok: true,
-        productId: productId,
-        product: updatedProduct,
-      };
-    });
-
-    if (!mutationResult || !mutationResult.ok) {
-      if (uploadedImagePath) {
-        await catalogService.cleanupLocalImageAsset(uploadedImagePath);
-      }
-
-      return sendErrorResponse(
-        mutationResult && mutationResult.errorCode ? mutationResult.errorCode : 'save-failed',
-        mutationResult && mutationResult.message ? mutationResult.message : 'Failed to update product',
-        mutationResult && mutationResult.statusCode ? mutationResult.statusCode : 500
-      );
+    } catch (err) {
+      console.error(err);
+      return sendError('save-failed', 'Unexpected error occurred', 500);
     }
-
-    if (isAjax) {
-      return res.json({
-        success: true,
-        message: 'Product updated successfully',
-        productId: mutationResult.productId,
-        product: mutationResult.product,
-      });
-    }
-    return res.redirect(buildStatusRedirect(redirectPath, 'product-updated'));
   });
 }
 
 async function deleteProduct(req, res) {
-  var productId = catalogService.toTrimmedString(req.body.productId);
-  var redirectPath = getSafeRedirectPath(req, defaultAdminPath);
-  var hasMongoConfiguration = Boolean(String(process.env.MONGODB_URI || '').trim());
-  var isAjax = isAjaxRequest(req);
-  var mutationResult = null;
+  let productId = catalogService.toTrimmedString(req.body.productId);
+  let redirectPath = getSafeRedirectPath(req, defaultAdminPath);
+  let isAjax = isAjaxRequest(req);
+  let mutationResult = null;
 
-  if (hasMongoConfiguration && !await ensureDatabaseConnection()) {
+  if (!await ensureDatabaseConnection()) {
     if (isAjax) {
       return res.status(503).json({ success: false, error: 'db-unavailable', message: 'Database unavailable' });
     }
+
     return res.redirect(buildErrorRedirect(redirectPath, 'db-unavailable'));
   }
 
@@ -1366,19 +1268,14 @@ async function deleteProduct(req, res) {
     if (isAjax) {
       return res.status(400).json({ success: false, error: 'product-id-required', message: 'Product ID required' });
     }
+
     return res.redirect(buildErrorRedirect(redirectPath, 'product-id-required'));
   }
 
   mutationResult = await runAdminMutation(async function () {
-    var latestCatalog = catalogService.getCatalogContext();
-    var latestProductMatch = catalogService.findProductById(productId, latestCatalog.productSections);
-    var adminData = catalogService.getAdminData();
-    var hasAdminProduct = false;
-    var deletedProductNameKey = '';
-    var deletedCategoryKey = '';
-    var nextAdminProducts = [];
+    let productDoc = await Product.findOneAndDelete(buildProductIdentifierFilter(productId));
 
-    if (!latestProductMatch || !latestProductMatch.item) {
+    if (!productDoc) {
       return {
         ok: false,
         errorCode: 'product-not-found',
@@ -1387,72 +1284,11 @@ async function deleteProduct(req, res) {
       };
     }
 
-    deletedProductNameKey = catalogService.normalizeForSearch(latestProductMatch.item.name);
-    deletedCategoryKey = catalogService.normalizeForSearch(latestProductMatch.item.type);
-
-    if (Array.isArray(adminData.products)) {
-      adminData.products.forEach(function (product) {
-        if (catalogService.toTrimmedString(product && product.id) === productId) {
-          hasAdminProduct = true;
-          return;
-        }
-        nextAdminProducts.push(product);
-      });
-      adminData.products = nextAdminProducts;
-    }
-
-    if (!hasAdminProduct) {
-      if (!Array.isArray(adminData.deletedProductIds)) {
-        adminData.deletedProductIds = [];
-      }
-
-      if (adminData.deletedProductIds.indexOf(productId) === -1) {
-        adminData.deletedProductIds.push(productId);
-        adminData.deletedProductIds = catalogService.normalizeList(adminData.deletedProductIds);
-      }
-    }
-
-    if (adminData.productOverrides && typeof adminData.productOverrides === 'object') {
-      delete adminData.productOverrides[productId];
-    }
-
-    if (adminData.priceOverrides && typeof adminData.priceOverrides === 'object') {
-      delete adminData.priceOverrides[productId];
-    }
-
-    if (adminData.imageOverrides && typeof adminData.imageOverrides === 'object') {
-      delete adminData.imageOverrides[productId];
-    }
-
-    if (Array.isArray(adminData.categories) && deletedProductNameKey) {
-      adminData.categories.forEach(function (category) {
-        var categoryKey = catalogService.normalizeForSearch(category && category.name);
-        if (deletedCategoryKey && categoryKey !== deletedCategoryKey) {
-          return;
-        }
-
-        if (!Array.isArray(category && category.items)) {
-          return;
-        }
-
-        category.items = category.items.filter(function (itemName) {
-          return catalogService.normalizeForSearch(itemName) !== deletedProductNameKey;
-        });
-      });
-    }
-
-    if (!await catalogService.saveAdminData()) {
-      return {
-        ok: false,
-        errorCode: 'save-failed',
-        message: 'Failed to delete product',
-        statusCode: 500,
-      };
-    }
+    catalogService.clearCatalogContextCache();
 
     return {
       ok: true,
-      productId: productId,
+      productId: productDoc.legacyId || String(productDoc._id),
     };
   });
 
@@ -1464,27 +1300,28 @@ async function deleteProduct(req, res) {
         message: mutationResult && mutationResult.message ? mutationResult.message : 'Failed to delete product',
       });
     }
+
     return res.redirect(buildErrorRedirect(redirectPath, mutationResult && mutationResult.errorCode ? mutationResult.errorCode : 'save-failed'));
   }
 
   if (isAjax) {
     return res.json({ success: true, message: 'Product deleted successfully', productId: mutationResult.productId });
   }
+
   return res.redirect(buildStatusRedirect(redirectPath, 'product-deleted'));
 }
 
 async function deleteCategory(req, res) {
-  var categoryName = normalizeSingleLineText(req.body.categoryName);
-  var categoryKey = catalogService.normalizeForSearch(categoryName);
-  var redirectPath = getSafeRedirectPath(req, defaultAdminPath);
-  var hasMongoConfiguration = Boolean(String(process.env.MONGODB_URI || '').trim());
-  var isAjax = isAjaxRequest(req);
-  var mutationResult = null;
+  let categoryName = normalizeSingleLineText(req.body.categoryName);
+  let redirectPath = getSafeRedirectPath(req, defaultAdminPath);
+  let isAjax = isAjaxRequest(req);
+  let mutationResult = null;
 
-  if (hasMongoConfiguration && !await ensureDatabaseConnection()) {
+  if (!await ensureDatabaseConnection()) {
     if (isAjax) {
       return res.status(503).json({ success: false, error: 'db-unavailable', message: 'Database unavailable' });
     }
+
     return res.redirect(buildErrorRedirect(redirectPath, 'db-unavailable'));
   }
 
@@ -1492,26 +1329,14 @@ async function deleteCategory(req, res) {
     if (isAjax) {
       return res.status(400).json({ success: false, error: 'category-name-required', message: 'Category name required' });
     }
+
     return res.redirect(buildErrorRedirect(redirectPath, 'category-name-required'));
   }
 
   mutationResult = await runAdminMutation(async function () {
-    var latestCatalog = catalogService.getCatalogContext();
-    var latestCategoryBoards = catalogService.buildAdminCategoryBoards(
-      latestCatalog.categoryGroups,
-      latestCatalog.productSections,
-      latestCatalog.categoryKeywordMap
-    );
-    var adminData = catalogService.getAdminData();
-    var matchedBoard = latestCategoryBoards.find(function (board) {
-      return catalogService.normalizeForSearch(board && board.name) === categoryKey;
-    }) || null;
-    var matchedCategoryName = '';
-    var matchedCategoryKey = '';
-    var deletedProductIdsByKey = Object.create(null);
-    var deletedProductIds = [];
+    let categoryDoc = await findCategoryDocByName(categoryName);
 
-    if (!matchedBoard) {
+    if (!categoryDoc) {
       return {
         ok: false,
         errorCode: 'category-not-found',
@@ -1520,89 +1345,13 @@ async function deleteCategory(req, res) {
       };
     }
 
-    matchedCategoryName = matchedBoard.name;
-    matchedCategoryKey = catalogService.normalizeForSearch(matchedCategoryName);
-
-    if (!Array.isArray(adminData.deletedCategoryNames)) {
-      adminData.deletedCategoryNames = [];
-    }
-
-    if (!catalogService.isDeletedCategory(matchedCategoryName)) {
-      adminData.deletedCategoryNames.push(matchedCategoryName);
-      adminData.deletedCategoryNames = catalogService.normalizeList(adminData.deletedCategoryNames);
-    }
-
-    if (Array.isArray(adminData.categories)) {
-      adminData.categories = adminData.categories.filter(function (category) {
-        return catalogService.normalizeForSearch(category && category.name) !== matchedCategoryKey;
-      });
-    }
-
-    (matchedBoard.items || []).forEach(function (item) {
-      if (item && item.id) {
-        deletedProductIdsByKey[item.id] = true;
-      }
-    });
-
-    if (Array.isArray(adminData.products)) {
-      adminData.products.forEach(function (product) {
-        var productOverride = catalogService.getProductOverrideEntry(product && product.id);
-        var effectiveCategoryName =
-          catalogService.toTrimmedString(productOverride.type) ||
-          catalogService.toTrimmedString(product && product.type);
-
-        if (catalogService.normalizeForSearch(effectiveCategoryName) === matchedCategoryKey) {
-          deletedProductIdsByKey[product.id] = true;
-        }
-      });
-    }
-
-    deletedProductIds = Object.keys(deletedProductIdsByKey);
-
-    if (Array.isArray(adminData.products) && deletedProductIds.length > 0) {
-      adminData.products = adminData.products.filter(function (product) {
-        return !deletedProductIdsByKey[product.id];
-      });
-    }
-
-    if (!Array.isArray(adminData.deletedProductIds)) {
-      adminData.deletedProductIds = [];
-    }
-
-    if (deletedProductIds.length > 0) {
-      adminData.deletedProductIds = catalogService.normalizeList(adminData.deletedProductIds.concat(deletedProductIds));
-    }
-
-    if (adminData.productOverrides && typeof adminData.productOverrides === 'object') {
-      deletedProductIds.forEach(function (productId) {
-        delete adminData.productOverrides[productId];
-      });
-    }
-
-    if (adminData.priceOverrides && typeof adminData.priceOverrides === 'object') {
-      deletedProductIds.forEach(function (productId) {
-        delete adminData.priceOverrides[productId];
-      });
-    }
-
-    if (adminData.imageOverrides && typeof adminData.imageOverrides === 'object') {
-      deletedProductIds.forEach(function (productId) {
-        delete adminData.imageOverrides[productId];
-      });
-    }
-
-    if (!await catalogService.saveAdminData()) {
-      return {
-        ok: false,
-        errorCode: 'save-failed',
-        message: 'Failed to delete category',
-        statusCode: 500,
-      };
-    }
+    await Product.deleteMany({ category: categoryDoc._id });
+    await Category.deleteOne({ _id: categoryDoc._id });
+    catalogService.clearCatalogContextCache();
 
     return {
       ok: true,
-      categoryName: matchedCategoryName,
+      categoryName: categoryDoc.name,
     };
   });
 
@@ -1614,34 +1363,36 @@ async function deleteCategory(req, res) {
         message: mutationResult && mutationResult.message ? mutationResult.message : 'Failed to delete category',
       });
     }
+
     return res.redirect(buildErrorRedirect(redirectPath, mutationResult && mutationResult.errorCode ? mutationResult.errorCode : 'save-failed'));
   }
 
   if (isAjax) {
     return res.json({ success: true, message: 'Category deleted successfully', categoryName: mutationResult.categoryName });
   }
+
   return res.redirect(buildStatusRedirect(defaultAdminPath, 'category-deleted'));
 }
 
 async function saveCategory(req, res) {
-  var requestBody = req && req.body && typeof req.body === 'object' ? req.body : {};
-  var categoryName = normalizeSingleLineText(req.body.categoryName);
-  var originalCategoryName = normalizeSingleLineText(req.body.originalCategoryName);
-  var categoryDescription = normalizeMultilineText(req.body.categoryDescription);
-  var parsedCategoryItems = catalogService.parseCommaSeparatedList(req.body.categoryItems);
-  var categoryItems = sanitizeCategoryItems(req.body.categoryItems);
-  var shouldReplaceCategoryItems = /^(1|true|yes|on)$/i.test(catalogService.toTrimmedString(req.body.replaceCategoryItems));
-  var shouldUpdateDescription = Object.prototype.hasOwnProperty.call(requestBody, 'categoryDescription');
-  var redirectPath = getSafeRedirectPath(req, defaultAdminPath);
-  var hasMongoConfiguration = Boolean(String(process.env.MONGODB_URI || '').trim());
-  var isAjax = isAjaxRequest(req);
-  var mutationResult = null;
-  var successRedirectPath = redirectPath;
+  let requestBody = req && req.body && typeof req.body === 'object' ? req.body : {};
+  let categoryName = normalizeSingleLineText(req.body.categoryName);
+  let originalCategoryName = normalizeSingleLineText(req.body.originalCategoryName);
+  let categoryDescription = normalizeMultilineText(req.body.categoryDescription);
+  let parsedCategoryItems = catalogService.parseCommaSeparatedList(req.body.categoryItems);
+  let categoryItems = sanitizeCategoryItems(req.body.categoryItems);
+  let shouldReplaceCategoryItems = /^(1|true|yes|on)$/i.test(catalogService.toTrimmedString(req.body.replaceCategoryItems));
+  let shouldUpdateDescription = Object.prototype.hasOwnProperty.call(requestBody, 'categoryDescription');
+  let redirectPath = getSafeRedirectPath(req, defaultAdminPath);
+  let isAjax = isAjaxRequest(req);
+  let mutationResult = null;
+  let successRedirectPath = redirectPath;
 
-  if (hasMongoConfiguration && !await ensureDatabaseConnection()) {
+  if (!await ensureDatabaseConnection()) {
     if (isAjax) {
       return res.status(503).json({ success: false, error: 'db-unavailable', message: 'Database unavailable' });
     }
+
     return res.redirect(buildErrorRedirect(redirectPath, 'db-unavailable'));
   }
 
@@ -1649,56 +1400,33 @@ async function saveCategory(req, res) {
     if (isAjax) {
       return res.status(400).json({ success: false, error: 'category-name-required', message: 'Category name required' });
     }
+
     return res.redirect(buildErrorRedirect(redirectPath, 'category-name-required'));
   }
 
   if (
     !isWithinLength(categoryName, maxCategoryNameLength) ||
     !isWithinLength(originalCategoryName, maxCategoryNameLength) ||
-    !isWithinLength(categoryDescription, maxCategoryDescriptionLength)
+    !isWithinLength(categoryDescription, maxCategoryDescriptionLength) ||
+    parsedCategoryItems.length > maxCategoryItemsCount
   ) {
     if (isAjax) {
       return res.status(400).json({ success: false, error: 'invalid-input', message: 'Invalid input' });
     }
-    return res.redirect(buildErrorRedirect(redirectPath, 'invalid-input'));
-  }
 
-  if (parsedCategoryItems.length > maxCategoryItemsCount) {
-    if (isAjax) {
-      return res.status(400).json({ success: false, error: 'invalid-input', message: 'Too many items' });
-    }
     return res.redirect(buildErrorRedirect(redirectPath, 'invalid-input'));
   }
 
   mutationResult = await runAdminMutation(async function () {
-    var latestCatalog = catalogService.getCatalogContext();
-    var latestCategoryBoards = catalogService.buildAdminCategoryBoards(
-      latestCatalog.categoryGroups,
-      latestCatalog.productSections,
-      latestCatalog.categoryKeywordMap
-    );
-    var matchedOriginalCategory = null;
-    var redirectCategorySlug = '';
-    var resolvedOriginalCategoryName = originalCategoryName;
+    let existingCategoryDoc = originalCategoryName
+      ? await findCategoryDocByName(originalCategoryName)
+      : null;
+    let duplicateCategoryDoc = await findCategoryDocByName(categoryName);
+    let resolvedCategoryDoc = existingCategoryDoc;
+    let previousCategoryName = existingCategoryDoc ? existingCategoryDoc.name : '';
+    let nextCategoryItems = [];
 
-    if (resolvedOriginalCategoryName) {
-      matchedOriginalCategory = findCategoryBoardByName(resolvedOriginalCategoryName, latestCategoryBoards);
-
-      if (!matchedOriginalCategory) {
-        redirectCategorySlug = catalogService.toTrimmedString(redirectPath).replace(/^\/admin\/categories\/([^/?#]+).*$/i, '$1');
-        if (redirectCategorySlug && redirectCategorySlug !== redirectPath) {
-          try {
-            matchedOriginalCategory = findCategoryBoardBySlug(decodeURIComponent(redirectCategorySlug), latestCategoryBoards);
-          } catch (decodeError) {
-            matchedOriginalCategory = findCategoryBoardBySlug(redirectCategorySlug, latestCategoryBoards);
-          }
-        }
-      }
-
-      resolvedOriginalCategoryName = matchedOriginalCategory ? matchedOriginalCategory.name : '';
-    }
-
-    if (hasDuplicateCategoryName(categoryName, latestCategoryBoards, resolvedOriginalCategoryName)) {
+    if (duplicateCategoryDoc && (!existingCategoryDoc || String(duplicateCategoryDoc._id) !== String(existingCategoryDoc._id))) {
       return {
         ok: false,
         errorCode: 'duplicate-category',
@@ -1707,31 +1435,31 @@ async function saveCategory(req, res) {
       };
     }
 
-    catalogService.upsertAdminCategory(
-      categoryName,
-      categoryDescription,
-      categoryItems,
-      {
-        originalName: resolvedOriginalCategoryName,
-        updateDescription: shouldUpdateDescription,
-        replaceItems: shouldReplaceCategoryItems,
-      }
-    );
-
-    if (!await catalogService.saveAdminData()) {
-      return {
-        ok: false,
-        errorCode: 'save-failed',
-        message: 'Failed to save category',
-        statusCode: 500,
-      };
+    if (!resolvedCategoryDoc) {
+      resolvedCategoryDoc = new Category({
+        name: categoryName,
+      });
     }
+
+    nextCategoryItems = shouldReplaceCategoryItems
+      ? categoryItems
+      : catalogService.normalizeList((resolvedCategoryDoc.items || []).concat(categoryItems));
+
+    resolvedCategoryDoc.name = categoryName;
+    resolvedCategoryDoc.items = nextCategoryItems;
+
+    if (shouldUpdateDescription) {
+      resolvedCategoryDoc.description = categoryDescription;
+    }
+
+    await resolvedCategoryDoc.save();
+    catalogService.clearCatalogContextCache();
 
     return {
       ok: true,
-      categoryName: categoryName,
-      originalCategoryName: resolvedOriginalCategoryName,
-      categoryItems: categoryItems,
+      categoryName: resolvedCategoryDoc.name,
+      originalCategoryName: previousCategoryName,
+      categoryItems: nextCategoryItems,
     };
   });
 
@@ -1743,15 +1471,17 @@ async function saveCategory(req, res) {
         message: mutationResult && mutationResult.message ? mutationResult.message : 'Failed to save category',
       });
     }
+
     return res.redirect(buildErrorRedirect(redirectPath, mutationResult && mutationResult.errorCode ? mutationResult.errorCode : 'save-failed'));
   }
 
+  successRedirectPath = resolveCategorySaveRedirectPath(
+    mutationResult.categoryName,
+    redirectPath,
+    shouldReplaceCategoryItems
+  );
+
   if (isAjax) {
-    successRedirectPath = resolveCategorySaveRedirectPath(
-      mutationResult.categoryName,
-      redirectPath,
-      shouldReplaceCategoryItems
-    );
     return res.json({
       success: true,
       message: 'Category saved successfully',
@@ -1762,49 +1492,59 @@ async function saveCategory(req, res) {
     });
   }
 
-  successRedirectPath = resolveCategorySaveRedirectPath(
-    mutationResult.categoryName,
-    redirectPath,
-    shouldReplaceCategoryItems
-  );
-
   return res.redirect(buildStatusRedirect(successRedirectPath, 'category-saved'));
 }
 
+async function revertOrderToPending(orderId, adminMessage) {
+  try {
+    await Order.updateOne(
+      { _id: orderId, adminStatus: 'processing' },
+      {
+        $set: {
+          adminStatus: 'pending',
+          adminMessage: adminMessage || '',
+          adminAcceptedAt: null,
+        },
+      }
+    );
+  } catch (error) {
+    console.error('Failed to revert processing order:', error.message);
+  }
+}
+
 async function acceptOrderRequest(req, res) {
-  var requestBody = req && req.body && typeof req.body === 'object' ? req.body : {};
-  var orderId = catalogService.toTrimmedString(requestBody.orderId);
-  var adminMessage = normalizeMultilineText(requestBody.adminMessage);
-  var redirectPath = getSafeRedirectPath(req, defaultAdminOrdersPath);
-  var hasMongoConfiguration = Boolean(String(process.env.MONGODB_URI || '').trim());
-  var isAjax = isAjaxRequest(req);
-  var orderRecord = null;
-  var orderStatus = '';
-  var orderProductId = '';
-  var orderQuantity = 1;
-  var catalog = null;
-  var productMatch = null;
-  var availableStockQuantity = null;
-  var nextStockQuantity = '';
-  var adminData = null;
-  var hasAdminProduct = false;
-  var stockUpdated = false;
-  var customerEmail = '';
-  var emailSubject = '';
-  var productName = '';
-  var orderRecordId = '';
+  let requestBody = req && req.body && typeof req.body === 'object' ? req.body : {};
+  let orderId = catalogService.toTrimmedString(requestBody.orderId);
+  let adminMessage = normalizeMultilineText(requestBody.adminMessage);
+  let redirectPath = getSafeRedirectPath(req, defaultAdminOrdersPath);
+  let isAjax = isAjaxRequest(req);
+  let claimedOrder = null;
+  let productDoc = null;
+  let updatedProduct = null;
+  let acceptedOrder = null;
+  let orderQuantity = 1;
+  let customerEmail = '';
+  let emailSubject = '';
+  let productName = '';
 
   function sendErrorResponse(errorCode, message, statusCode) {
     if (isAjax) {
       return res.status(statusCode || 400).json({ success: false, error: errorCode, message: message });
     }
+
     return res.redirect(buildErrorRedirect(redirectPath, errorCode));
   }
 
-  function sendSuccessResponse(message) {
+  function sendSuccessResponse(message, alreadyAccepted) {
     if (isAjax) {
-      return res.json({ success: true, message: message, orderId: orderId });
+      return res.json({
+        success: true,
+        message: message,
+        orderId: orderId,
+        alreadyAccepted: Boolean(alreadyAccepted),
+      });
     }
+
     return res.redirect(buildStatusRedirect(redirectPath, 'order-accepted'));
   }
 
@@ -1812,7 +1552,7 @@ async function acceptOrderRequest(req, res) {
     return sendErrorResponse('order-id-required', 'Order ID required');
   }
 
-  if (!/^[a-f0-9]{24}$/i.test(orderId)) {
+  if (!mongoose.isValidObjectId(orderId)) {
     return sendErrorResponse('order-not-found', 'Order not found', 404);
   }
 
@@ -1820,109 +1560,95 @@ async function acceptOrderRequest(req, res) {
     return sendErrorResponse('invalid-input', 'Message too long');
   }
 
+  if (!await ensureDatabaseConnection()) {
+    return sendErrorResponse('db-unavailable', 'Database unavailable', 503);
+  }
+
   try {
-    if (!await ensureDatabaseConnection()) {
-      return sendErrorResponse('db-unavailable', 'Database unavailable', 503);
-    }
+    claimedOrder = await Order.findOneAndUpdate(
+      { _id: orderId, adminStatus: 'pending' },
+      {
+        $set: {
+          adminStatus: 'processing',
+          adminMessage: adminMessage,
+          adminAcceptedAt: null,
+        },
+      },
+      { returnDocument: 'after' }
+    );
 
-    orderRecord = await Order.findById(orderId);
+    if (!claimedOrder) {
+      claimedOrder = await Order.findById(orderId);
 
-    if (!orderRecord) {
-      return sendErrorResponse('order-not-found', 'Order not found', 404);
-    }
-
-    orderStatus = catalogService.toTrimmedString(orderRecord.adminStatus).toLowerCase();
-    if (orderStatus === 'accepted') {
-      if (isAjax) {
-        return res.json({ success: true, message: 'Order already accepted', orderId: orderId, alreadyAccepted: true });
+      if (!claimedOrder) {
+        return sendErrorResponse('order-not-found', 'Order not found', 404);
       }
-      return res.redirect(buildStatusRedirect(redirectPath, 'order-accepted'));
+
+      if (catalogService.toTrimmedString(claimedOrder.adminStatus).toLowerCase() === 'accepted') {
+        return sendSuccessResponse('Order already accepted', true);
+      }
+
+      return sendErrorResponse('save-failed', 'Order is already being processed', 409);
     }
 
-    orderProductId = catalogService.toTrimmedString(orderRecord.productId);
-    orderQuantity = parsePositiveInteger(orderRecord.quantity, 1);
+    orderQuantity = parsePositiveInteger(claimedOrder.quantity, 1);
 
-    if (orderProductId) {
-      catalog = catalogService.getCatalogContext();
-      productMatch = catalog && Array.isArray(catalog.productSections)
-        ? catalogService.findProductById(orderProductId, catalog.productSections)
-        : null;
+    if (claimedOrder.product) {
+      productDoc = await Product.findById(claimedOrder.product);
+    }
 
-      if (productMatch && productMatch.item) {
-        availableStockQuantity = parseStoredStockQuantity(productMatch.item.quantity);
+    if (!productDoc && claimedOrder.productId) {
+      productDoc = await Product.findOne(buildProductIdentifierFilter(claimedOrder.productId));
+    }
 
-        if (availableStockQuantity !== null) {
-          if (availableStockQuantity < 1) {
-            return sendErrorResponse('out-of-stock', 'Product out of stock', 400);
-          }
+    if (productDoc) {
+      updatedProduct = await Product.findOneAndUpdate(
+        { _id: productDoc._id, quantity: mongoose.trusted({ $gte: orderQuantity }) },
+        { $inc: { quantity: -orderQuantity } },
+        { returnDocument: 'after' }
+      );
 
-          if (orderQuantity > availableStockQuantity) {
-            return sendErrorResponse('insufficient-stock', 'Insufficient stock', 400);
-          }
+      if (!updatedProduct) {
+        await revertOrderToPending(orderId, adminMessage);
 
-          nextStockQuantity = String(Math.max(availableStockQuantity - orderQuantity, 0));
-          adminData = catalogService.getAdminData() || {};
-
-          if (!Array.isArray(adminData.products)) {
-            adminData.products = [];
-          }
-
-          adminData.products.forEach(function (product) {
-            if (catalogService.toTrimmedString(product && product.id) !== orderProductId) {
-              return;
-            }
-
-            product.quantity = nextStockQuantity;
-            hasAdminProduct = true;
-          });
-
-          if (!adminData.productOverrides || typeof adminData.productOverrides !== 'object') {
-            adminData.productOverrides = {};
-          }
-
-          if (
-            adminData.productOverrides[orderProductId] &&
-            typeof adminData.productOverrides[orderProductId] === 'object'
-          ) {
-            adminData.productOverrides[orderProductId].quantity = nextStockQuantity;
-          } else if (!hasAdminProduct) {
-            adminData.productOverrides[orderProductId] = { quantity: nextStockQuantity };
-          }
-
-          stockUpdated = true;
+        if (Number(productDoc.quantity) < 1) {
+          return sendErrorResponse('out-of-stock', 'Product out of stock', 400);
         }
+
+        return sendErrorResponse('insufficient-stock', 'Insufficient stock', 400);
       }
     }
 
-    if (stockUpdated && !await catalogService.saveAdminData()) {
-      if (hasMongoConfiguration && !await ensureDatabaseConnection()) {
-        return sendErrorResponse('db-unavailable', 'Database unavailable', 503);
-      }
-      return sendErrorResponse('save-failed', 'Failed to save', 500);
-    }
+    acceptedOrder = await Order.findByIdAndUpdate(
+      orderId,
+      {
+        $set: {
+          adminStatus: 'accepted',
+          adminMessage: adminMessage,
+          adminAcceptedAt: new Date(),
+          adminEmailNotificationSent: false,
+        },
+      },
+      { returnDocument: 'after' }
+    );
 
-    orderRecord.adminStatus = 'accepted';
-    orderRecord.adminMessage = adminMessage;
-    orderRecord.adminAcceptedAt = new Date();
-    orderRecord.adminEmailNotificationSent = false;
-    await orderRecord.save();
+    catalogService.clearCatalogContextCache();
 
-    orderRecordId = orderRecord && orderRecord._id ? String(orderRecord._id) : '';
-    customerEmail = normalizeEmail(orderRecord.customerEmail);
-    productName = catalogService.toTrimmedString(orderRecord.productName) || 'Product';
+    customerEmail = normalizeEmail(acceptedOrder && acceptedOrder.customerEmail);
+    productName = catalogService.toTrimmedString(acceptedOrder && acceptedOrder.productName) || 'Product';
     emailSubject = 'Order accepted: ' + productName;
 
-    if (customerEmail && isLikelyEmailAddress(customerEmail) && orderRecordId) {
+    if (customerEmail && isLikelyEmailAddress(customerEmail) && acceptedOrder && acceptedOrder._id) {
       Promise.resolve().then(async function () {
-        var sendResult = null;
-        var acceptedOrderRecord = null;
+        let sendResult = null;
+        let refreshedOrder = null;
 
         try {
           sendResult = await resendService.sendEmail({
             to: customerEmail,
             subject: emailSubject,
-            text: buildAdminOrderAcceptedEmailText(orderRecord, adminMessage),
-            html: buildAdminOrderAcceptedEmailHtml(orderRecord, adminMessage),
+            text: buildAdminOrderAcceptedEmailText(acceptedOrder, adminMessage),
+            html: buildAdminOrderAcceptedEmailHtml(acceptedOrder, adminMessage),
           });
 
           if (!sendResult.ok) {
@@ -1930,37 +1656,46 @@ async function acceptOrderRequest(req, res) {
             return;
           }
 
-          acceptedOrderRecord = await Order.findById(orderRecordId);
-          if (!acceptedOrderRecord) {
+          refreshedOrder = await Order.findById(acceptedOrder._id);
+          if (!refreshedOrder) {
             return;
           }
 
-          acceptedOrderRecord.adminEmailNotificationSent = true;
-          await acceptedOrderRecord.save();
+          refreshedOrder.adminEmailNotificationSent = true;
+          await refreshedOrder.save();
         } catch (emailError) {
           console.error('Order accepted email async failed:', emailError.message);
         }
       });
     }
 
-    return sendSuccessResponse('Order accepted successfully');
+    return sendSuccessResponse('Order accepted successfully', false);
   } catch (error) {
     console.error('Order accept action failed:', error.message);
+    if (updatedProduct && updatedProduct._id && !acceptedOrder) {
+      try {
+        await Product.updateOne({ _id: updatedProduct._id }, { $inc: { quantity: orderQuantity } });
+      } catch (restoreError) {
+        console.error('Failed to restore product stock after order accept failure:', restoreError.message);
+      }
+    }
+    await revertOrderToPending(orderId, adminMessage);
     return sendErrorResponse('save-failed', 'Failed to process order', 500);
   }
 }
 
 async function deleteOrderRequest(req, res) {
-  var requestBody = req && req.body && typeof req.body === 'object' ? req.body : {};
-  var orderId = catalogService.toTrimmedString(requestBody.orderId);
-  var redirectPath = getSafeRedirectPath(req, defaultAdminOrdersPath);
-  var isAjax = isAjaxRequest(req);
-  var deletedOrder = null;
+  let requestBody = req && req.body && typeof req.body === 'object' ? req.body : {};
+  let orderId = catalogService.toTrimmedString(requestBody.orderId);
+  let redirectPath = getSafeRedirectPath(req, defaultAdminOrdersPath);
+  let isAjax = isAjaxRequest(req);
+  let deletedOrder = null;
 
   function sendErrorResponse(errorCode, message, statusCode) {
     if (isAjax) {
       return res.status(statusCode || 400).json({ success: false, error: errorCode, message: message });
     }
+
     return res.redirect(buildErrorRedirect(redirectPath, errorCode));
   }
 
@@ -1968,7 +1703,7 @@ async function deleteOrderRequest(req, res) {
     return sendErrorResponse('order-id-required', 'Order ID required');
   }
 
-  if (!/^[a-f0-9]{24}$/i.test(orderId)) {
+  if (!mongoose.isValidObjectId(orderId)) {
     return sendErrorResponse('order-not-found', 'Order not found', 404);
   }
 
@@ -1986,6 +1721,7 @@ async function deleteOrderRequest(req, res) {
     if (isAjax) {
       return res.json({ success: true, message: 'Order deleted successfully', orderId: orderId });
     }
+
     return res.redirect(buildStatusRedirect(redirectPath, 'order-deleted'));
   } catch (error) {
     console.error('Order delete action failed:', error.message);
@@ -1995,94 +1731,69 @@ async function deleteOrderRequest(req, res) {
 
 function saveProduct(req, res) {
   catalogService.imageUpload.single('productImageFile')(req, res, async function (uploadError) {
-    var redirectPath = getSafeRedirectPath(req, defaultAdminPath);
-    var hasMongoConfiguration = Boolean(String(process.env.MONGODB_URI || '').trim());
-    var hasDatabaseConnection = true;
-    var isAjax = isAjaxRequest(req);
-    var mutationResult = null;
+    let redirectPath = getSafeRedirectPath(req, defaultAdminPath);
+    let isAjax = isAjaxRequest(req);
+    let mutationResult = null;
+    let uploadedImagePath = '';
 
     function sendErrorResponse(errorCode, message, statusCode) {
+      if (uploadedImagePath) {
+        catalogService.cleanupLocalImageAsset(uploadedImagePath).catch(function (error) {
+          console.error('Failed to cleanup rejected uploaded image:', error.message);
+        });
+      }
+
+      if (!uploadedImagePath && req && req.file && req.file.path) {
+        fs.promises.unlink(req.file.path).catch(function (error) {
+          if (error && error.code !== 'ENOENT') {
+            console.error('Failed to cleanup rejected upload:', error.message);
+          }
+        });
+      }
+
       if (isAjax) {
         return res.status(statusCode || 400).json({ success: false, error: errorCode, message: message });
       }
+
       return res.redirect(buildErrorRedirect(redirectPath, errorCode));
     }
 
-    async function cleanupRejectedUploadFile() {
-      var filePath = req && req.file && req.file.path ? String(req.file.path).trim() : '';
-      if (!filePath) {
-        return;
-      }
-
-      try {
-        await fs.promises.unlink(filePath);
-      } catch (error) {
-        if (error && error.code === 'ENOENT') {
-          return;
-        }
-        console.error('Failed to cleanup rejected upload:', error.message);
-      }
-    }
-
     if (uploadError) {
-      var errorCode = 'save-failed';
-      var errorMessage = 'Save failed';
-      if (uploadError.code === 'LIMIT_FILE_SIZE') {
-        errorCode = 'image-too-large';
-        errorMessage = 'Image too large';
-      } else if (uploadError.message === 'invalid-image-file') {
-        errorCode = 'invalid-image-file';
-        errorMessage = 'Invalid image file';
-      }
-      return sendErrorResponse(errorCode, errorMessage, 400);
+      return sendErrorResponse(
+        uploadError.code === 'LIMIT_FILE_SIZE' ? 'image-too-large' : 'invalid-image-file',
+        uploadError.code === 'LIMIT_FILE_SIZE' ? 'Image too large' : 'Invalid image file',
+        400
+      );
     }
 
     if (!req.file) {
       return sendErrorResponse('product-image-file-required', 'Product image required', 400);
     }
 
-    if (hasMongoConfiguration) {
-      hasDatabaseConnection = await ensureDatabaseConnection();
-      if (!hasDatabaseConnection) {
-        return sendErrorResponse('db-unavailable', 'Database unavailable', 503);
-      }
+    if (!await ensureDatabaseConnection()) {
+      return sendErrorResponse('db-unavailable', 'Database unavailable', 503);
     }
 
-    var categoryName = normalizeSingleLineText(req.body.productCategory);
-    var productName = normalizeSingleLineText(req.body.productName);
-    var rawProductSpec = normalizeMultilineText(req.body.productSpec);
-    var productSpec = buildProductSpec(
-      categoryName,
-      rawProductSpec
-    );
-    var productPricing = resolveProductPricing(req.body.productPrice, req.body.productDiscountPercent);
-    var productPrice = productPricing.price || 'Contact for price';
-    var productQuantity = normalizeProductQuantity(req.body.productQuantity);
-    var uploadedImagePath = '';
+    let categoryName = normalizeSingleLineText(req.body.productCategory);
+    let productName = normalizeSingleLineText(req.body.productName);
+    let rawProductSpec = normalizeMultilineText(req.body.productSpec);
+    let productSpec = buildProductSpec(categoryName, rawProductSpec);
+    let productPricing = resolveProductPricing(req.body.productPrice, req.body.productDiscountPercent);
 
     if (!categoryName || !isWithinLength(categoryName, maxCategoryNameLength)) {
-      await cleanupRejectedUploadFile();
       return sendErrorResponse('product-category-required', 'Product category required', 400);
     }
 
     if (!productName || !isWithinLength(productName, maxProductNameLength)) {
-      await cleanupRejectedUploadFile();
       return sendErrorResponse('product-name-required', 'Product name required', 400);
     }
 
-    if (!hasValidPriceValue(req.body.productPrice) || productPricing.isPriceMissing) {
-      await cleanupRejectedUploadFile();
+    if (!hasValidPriceValue(req.body.productPrice) || productPricing.isPriceMissing || !Number.isFinite(productPricing.priceValue)) {
       return sendErrorResponse('product-price-required', 'Valid price required', 400);
     }
 
-    if (!isWithinLength(rawProductSpec, maxProductSpecLength)) {
-      await cleanupRejectedUploadFile();
+    if (!isWithinLength(rawProductSpec, maxProductSpecLength) || !hasValidQuantityValue(req.body.productQuantity)) {
       return sendErrorResponse('invalid-input', 'Invalid input', 400);
-    }
-
-    if (!hasValidQuantityValue(req.body.productQuantity)) {
-      await cleanupRejectedUploadFile();
-      return sendErrorResponse('invalid-input', 'Invalid quantity', 400);
     }
 
     uploadedImagePath = await catalogService.optimizeAndPromoteUploadedImage(req.file);
@@ -2092,21 +1803,13 @@ function saveProduct(req, res) {
     }
 
     mutationResult = await runAdminMutation(async function () {
-      var latestCatalog = catalogService.getCatalogContext();
-      var latestCategoryBoards = catalogService.buildAdminCategoryBoards(
-        latestCatalog.categoryGroups,
-        latestCatalog.productSections,
-        latestCatalog.categoryKeywordMap
-      );
-      var matchedCategoryBoard = findCategoryBoardByName(categoryName, latestCategoryBoards);
-      var resolvedCategoryName = '';
-      var productId = '';
-      var adminData = catalogService.getAdminData();
-      var createdProductEntry = null;
-      var primaryImage = uploadedImagePath;
-      var primaryImages = catalogService.normalizeImageList([primaryImage], primaryImage);
+      let categoryDoc = await findOrCreateCategoryDocByName(categoryName);
+      let duplicateProduct = null;
+      let legacyId = '';
+      let createdProduct = null;
+      let productDto = null;
 
-      if (!matchedCategoryBoard) {
+      if (!categoryDoc) {
         return {
           ok: false,
           errorCode: 'category-not-found',
@@ -2115,9 +1818,12 @@ function saveProduct(req, res) {
         };
       }
 
-      resolvedCategoryName = matchedCategoryBoard.name;
+      duplicateProduct = await Product.findOne({
+        category: categoryDoc._id,
+        normalizedName: catalogService.normalizeForSearch(productName),
+      }).select('_id');
 
-      if (hasDuplicateProductName(resolvedCategoryName, productName, latestCatalog.productSections)) {
+      if (duplicateProduct) {
         return {
           ok: false,
           errorCode: 'duplicate-product',
@@ -2126,66 +1832,34 @@ function saveProduct(req, res) {
         };
       }
 
-      productId = catalogService.buildUniqueProductId(resolvedCategoryName, productName, latestCatalog.productSections);
+      legacyId = await catalogService.buildUniqueProductLegacyId(categoryDoc.name, productName);
 
-      if (!Array.isArray(adminData.products)) {
-        adminData.products = [];
-      }
-
-      catalogService.upsertAdminCategory(resolvedCategoryName, '', [productName]);
-
-      if (Array.isArray(adminData.deletedProductIds)) {
-        adminData.deletedProductIds = adminData.deletedProductIds.filter(function (id) {
-          return id !== productId;
-        });
-      }
-
-      createdProductEntry = {
-        id: productId,
-        type: resolvedCategoryName,
+      createdProduct = await Product.create({
+        legacyId: legacyId,
+        category: categoryDoc._id,
         name: productName,
+        description: productSpec,
         spec: productSpec,
-        price: productPrice,
-        originalPrice: productPricing.originalPrice,
-        discountPercent: productPricing.discountPercent ? String(productPricing.discountPercent) : '',
-        quantity: productQuantity,
-        image: primaryImage,
-        images: primaryImages,
-      };
+        price: productPricing.priceValue,
+        compareAtPrice: productPricing.compareAtPriceValue,
+        quantity: Math.max(0, Math.floor(parseNonNegativeNumber(req.body.productQuantity))),
+        imageUrl: uploadedImagePath,
+        images: catalogService.normalizeImageList([uploadedImagePath], uploadedImagePath),
+        searchKeywords: [categoryDoc.name, productName],
+        status: 'active',
+        isActive: true,
+      });
 
-      adminData.products.push(createdProductEntry);
-
-      if (!await catalogService.saveAdminData()) {
-        return {
-          ok: false,
-          errorCode: 'save-failed',
-          message: 'Failed to save product',
-          statusCode: 500,
-        };
-      }
+      catalogService.clearCatalogContextCache();
+      productDto = await loadProductDtoById(createdProduct.legacyId || String(createdProduct._id));
 
       return {
         ok: true,
-        product: createdProductEntry,
+        product: productDto,
       };
     });
 
     if (!mutationResult || !mutationResult.ok) {
-      if (uploadedImagePath) {
-        await catalogService.cleanupLocalImageAsset(uploadedImagePath);
-      }
-
-      if (
-        mutationResult &&
-        mutationResult.errorCode === 'save-failed' &&
-        hasMongoConfiguration
-      ) {
-        hasDatabaseConnection = await ensureDatabaseConnection();
-        if (!hasDatabaseConnection) {
-          return sendErrorResponse('db-unavailable', 'Database unavailable', 503);
-        }
-      }
-
       return sendErrorResponse(
         mutationResult && mutationResult.errorCode ? mutationResult.errorCode : 'save-failed',
         mutationResult && mutationResult.message ? mutationResult.message : 'Failed to save product',
@@ -2196,11 +1870,11 @@ function saveProduct(req, res) {
     if (isAjax) {
       return res.json({ success: true, message: 'Product saved successfully', product: mutationResult.product });
     }
+
     return res.redirect(buildStatusRedirect(redirectPath, 'product-saved'));
   });
 }
-
-module.exports = {
+export default {
   acceptOrderRequest: acceptOrderRequest,
   deleteOrderRequest: deleteOrderRequest,
   deleteCategory: deleteCategory,

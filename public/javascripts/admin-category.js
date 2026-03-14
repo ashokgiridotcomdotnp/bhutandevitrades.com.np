@@ -1,6 +1,71 @@
 (function () {
+  function isSuccessResponsePayload(payload) {
+    return Boolean(payload && (payload.success === true || payload.ok === true));
+  }
+
+  function buildResponseMessage(payload, fallbackMessage) {
+    if (payload && typeof payload === 'object') {
+      let message = String(payload.message || payload.error || payload.errorCode || '').trim();
+      let requestId = String(payload.requestId || '').trim();
+
+      if (message && requestId) {
+        return message + ' (Request ID: ' + requestId + ')';
+      }
+
+      if (message) {
+        return message;
+      }
+    }
+
+    return String(fallbackMessage || '').trim() || 'Request failed. Please try again.';
+  }
+
+  async function readResponsePayload(response) {
+    let text = '';
+
+    try {
+      text = await response.text();
+    } catch (error) {
+      return { payload: null, text: '' };
+    }
+
+    if (!text) {
+      return { payload: null, text: '' };
+    }
+
+    try {
+      return { payload: JSON.parse(text), text: text };
+    } catch (error) {
+      return { payload: null, text: text };
+    }
+  }
+
+  async function fetchAdminJson(url, options) {
+    let response = await fetch(url, options);
+
+    if (response && response.url) {
+      try {
+        let finalUrl = new URL(response.url, window.location.href);
+        if (finalUrl.pathname === '/admin/login') {
+          window.location.href = '/admin/login';
+          return { response: response, payload: null, redirectedToLogin: true };
+        }
+      } catch (error) {
+        // ignore URL parsing issues
+      }
+    }
+
+    let payloadResult = await readResponsePayload(response);
+
+    return {
+      response: response,
+      payload: payloadResult.payload,
+      redirectedToLogin: false,
+    };
+  }
+
   function getPageData() {
-    var dataScript = document.getElementById('admin-category-page-data');
+    let dataScript = document.getElementById('admin-category-page-data');
     if (!dataScript) {
       return {};
     }
@@ -12,46 +77,46 @@
     }
   }
 
-  var pageData = getPageData();
-  var addProductSubcategoryOptions = pageData && typeof pageData === 'object' && Array.isArray(pageData.addProductSubcategoryOptions)
+  let pageData = getPageData();
+  let addProductSubcategoryOptions = pageData && typeof pageData === 'object' && Array.isArray(pageData.addProductSubcategoryOptions)
     ? pageData.addProductSubcategoryOptions
     : [];
-  var deleteAlert = document.getElementById('delete-alert');
-  var deleteAlertTitle = document.getElementById('delete-alert-title');
-  var deleteAlertMessage = document.getElementById('delete-alert-message');
-  var deleteAlertCancel = document.getElementById('delete-alert-cancel');
-  var deleteAlertConfirm = document.getElementById('delete-alert-confirm');
-  var pendingDeleteForm = null;
-  var statusTooltip = document.querySelector('[data-status-tooltip]');
-  var addSubcategoryPicker = document.querySelector('[data-add-subcategory-picker]');
-  var addSubcategoryCustomInput = document.querySelector('[data-add-subcategory-custom-input]');
-  var addFormMrpInput = document.querySelector('[data-add-form-mrp-input]');
-  var addFormDiscountInput = document.querySelector('[data-add-form-discount-input]');
-  var addFormPricePreview = document.querySelector('[data-add-form-price-preview]');
-  var addFormPriceOriginal = document.querySelector('[data-add-form-price-original]');
-  var addFormPriceFinal = document.querySelector('[data-add-form-price-final]');
-  var createProductForm = document.getElementById('category-product-create-form');
-  var categoryManageForm = document.querySelector('[data-category-manage-form]');
-  var managedProductsRoot = document.querySelector('[data-managed-products-root]');
-  var managedCategoryName = managedProductsRoot
+  let deleteAlert = document.getElementById('delete-alert');
+  let deleteAlertTitle = document.getElementById('delete-alert-title');
+  let deleteAlertMessage = document.getElementById('delete-alert-message');
+  let deleteAlertCancel = document.getElementById('delete-alert-cancel');
+  let deleteAlertConfirm = document.getElementById('delete-alert-confirm');
+  let pendingDeleteForm = null;
+  let statusTooltip = document.querySelector('[data-status-tooltip]');
+  let addSubcategoryPicker = document.querySelector('[data-add-subcategory-picker]');
+  let addSubcategoryCustomInput = document.querySelector('[data-add-subcategory-custom-input]');
+  let addFormMrpInput = document.querySelector('[data-add-form-mrp-input]');
+  let addFormDiscountInput = document.querySelector('[data-add-form-discount-input]');
+  let addFormPricePreview = document.querySelector('[data-add-form-price-preview]');
+  let addFormPriceOriginal = document.querySelector('[data-add-form-price-original]');
+  let addFormPriceFinal = document.querySelector('[data-add-form-price-final]');
+  let createProductForm = document.getElementById('category-product-create-form');
+  let categoryManageForm = document.querySelector('[data-category-manage-form]');
+  let managedProductsRoot = document.querySelector('[data-managed-products-root]');
+  let managedCategoryName = managedProductsRoot
     ? String(managedProductsRoot.getAttribute('data-managed-category-name') || '').trim()
     : '';
-  var managedProductCountStat = document.querySelector('[data-managed-product-count-stat]');
-  var managedProductCountBadge = document.querySelector('[data-managed-product-count-badge]');
-  var managedProductsEmptyState = document.querySelector('[data-managed-products-empty]');
-  var managedProductsTable = document.querySelector('[data-managed-products-table]');
-  var managedProductsPagination = document.querySelector('[data-managed-products-pagination]');
-  var managedTotalProductCount = 0;
-  var hasDeleteModal = Boolean(deleteAlert && deleteAlertTitle && deleteAlertMessage && deleteAlertCancel && deleteAlertConfirm);
+  let managedProductCountStat = document.querySelector('[data-managed-product-count-stat]');
+  let managedProductCountBadge = document.querySelector('[data-managed-product-count-badge]');
+  let managedProductsEmptyState = document.querySelector('[data-managed-products-empty]');
+  let managedProductsTable = document.querySelector('[data-managed-products-table]');
+  let managedProductsPagination = document.querySelector('[data-managed-products-pagination]');
+  let managedTotalProductCount = 0;
+  let hasDeleteModal = Boolean(deleteAlert && deleteAlertTitle && deleteAlertMessage && deleteAlertCancel && deleteAlertConfirm);
 
   function clearAdminFlashQueryParams() {
     if (!window.history || typeof window.history.replaceState !== 'function') {
       return;
     }
 
-    var currentUrl = new URL(window.location.href);
-    var hasStatus = currentUrl.searchParams.has('status');
-    var hasError = currentUrl.searchParams.has('error');
+    let currentUrl = new URL(window.location.href);
+    let hasStatus = currentUrl.searchParams.has('status');
+    let hasError = currentUrl.searchParams.has('error');
 
     if (!hasStatus && !hasError) {
       return;
@@ -60,22 +125,22 @@
     currentUrl.searchParams.delete('status');
     currentUrl.searchParams.delete('error');
 
-    var nextQuery = currentUrl.searchParams.toString();
-    var nextUrl = currentUrl.pathname + (nextQuery ? '?' + nextQuery : '') + currentUrl.hash;
+    let nextQuery = currentUrl.searchParams.toString();
+    let nextUrl = currentUrl.pathname + (nextQuery ? '?' + nextQuery : '') + currentUrl.hash;
     window.history.replaceState({}, document.title, nextUrl);
   }
 
   function bindFileInputLabel(input) {
-    var inputId = input && input.id ? input.id : '';
-    var preview = inputId ? document.querySelector('[data-image-preview-for="' + inputId + '"]') : null;
-    var fileName = inputId ? document.querySelector('[data-file-name-for="' + inputId + '"]') : null;
-    var defaultFileName = fileName
+    let inputId = input && input.id ? input.id : '';
+    let preview = inputId ? document.querySelector('[data-image-preview-for="' + inputId + '"]') : null;
+    let fileName = inputId ? document.querySelector('[data-file-name-for="' + inputId + '"]') : null;
+    let defaultFileName = fileName
       ? String(fileName.getAttribute('data-file-default-text') || fileName.textContent || 'No file selected').trim()
       : '';
-    var defaultPreviewSrc = preview
+    let defaultPreviewSrc = preview
       ? String(preview.getAttribute('data-image-preview-default-src') || preview.getAttribute('src') || '').trim()
       : '';
-    var objectUrl = '';
+    let objectUrl = '';
 
     if (!inputId || (!preview && !fileName)) {
       return;
@@ -115,7 +180,7 @@
     }
 
     function syncFileName() {
-      var selectedFile = input.files && input.files.length ? input.files[0] : null;
+      let selectedFile = input.files && input.files.length ? input.files[0] : null;
 
       if (!selectedFile) {
         clearPreview();
@@ -147,8 +212,8 @@
   }
 
   function parsePositiveNumber(value) {
-    var cleanedValue = String(value || '').replace(/,/g, '').trim();
-    var parsedValue = Number(cleanedValue);
+    let cleanedValue = String(value || '').replace(/,/g, '').trim();
+    let parsedValue = Number(cleanedValue);
 
     if (!cleanedValue || !Number.isFinite(parsedValue) || parsedValue < 0) {
       return NaN;
@@ -158,13 +223,13 @@
   }
 
   function parseCountText(value) {
-    var matchedValue = String(value || '').match(/\d+/);
+    let matchedValue = String(value || '').match(/\d+/);
     return matchedValue ? Math.max(0, parseInt(matchedValue[0], 10) || 0) : 0;
   }
 
   function formatNpr(value) {
-    var normalizedValue = Math.round(value * 100) / 100;
-    var hasDecimal = Math.abs(normalizedValue % 1) > 0;
+    let normalizedValue = Math.round(value * 100) / 100;
+    let hasDecimal = Math.abs(normalizedValue % 1) > 0;
 
     return 'NPR ' + normalizedValue.toLocaleString('en-US', {
       minimumFractionDigits: hasDecimal ? 2 : 0,
@@ -177,18 +242,18 @@
       return;
     }
 
-    var mrpInput = form.querySelector('[data-form-mrp-input]');
-    var discountInput = form.querySelector('[data-form-discount-input]');
-    var previewRoot = form.querySelector('[data-form-price-preview]');
-    var previewOriginal = form.querySelector('[data-form-price-original]');
-    var previewFinal = form.querySelector('[data-form-price-final]');
+    let mrpInput = form.querySelector('[data-form-mrp-input]');
+    let discountInput = form.querySelector('[data-form-discount-input]');
+    let previewRoot = form.querySelector('[data-form-price-preview]');
+    let previewOriginal = form.querySelector('[data-form-price-original]');
+    let previewFinal = form.querySelector('[data-form-price-final]');
 
     if (!mrpInput || !discountInput || !previewRoot || !previewOriginal || !previewFinal) {
       return;
     }
 
-    var mrpValue = parsePositiveNumber(mrpInput.value);
-    var discountValue = parsePositiveNumber(discountInput.value);
+    let mrpValue = parsePositiveNumber(mrpInput.value);
+    let discountValue = parsePositiveNumber(discountInput.value);
 
     if (!Number.isFinite(mrpValue)) {
       previewRoot.classList.add('hidden');
@@ -203,7 +268,7 @@
     }
 
     discountValue = Math.min(Math.max(discountValue, 0), 100);
-    var discountedValue = mrpValue * ((100 - discountValue) / 100);
+    let discountedValue = mrpValue * ((100 - discountValue) / 100);
 
     previewRoot.classList.remove('hidden');
     previewFinal.textContent = formatNpr(discountedValue);
@@ -223,8 +288,8 @@
       return;
     }
 
-    var mrpInput = form.querySelector('[data-form-mrp-input]');
-    var discountInput = form.querySelector('[data-form-discount-input]');
+    let mrpInput = form.querySelector('[data-form-mrp-input]');
+    let discountInput = form.querySelector('[data-form-discount-input]');
 
     if (!mrpInput || !discountInput) {
       return;
@@ -287,8 +352,8 @@
       return;
     }
 
-    var mrpValue = parsePositiveNumber(addFormMrpInput.value);
-    var discountValue = parsePositiveNumber(addFormDiscountInput.value);
+    let mrpValue = parsePositiveNumber(addFormMrpInput.value);
+    let discountValue = parsePositiveNumber(addFormDiscountInput.value);
 
     if (!Number.isFinite(mrpValue)) {
       addFormPricePreview.classList.add('hidden');
@@ -303,7 +368,7 @@
     }
 
     discountValue = Math.min(Math.max(discountValue, 0), 100);
-    var discountedValue = mrpValue * ((100 - discountValue) / 100);
+    let discountedValue = mrpValue * ((100 - discountValue) / 100);
 
     addFormPricePreview.classList.remove('hidden');
     addFormPriceFinal.textContent = formatNpr(discountedValue);
@@ -328,7 +393,7 @@
 
   function closeOtherEditRows(activeCardId) {
     document.querySelectorAll('[data-edit-form]').forEach(function (form) {
-      var formCardId = form ? form.getAttribute('data-edit-form') : '';
+      let formCardId = form ? form.getAttribute('data-edit-form') : '';
 
       if (!formCardId || formCardId === activeCardId) {
         return;
@@ -339,7 +404,7 @@
   }
 
   function toggleEdit(cardId, isEditMode) {
-    var card = getCardElements(cardId);
+    let card = getCardElements(cardId);
     if (!card.form || !card.view) {
       return;
     }
@@ -352,7 +417,7 @@
       }
       card.form.classList.remove('hidden');
       syncFormPricePreview(card.form);
-      var firstInput = card.form.querySelector('input[type="text"]');
+      let firstInput = card.form.querySelector('input[type="text"]');
       if (firstInput) {
         firstInput.focus();
         firstInput.select();
@@ -395,7 +460,7 @@
   }
 
   function setLoadingOverlay(isVisible) {
-    var globalLoading = window.bdLoading || null;
+    let globalLoading = window.bdLoading || null;
 
     if (!globalLoading || typeof globalLoading !== 'object') {
       return;
@@ -428,12 +493,12 @@
   }
 
   function extractAlertMessageFromHtml(htmlText) {
-    var parser = null;
-    var doc = null;
-    var errorAlert = null;
-    var warningAlert = null;
-    var successAlert = null;
-    var extractText = function (node) {
+    let parser = null;
+    let doc = null;
+    let errorAlert = null;
+    let warningAlert = null;
+    let successAlert = null;
+    let extractText = function (node) {
       return String(node && node.textContent ? node.textContent : '').replace(/\s+/g, ' ').trim();
     };
 
@@ -471,14 +536,14 @@
   }
 
   function setSubmitButtonState(form, isSubmitting, activeSubmitter) {
-    var submitButtons = Array.prototype.slice.call(form.querySelectorAll('button[type="submit"]'));
+    let submitButtons = Array.prototype.slice.call(form.querySelectorAll('button[type="submit"]'));
 
     if (!submitButtons.length) {
       return;
     }
 
     submitButtons.forEach(function (button) {
-      var defaultLabel = String(button.getAttribute('data-default-label') || '').trim();
+      let defaultLabel = String(button.getAttribute('data-default-label') || '').trim();
 
       if (!defaultLabel) {
         defaultLabel = String(button.textContent || '').trim() || 'Save';
@@ -504,8 +569,8 @@
   }
 
   function syncManagedProductsState(nextTotalCount) {
-    var visibleCount = document.querySelectorAll('[data-view-panel]').length;
-    var hasManagedProducts = visibleCount > 0;
+    let visibleCount = document.querySelectorAll('[data-view-panel]').length;
+    let hasManagedProducts = visibleCount > 0;
 
     if (Number.isFinite(nextTotalCount)) {
       managedTotalProductCount = Math.max(0, nextTotalCount);
@@ -533,16 +598,16 @@
     : (managedProductCountBadge ? parseCountText(managedProductCountBadge.textContent) : document.querySelectorAll('[data-view-panel]').length);
 
   function updateProductViewRow(productId, product) {
-    var row = document.querySelector('[data-view-panel="' + productId + '"]');
-    var editRow = document.querySelector('[data-edit-row="' + productId + '"]');
-    var normalizedManagedCategoryName = String(managedCategoryName || '').trim().toLowerCase();
-    var normalizedProductCategory = String(product && product.type || '').trim().toLowerCase();
-    var originalPriceNode = null;
-    var finalPriceNode = null;
-    var discountNode = null;
-    var imageNode = null;
-    var stockValue = '';
-    var hasDiscount = false;
+    let row = document.querySelector('[data-view-panel="' + productId + '"]');
+    let editRow = document.querySelector('[data-edit-row="' + productId + '"]');
+    let normalizedManagedCategoryName = String(managedCategoryName || '').trim().toLowerCase();
+    let normalizedProductCategory = String(product && product.type || '').trim().toLowerCase();
+    let originalPriceNode = null;
+    let finalPriceNode = null;
+    let discountNode = null;
+    let imageNode = null;
+    let stockValue = '';
+    let hasDiscount = false;
 
     if (!row || !product) {
       return;
@@ -606,7 +671,7 @@
     }
 
     if (editRow) {
-      var currentImageInput = editRow.querySelector('input[name="currentImagePath"]');
+      let currentImageInput = editRow.querySelector('input[name="currentImagePath"]');
       imageNode = editRow.querySelector('[data-image-preview-default-src]');
       if (imageNode) {
         imageNode.setAttribute('data-image-preview-default-src', product.image || '');
@@ -623,10 +688,10 @@
   }
 
   async function submitCategoryManageFormAsync(form) {
-    var response = null;
-    var result = null;
-    var formData = null;
-    var urlEncodedData = null;
+    let response = null;
+    let result = null;
+    let formData = null;
+    let urlEncodedData = null;
 
     if (!form || form.getAttribute('data-is-submitting') === '1') {
       return;
@@ -644,7 +709,7 @@
     urlEncodedData = new URLSearchParams(formData).toString();
 
     try {
-      response = await fetch(form.action, {
+      let fetchResult = await fetchAdminJson(form.action, {
         method: 'POST',
         body: urlEncodedData,
         credentials: 'same-origin',
@@ -655,22 +720,27 @@
         },
       });
 
-      if (response.url && response.url.indexOf('/admin/login') !== -1) {
-        window.location.href = '/admin/login';
+      if (fetchResult.redirectedToLogin) {
         return;
       }
 
-      result = await response.json();
+      response = fetchResult.response;
+      result = fetchResult.payload;
 
-      if (!result.success) {
-        showToast('error', result.message || 'Failed to save category');
+      if (!result || typeof result !== 'object') {
+        showToast('error', 'Unexpected server response. Please refresh and try again.');
         return;
       }
 
-      showToast('success', result.message || 'Category saved successfully');
+      if (!isSuccessResponsePayload(result)) {
+        showToast('error', buildResponseMessage(result, 'Failed to save category'));
+        return;
+      }
+
+      showToast('success', buildResponseMessage(result, 'Category saved successfully'));
 
       setTimeout(function () {
-        var redirectPath = result && result.redirectPath ? String(result.redirectPath).trim() : '';
+        let redirectPath = result && result.redirectPath ? String(result.redirectPath).trim() : '';
 
         if (redirectPath) {
           window.location.assign(redirectPath);
@@ -689,19 +759,19 @@
   }
 
   function addProductToTable(product) {
-    var tbody = document.querySelector('table tbody');
+    let tbody = document.querySelector('table tbody');
     if (!tbody || !product) {
       return;
     }
 
-    var hasDiscount = product.originalPrice && product.originalPrice !== product.price;
-    var stockValue = product.quantity || product.quantity === 0 ? product.quantity : '-';
-    var rowId = product.id || '';
-    var row = document.createElement('tr');
+    let hasDiscount = product.originalPrice && product.originalPrice !== product.price;
+    let stockValue = product.quantity || product.quantity === 0 ? product.quantity : '-';
+    let rowId = product.id || '';
+    let row = document.createElement('tr');
     row.className = 'align-top bg-white';
     row.setAttribute('data-view-panel', rowId);
 
-    var priceHtml = '';
+    let priceHtml = '';
     if (hasDiscount) {
       priceHtml += '<p class="text-xs font-semibold text-red-600 line-through">' + (product.originalPrice || '') + '</p>';
     }
@@ -733,8 +803,8 @@
     tbody.insertBefore(row, tbody.firstChild);
 
     // Add event listeners for the new buttons
-    var editBtn = row.querySelector('[data-edit-toggle]');
-    var deleteBtn = row.querySelector('[data-delete-trigger]');
+    let editBtn = row.querySelector('[data-edit-toggle]');
+    let deleteBtn = row.querySelector('[data-delete-trigger]');
 
     if (editBtn) {
       editBtn.addEventListener('click', function () {
@@ -744,7 +814,7 @@
 
     if (deleteBtn) {
       deleteBtn.addEventListener('click', function () {
-        var form = document.querySelector('[data-delete-form="' + rowId + '"]');
+        let form = document.querySelector('[data-delete-form="' + rowId + '"]');
         if (form) {
           showDeleteAlert(form, 'Delete Product', 'Delete "' + (product.name || 'this product') + '"? This action cannot be undone.');
         }
@@ -753,15 +823,14 @@
   }
 
   async function submitProductFormWithoutReload(form, activeSubmitter, options) {
-    var response = null;
-    var result = null;
-    var finalUrl = null;
-    var hasError = false;
-    var message = '';
-    var successFallbackMessage = options && options.successFallbackMessage
+    let response = null;
+    let result = null;
+    let hasError = false;
+    let message = '';
+    let successFallbackMessage = options && options.successFallbackMessage
       ? options.successFallbackMessage
       : 'Product saved successfully.';
-    var errorFallbackMessage = options && options.errorFallbackMessage
+    let errorFallbackMessage = options && options.errorFallbackMessage
       ? options.errorFallbackMessage
       : 'Could not save product. Please try again.';
 
@@ -778,7 +847,7 @@
     setLoadingOverlay(true);
 
     try {
-      response = await fetch(form.action, {
+      let fetchResult = await fetchAdminJson(form.action, {
         method: 'POST',
         body: new FormData(form),
         credentials: 'same-origin',
@@ -788,28 +857,32 @@
         },
       });
 
-      finalUrl = new URL(response.url, window.location.href);
-      if (finalUrl.pathname === '/admin/login') {
-        window.location.href = '/admin/login';
+      if (fetchResult.redirectedToLogin) {
         return;
       }
 
-      // Parse JSON response
-      result = await response.json();
-      hasError = !result.success;
+      response = fetchResult.response;
+      result = fetchResult.payload;
+
+      if (!result || typeof result !== 'object') {
+        showToast('error', 'Unexpected server response. Please refresh and try again.');
+        return;
+      }
+
+      hasError = !isSuccessResponsePayload(result);
 
       if (hasError) {
         // Handle validation errors (array of errors) or single error message
         if (result.errors && Array.isArray(result.errors) && result.errors.length > 0) {
           message = result.errors.map(function (err) { return err.message; }).join(', ');
         } else {
-          message = result.message || result.error || errorFallbackMessage;
+          message = buildResponseMessage(result, errorFallbackMessage);
         }
         showToast('error', message);
         return;
       }
 
-      message = result.message || successFallbackMessage;
+      message = buildResponseMessage(result, successFallbackMessage);
       showToast('success', message);
 
       if (options && typeof options.onSuccess === 'function') {
@@ -860,7 +933,7 @@
   if (createProductForm) {
     createProductForm.setAttribute('data-skip-global-loading', 'true');
     createProductForm.addEventListener('submit', function (event) {
-      var submitter = event.submitter && event.submitter.form === createProductForm
+      let submitter = event.submitter && event.submitter.form === createProductForm
         ? event.submitter
         : null;
 
@@ -882,7 +955,7 @@
     });
 
     // Handle clear button
-    var clearFormBtn = createProductForm.querySelector('[data-clear-form]');
+    let clearFormBtn = createProductForm.querySelector('[data-clear-form]');
     if (clearFormBtn) {
       clearFormBtn.addEventListener('click', function () {
         createProductForm.reset();
@@ -904,7 +977,7 @@
   document.querySelectorAll('form[data-edit-form]').forEach(function (editForm) {
     editForm.setAttribute('data-skip-global-loading', 'true');
     editForm.addEventListener('submit', function (event) {
-      var submitter = event.submitter && event.submitter.form === editForm
+      let submitter = event.submitter && event.submitter.form === editForm
         ? event.submitter
         : null;
 
@@ -924,8 +997,8 @@
 
   document.querySelectorAll('[data-delete-trigger]').forEach(function (button) {
     button.addEventListener('click', function () {
-      var cardId = button.getAttribute('data-delete-trigger');
-      var form = document.querySelector('[data-delete-form="' + cardId + '"]');
+      let cardId = button.getAttribute('data-delete-trigger');
+      let form = document.querySelector('[data-delete-form="' + cardId + '"]');
       if (!form) {
         return;
       }
@@ -940,9 +1013,9 @@
 
   document.querySelectorAll('[data-delete-category-trigger]').forEach(function (button) {
     button.addEventListener('click', function () {
-      var categoryKey = button.getAttribute('data-delete-category-trigger');
-      var categoryName = button.getAttribute('data-category-name') || 'this category';
-      var form = document.querySelector('[data-delete-category-form="' + categoryKey + '"]');
+      let categoryKey = button.getAttribute('data-delete-category-trigger');
+      let categoryName = button.getAttribute('data-category-name') || 'this category';
+      let form = document.querySelector('[data-delete-category-form="' + categoryKey + '"]');
       if (!form) {
         return;
       }
@@ -956,10 +1029,10 @@
   });
 
   async function submitDeleteFormAsync(form) {
-    var response = null;
-    var result = null;
-    var productId = null;
-    var categoryName = null;
+    let response = null;
+    let result = null;
+    let productId = null;
+    let categoryName = null;
 
     if (!form) {
       return;
@@ -968,8 +1041,8 @@
     setLoadingOverlay(true);
 
     try {
-      var urlEncodedData = new URLSearchParams(new FormData(form)).toString();
-      response = await fetch(form.action, {
+      let urlEncodedData = new URLSearchParams(new FormData(form)).toString();
+      let fetchResult = await fetchAdminJson(form.action, {
         method: 'POST',
         body: urlEncodedData,
         credentials: 'same-origin',
@@ -980,25 +1053,30 @@
         },
       });
 
-      if (response.url && response.url.indexOf('/admin/login') !== -1) {
-        window.location.href = '/admin/login';
+      if (fetchResult.redirectedToLogin) {
         return;
       }
 
-      result = await response.json();
+      response = fetchResult.response;
+      result = fetchResult.payload;
 
-      if (result.success) {
-        var deletedProductId = form.querySelector('input[name="productId"]')?.value;
-        var deletedCategoryName = form.querySelector('input[name="categoryName"]')?.value;
-        var deleteMessage = deletedCategoryName ? 'Category deleted successfully' : (deletedProductId ? 'Product deleted successfully' : 'Deleted successfully');
-        showToast('success', result.message || deleteMessage);
+      if (!result || typeof result !== 'object') {
+        showToast('error', 'Unexpected server response. Please refresh and try again.');
+        return;
+      }
+
+      if (isSuccessResponsePayload(result)) {
+        let deletedProductId = form.querySelector('input[name="productId"]')?.value;
+        let deletedCategoryName = form.querySelector('input[name="categoryName"]')?.value;
+        let deleteMessage = deletedCategoryName ? 'Category deleted successfully' : (deletedProductId ? 'Product deleted successfully' : 'Deleted successfully');
+        showToast('success', buildResponseMessage(result, deleteMessage));
         // Remove the deleted item from DOM
         productId = deletedProductId;
         categoryName = deletedCategoryName;
 
         if (productId) {
-          var viewRow = document.querySelector('[data-view-panel="' + productId + '"]');
-          var editRow = document.querySelector('[data-edit-row="' + productId + '"]');
+          let viewRow = document.querySelector('[data-view-panel="' + productId + '"]');
+          let editRow = document.querySelector('[data-edit-row="' + productId + '"]');
           if (viewRow) {
             viewRow.remove();
           }
@@ -1014,7 +1092,7 @@
           }, 800);
         }
       } else {
-        showToast('error', result.message || 'Failed to delete');
+        showToast('error', buildResponseMessage(result, 'Failed to delete'));
       }
     } catch (error) {
       showToast('error', 'Failed to delete. Please try again.');

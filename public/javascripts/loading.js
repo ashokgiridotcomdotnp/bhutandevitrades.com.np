@@ -1,9 +1,9 @@
 (function () {
-  var overlayElement = null;
-  var isVisible = false;
-  var pendingShowTimerId = null;
-  var fallbackHideTimerId = null;
-  var showDelayMs = 140;
+  let overlayElement = null;
+  let isVisible = false;
+  let pendingShowTimerId = null;
+  let fallbackHideTimerId = null;
+  let showDelayMs = 140;
 
   function getOverlayElement() {
     if (overlayElement && document.body.contains(overlayElement)) {
@@ -15,7 +15,7 @@
   }
 
   function setOverlayVisible(shouldShow) {
-    var overlay = getOverlayElement();
+    let overlay = getOverlayElement();
 
     if (!overlay) {
       return;
@@ -42,13 +42,13 @@
   }
 
   function normalizeFormMethod(form) {
-    var rawMethod = String(form.getAttribute('method') || 'get').trim().toLowerCase();
+    let rawMethod = String(form.getAttribute('method') || 'get').trim().toLowerCase();
     return rawMethod || 'get';
   }
 
   function shouldHandleForm(form) {
-    var formTarget = '';
-    var formMethod = '';
+    let formTarget = '';
+    let formMethod = '';
 
     if (!form || form.tagName !== 'FORM') {
       return false;
@@ -99,7 +99,7 @@
   }
 
   function handleFormSubmit(event) {
-    var submittedForm = event.target;
+    let submittedForm = event.target;
 
     if (!shouldHandleForm(submittedForm)) {
       return;
@@ -130,9 +130,9 @@
   }
 
   function isHandleableAnchor(anchor, event) {
-    var hrefValue = '';
-    var targetValue = '';
-    var resolvedUrl = null;
+    let hrefValue = '';
+    let targetValue = '';
+    let resolvedUrl = null;
 
     if (!anchor || anchor.tagName !== 'A') {
       return false;
@@ -186,8 +186,8 @@
   }
 
   function handleDocumentClick(event) {
-    var targetNode = event.target;
-    var anchor = targetNode && typeof targetNode.closest === 'function'
+    let targetNode = event.target;
+    let anchor = targetNode && typeof targetNode.closest === 'function'
       ? targetNode.closest('a')
       : null;
 
@@ -205,8 +205,8 @@
   }
 
   function patchNativeFormSubmit() {
-    var prototypeRef = null;
-    var nativeSubmit = null;
+    let prototypeRef = null;
+    let nativeSubmit = null;
 
     if (!window.HTMLFormElement || !window.HTMLFormElement.prototype) {
       return;

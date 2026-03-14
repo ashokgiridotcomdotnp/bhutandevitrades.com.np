@@ -13,7 +13,7 @@
     <main class="app-shell py-6 pro-page-enter">
       <%
         function formatDateTime(value) {
-          var parsedDate = value ? new Date(value) : null;
+          let parsedDate = value ? new Date(value) : null;
 
           if (!parsedDate || Number.isNaN(parsedDate.getTime())) {
             return '-';
@@ -28,27 +28,27 @@
           });
         }
 
-        var orderRequests = Array.isArray(adminOrderRequests)
+        let orderRequests = Array.isArray(adminOrderRequests)
           ? adminOrderRequests.filter(function (item) {
               return item && item._id;
             })
           : [];
-        var orderRequestsError = String(adminOrderRequestsError || '').trim();
-        var pendingOrdersCount = Number.isFinite(Number(pendingOrderRequestsCount))
+        let orderRequestsError = String(adminOrderRequestsError || '').trim();
+        let pendingOrdersCount = Number.isFinite(Number(pendingOrderRequestsCount))
           ? Number(pendingOrderRequestsCount)
           : 0;
-        var acceptedOrdersCount = Number.isFinite(Number(acceptedOrderRequestsCount))
+        let acceptedOrdersCount = Number.isFinite(Number(acceptedOrderRequestsCount))
           ? Number(acceptedOrderRequestsCount)
           : 0;
-        var totalOrdersCount = Number.isFinite(Number(totalOrderRequestsCount))
+        let totalOrdersCount = Number.isFinite(Number(totalOrderRequestsCount))
           ? Number(totalOrderRequestsCount)
           : (pendingOrdersCount + acceptedOrdersCount);
-        var requestedOrderView = String(adminOrdersView || '').toLowerCase();
-        var selectedOrderView = 'pending';
-        var selectedOrdersCurrentPage = Number.isFinite(Number(adminOrdersPage)) ? Math.max(1, Number(adminOrdersPage)) : 1;
-        var selectedOrdersTotalPages = Number.isFinite(Number(adminOrdersTotalPages)) ? Math.max(1, Number(adminOrdersTotalPages)) : 1;
-        var pendingOrderRows = selectedOrderView === 'pending' ? orderRequests : [];
-        var acceptedOrderRows = selectedOrderView === 'accepted' ? orderRequests : [];
+        let requestedOrderView = String(adminOrdersView || '').toLowerCase();
+        let selectedOrderView = 'pending';
+        let selectedOrdersCurrentPage = Number.isFinite(Number(adminOrdersPage)) ? Math.max(1, Number(adminOrdersPage)) : 1;
+        let selectedOrdersTotalPages = Number.isFinite(Number(adminOrdersTotalPages)) ? Math.max(1, Number(adminOrdersTotalPages)) : 1;
+        let pendingOrderRows = selectedOrderView === 'pending' ? orderRequests : [];
+        let acceptedOrderRows = selectedOrderView === 'accepted' ? orderRequests : [];
 
         if (requestedOrderView === 'pending' || requestedOrderView === 'accepted') {
           selectedOrderView = requestedOrderView;
@@ -60,14 +60,14 @@
         acceptedOrderRows = selectedOrderView === 'accepted' ? orderRequests : [];
 
         function buildOrdersPageHref(targetPage, targetView) {
-          var normalizedView = String(targetView || selectedOrderView).toLowerCase();
-          var safeView = normalizedView === 'accepted' ? 'accepted' : 'pending';
-          var parsedPage = Number(targetPage);
-          var safePage = Number.isFinite(parsedPage) && parsedPage > 0 ? Math.floor(parsedPage) : 1;
+          let normalizedView = String(targetView || selectedOrderView).toLowerCase();
+          let safeView = normalizedView === 'accepted' ? 'accepted' : 'pending';
+          let parsedPage = Number(targetPage);
+          let safePage = Number.isFinite(parsedPage) && parsedPage > 0 ? Math.floor(parsedPage) : 1;
           return '/admin/orders?view=' + encodeURIComponent(safeView) + '&page=' + safePage;
         }
 
-        var ordersPagePath = buildOrdersPageHref(selectedOrdersCurrentPage, selectedOrderView);
+        let ordersPagePath = buildOrdersPageHref(selectedOrdersCurrentPage, selectedOrderView);
       %>
 
       <header class="mb-4 pro-panel px-5 py-4 pro-stagger">
@@ -168,7 +168,7 @@
                   </tr>
                 </thead>
                 <tbody>
-                  <% for (var skeletonIndex = 0; skeletonIndex < 4; skeletonIndex += 1) { %>
+                  <% for (let skeletonIndex = 0; skeletonIndex < 4; skeletonIndex += 1) { %>
                   <tr>
                     <td class="border border-slate-200 px-3 py-3"><div class="h-10 rounded bg-slate-200"></div></td>
                     <td class="border border-slate-200 px-3 py-3"><div class="h-4 rounded bg-slate-200"></div></td>
@@ -209,18 +209,18 @@
               <tbody class="text-sm text-slate-700">
                 <% pendingOrderRows.forEach(function (orderItem) { %>
                 <%
-                  var orderId = String(orderItem && orderItem._id ? orderItem._id : '');
-                  var productId = String(orderItem && orderItem.productId ? orderItem.productId : '');
-                  var productName = String(orderItem && orderItem.productName ? orderItem.productName : 'Product');
-                  var productType = String(orderItem && orderItem.productType ? orderItem.productType : 'Category');
-                  var quantity = Number(orderItem && orderItem.quantity);
-                  var safeQuantity = Number.isFinite(quantity) && quantity > 0 ? Math.floor(quantity) : 1;
-                  var totalLabel = String(orderItem && orderItem.totalLabel ? orderItem.totalLabel : 'Contact for price');
-                  var customerName = String(orderItem && orderItem.customerName ? orderItem.customerName : '-');
-                  var customerEmail = String(orderItem && orderItem.customerEmail ? orderItem.customerEmail : '-');
-                  var phoneNumber = String(orderItem && orderItem.phoneNumber ? orderItem.phoneNumber : '-');
-                  var note = String(orderItem && orderItem.note ? orderItem.note : '-');
-                  var createdAtLabel = formatDateTime(orderItem && orderItem.createdAt);
+                  let orderId = String(orderItem && orderItem._id ? orderItem._id : '');
+                  let productId = String(orderItem && orderItem.productId ? orderItem.productId : '');
+                  let productName = String(orderItem && orderItem.productName ? orderItem.productName : 'Product');
+                  let productType = String(orderItem && orderItem.productType ? orderItem.productType : 'Category');
+                  let quantity = Number(orderItem && orderItem.quantity);
+                  let safeQuantity = Number.isFinite(quantity) && quantity > 0 ? Math.floor(quantity) : 1;
+                  let totalLabel = String(orderItem && orderItem.totalLabel ? orderItem.totalLabel : 'Contact for price');
+                  let customerName = String(orderItem && orderItem.customerName ? orderItem.customerName : '-');
+                  let customerEmail = String(orderItem && orderItem.customerEmail ? orderItem.customerEmail : '-');
+                  let phoneNumber = String(orderItem && orderItem.phoneNumber ? orderItem.phoneNumber : '-');
+                  let note = String(orderItem && orderItem.note ? orderItem.note : '-');
+                  let createdAtLabel = formatDateTime(orderItem && orderItem.createdAt);
                 %>
                 <tr class="align-top transition-colors hover:bg-slate-50">
                   <td class="border border-slate-200 px-3 py-2">
@@ -325,21 +325,21 @@
               <tbody class="text-sm text-slate-700">
                 <% acceptedOrderRows.forEach(function (orderItem) { %>
                 <%
-                  var orderIdAccepted = String(orderItem && orderItem._id ? orderItem._id : '');
-                  var productIdAccepted = String(orderItem && orderItem.productId ? orderItem.productId : '');
-                  var productNameAccepted = String(orderItem && orderItem.productName ? orderItem.productName : 'Product');
-                  var productTypeAccepted = String(orderItem && orderItem.productType ? orderItem.productType : 'Category');
-                  var quantityAccepted = Number(orderItem && orderItem.quantity);
-                  var safeQuantityAccepted = Number.isFinite(quantityAccepted) && quantityAccepted > 0 ? Math.floor(quantityAccepted) : 1;
-                  var totalLabelAccepted = String(orderItem && orderItem.totalLabel ? orderItem.totalLabel : 'Contact for price');
-                  var customerNameAccepted = String(orderItem && orderItem.customerName ? orderItem.customerName : '-');
-                  var customerEmailAccepted = String(orderItem && orderItem.customerEmail ? orderItem.customerEmail : '-');
-                  var phoneNumberAccepted = String(orderItem && orderItem.phoneNumber ? orderItem.phoneNumber : '-');
-                  var noteAccepted = String(orderItem && orderItem.note ? orderItem.note : '-');
-                  var createdAtLabelAccepted = formatDateTime(orderItem && orderItem.createdAt);
-                  var adminMessageAccepted = String(orderItem && orderItem.adminMessage ? orderItem.adminMessage : '-');
-                  var acceptedAtLabel = formatDateTime(orderItem && orderItem.adminAcceptedAt);
-                  var isAdminEmailSent = Boolean(orderItem && orderItem.adminEmailNotificationSent);
+                  let orderIdAccepted = String(orderItem && orderItem._id ? orderItem._id : '');
+                  let productIdAccepted = String(orderItem && orderItem.productId ? orderItem.productId : '');
+                  let productNameAccepted = String(orderItem && orderItem.productName ? orderItem.productName : 'Product');
+                  let productTypeAccepted = String(orderItem && orderItem.productType ? orderItem.productType : 'Category');
+                  let quantityAccepted = Number(orderItem && orderItem.quantity);
+                  let safeQuantityAccepted = Number.isFinite(quantityAccepted) && quantityAccepted > 0 ? Math.floor(quantityAccepted) : 1;
+                  let totalLabelAccepted = String(orderItem && orderItem.totalLabel ? orderItem.totalLabel : 'Contact for price');
+                  let customerNameAccepted = String(orderItem && orderItem.customerName ? orderItem.customerName : '-');
+                  let customerEmailAccepted = String(orderItem && orderItem.customerEmail ? orderItem.customerEmail : '-');
+                  let phoneNumberAccepted = String(orderItem && orderItem.phoneNumber ? orderItem.phoneNumber : '-');
+                  let noteAccepted = String(orderItem && orderItem.note ? orderItem.note : '-');
+                  let createdAtLabelAccepted = formatDateTime(orderItem && orderItem.createdAt);
+                  let adminMessageAccepted = String(orderItem && orderItem.adminMessage ? orderItem.adminMessage : '-');
+                  let acceptedAtLabel = formatDateTime(orderItem && orderItem.adminAcceptedAt);
+                  let isAdminEmailSent = Boolean(orderItem && orderItem.adminEmailNotificationSent);
                 %>
                 <tr class="align-top transition-colors hover:bg-slate-50">
                   <td class="border border-slate-200 px-3 py-2">

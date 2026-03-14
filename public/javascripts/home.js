@@ -1,7 +1,7 @@
 (function () {
   function initProductCards(rootElement) {
-    var scope = rootElement && typeof rootElement.querySelectorAll === 'function' ? rootElement : document;
-    var productCards = scope.querySelectorAll('[data-product-card]');
+    let scope = rootElement && typeof rootElement.querySelectorAll === 'function' ? rootElement : document;
+    let productCards = scope.querySelectorAll('[data-product-card]');
 
     if (!productCards.length) {
       return;
@@ -13,8 +13,8 @@
     }
 
     productCards.forEach(function (card) {
-      var image = null;
-      var didResolve = false;
+      let image = null;
+      let didResolve = false;
 
       if (card.classList.contains('is-ready')) {
         return;
@@ -55,14 +55,14 @@
 })();
 
 (function () {
-  var productsSection = document.querySelector('[data-store-products]');
-  var productsGrid = document.getElementById('products-grid');
-  var pagination = productsSection ? productsSection.querySelector('[data-products-pagination]') : null;
-  var sentinel = null;
-  var observer = null;
-  var loadingSkeletonGrid = null;
-  var isLoading = false;
-  var nextPageHref = productsSection ? String(productsSection.getAttribute('data-next-page-href') || '').trim() : '';
+  let productsSection = document.querySelector('[data-store-products]');
+  let productsGrid = document.getElementById('products-grid');
+  let pagination = productsSection ? productsSection.querySelector('[data-products-pagination]') : null;
+  let sentinel = null;
+  let observer = null;
+  let loadingSkeletonGrid = null;
+  let isLoading = false;
+  let nextPageHref = productsSection ? String(productsSection.getAttribute('data-next-page-href') || '').trim() : '';
 
   if (!productsSection || !productsGrid || !nextPageHref) {
     return;
@@ -85,7 +85,7 @@
   }
 
   function buildLoadingSkeletonCard() {
-    var card = document.createElement('article');
+    let card = document.createElement('article');
 
     card.className = 'pro-grid-card pointer-events-none relative overflow-hidden p-4';
     card.innerHTML = ''
@@ -115,7 +115,7 @@
     loadingSkeletonGrid.className = 'hidden grid gap-4 sm:grid-cols-2 lg:grid-cols-3';
     loadingSkeletonGrid.setAttribute('data-products-loading', 'true');
 
-    for (var index = 0; index < 3; index += 1) {
+    for (let index = 0; index < 3; index += 1) {
       loadingSkeletonGrid.appendChild(buildLoadingSkeletonCard());
     }
 
@@ -124,17 +124,17 @@
   }
 
   function setLoadingSkeletonVisible(shouldShow) {
-    var skeletonGrid = ensureLoadingSkeletonGrid();
+    let skeletonGrid = ensureLoadingSkeletonGrid();
     skeletonGrid.classList.toggle('hidden', !shouldShow);
   }
 
   function appendProductsFromHtml(htmlText) {
-    var parser = new window.DOMParser();
-    var doc = parser.parseFromString(htmlText, 'text/html');
-    var fetchedSection = doc.querySelector('[data-store-products]');
-    var fetchedGrid = doc.getElementById('products-grid');
-    var cards = fetchedGrid ? fetchedGrid.querySelectorAll('[data-product-card]') : [];
-    var fragment = document.createDocumentFragment();
+    let parser = new window.DOMParser();
+    let doc = parser.parseFromString(htmlText, 'text/html');
+    let fetchedSection = doc.querySelector('[data-store-products]');
+    let fetchedGrid = doc.getElementById('products-grid');
+    let cards = fetchedGrid ? fetchedGrid.querySelectorAll('[data-product-card]') : [];
+    let fragment = document.createDocumentFragment();
 
     if (!fetchedSection || !cards.length) {
       setNextPageHref('');
@@ -202,7 +202,7 @@
   productsSection.appendChild(sentinel);
 
   observer = new window.IntersectionObserver(function (entries) {
-    var shouldLoad = entries.some(function (entry) {
+    let shouldLoad = entries.some(function (entry) {
       return entry && entry.isIntersecting;
     });
 
@@ -217,19 +217,19 @@
 })();
 
 (function () {
-  var root = document.querySelector('[data-home-carousel]');
+  let root = document.querySelector('[data-home-carousel]');
   if (!root) {
     return;
   }
 
-  var track = root.querySelector('[data-carousel-track]');
-  var dots = root.querySelectorAll('[data-carousel-dot]');
-  var prevBtn = root.querySelector('[data-carousel-prev]');
-  var nextBtn = root.querySelector('[data-carousel-next]');
-  var totalSlides = dots.length;
-  var activeIndex = 0;
-  var autoTimer;
-  var prefersReducedMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  let track = root.querySelector('[data-carousel-track]');
+  let dots = root.querySelectorAll('[data-carousel-dot]');
+  let prevBtn = root.querySelector('[data-carousel-prev]');
+  let nextBtn = root.querySelector('[data-carousel-next]');
+  let totalSlides = dots.length;
+  let activeIndex = 0;
+  let autoTimer;
+  let prefersReducedMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
   if (!track || totalSlides <= 1) {
     return;
@@ -280,7 +280,7 @@
 
   dots.forEach(function (dot) {
     dot.addEventListener('click', function () {
-      var index = Number(dot.getAttribute('data-carousel-index'));
+      let index = Number(dot.getAttribute('data-carousel-index'));
       if (Number.isNaN(index)) {
         return;
       }
@@ -300,32 +300,32 @@
 })();
 
 (function () {
-  var modal = document.querySelector('[data-order-modal]');
-  var openButtons = document.querySelectorAll('[data-order-open]');
+  let modal = document.querySelector('[data-order-modal]');
+  let openButtons = document.querySelectorAll('[data-order-open]');
 
   if (!modal || !openButtons.length) {
     return;
   }
 
-  var closeButtons = modal.querySelectorAll('[data-order-close]');
-  var modalPanel = modal.querySelector('[data-order-modal-panel]');
-  var form = modal.querySelector('[data-order-form]');
-  var quantityInput = modal.querySelector('[data-order-quantity]');
-  var unitPriceInput = modal.querySelector('[data-order-unit-price]');
-  var totalElement = modal.querySelector('[data-order-total]');
-  var productNameElement = modal.querySelector('[data-order-product-name]');
-  var productTypeElement = modal.querySelector('[data-order-product-type]');
-  var customerNameInput = modal.querySelector('[data-order-customer-name]');
-  var phoneInput = modal.querySelector('[data-order-phone]');
-  var customerEmailInput = modal.querySelector('[data-order-customer-email]');
-  var noteInput = modal.querySelector('[data-order-note]');
-  var submitButton = form ? form.querySelector('button[type="submit"]') : null;
-  var whatsappBaseUrl = String(modal.getAttribute('data-whatsapp-base-url') || '').trim();
-  var authName = String(modal.getAttribute('data-order-auth-name') || '').trim();
-  var authEmail = String(modal.getAttribute('data-order-auth-email') || '').trim().toLowerCase();
-  var modalCloseTimer = null;
-  var modalTransitionDuration = 300;
-  var currentProduct = {
+  let closeButtons = modal.querySelectorAll('[data-order-close]');
+  let modalPanel = modal.querySelector('[data-order-modal-panel]');
+  let form = modal.querySelector('[data-order-form]');
+  let quantityInput = modal.querySelector('[data-order-quantity]');
+  let unitPriceInput = modal.querySelector('[data-order-unit-price]');
+  let totalElement = modal.querySelector('[data-order-total]');
+  let productNameElement = modal.querySelector('[data-order-product-name]');
+  let productTypeElement = modal.querySelector('[data-order-product-type]');
+  let customerNameInput = modal.querySelector('[data-order-customer-name]');
+  let phoneInput = modal.querySelector('[data-order-phone]');
+  let customerEmailInput = modal.querySelector('[data-order-customer-email]');
+  let noteInput = modal.querySelector('[data-order-note]');
+  let submitButton = form ? form.querySelector('button[type="submit"]') : null;
+  let whatsappBaseUrl = String(modal.getAttribute('data-whatsapp-base-url') || '').trim();
+  let authName = String(modal.getAttribute('data-order-auth-name') || '').trim();
+  let authEmail = String(modal.getAttribute('data-order-auth-email') || '').trim().toLowerCase();
+  let modalCloseTimer = null;
+  let modalTransitionDuration = 300;
+  let currentProduct = {
     id: '',
     name: '',
     type: '',
@@ -334,7 +334,7 @@
   };
 
   function parsePositiveNumber(value) {
-    var parsedValue = Number(String(value || '').replace(/,/g, '').replace(/[^0-9.]/g, ''));
+    let parsedValue = Number(String(value || '').replace(/,/g, '').replace(/[^0-9.]/g, ''));
     if (!Number.isFinite(parsedValue) || parsedValue <= 0) {
       return 0;
     }
@@ -342,7 +342,7 @@
   }
 
   function toPositiveInteger(value) {
-    var parsedValue = Number(value);
+    let parsedValue = Number(value);
     if (!Number.isFinite(parsedValue) || parsedValue < 1) {
       return 1;
     }
@@ -350,7 +350,7 @@
   }
 
   function formatNprAmount(value) {
-    var parsedValue = Number(value);
+    let parsedValue = Number(value);
     if (!Number.isFinite(parsedValue) || parsedValue < 0) {
       return '0';
     }
@@ -361,9 +361,9 @@
   }
 
   function refreshOrderTotal() {
-    var quantity = toPositiveInteger(quantityInput.value);
-    var unitPrice = parsePositiveNumber(currentProduct.unitPriceValue);
-    var total = quantity * unitPrice;
+    let quantity = toPositiveInteger(quantityInput.value);
+    let unitPrice = parsePositiveNumber(currentProduct.unitPriceValue);
+    let total = quantity * unitPrice;
 
     unitPriceInput.value = currentProduct.unitPriceLabel;
 
@@ -376,7 +376,7 @@
   }
 
   function buildLocalWhatsappMessage(orderData) {
-    var lines = [];
+    let lines = [];
 
     lines.push('Hello, I want to place an order.');
     lines.push('');
@@ -536,15 +536,15 @@
   }
 
   form.addEventListener('submit', async function (event) {
-    var quantity = toPositiveInteger(quantityInput.value);
-    var unitPrice = parsePositiveNumber(currentProduct.unitPriceValue);
-    var total = unitPrice > 0 ? quantity * unitPrice : 0;
-    var customerName = String(customerNameInput && customerNameInput.value ? customerNameInput.value : '').trim();
-    var phoneNumber = String(phoneInput && phoneInput.value ? phoneInput.value : '').trim();
-    var customerEmail = String(customerEmailInput && customerEmailInput.value ? customerEmailInput.value : '').trim().toLowerCase();
-    var note = String(noteInput && noteInput.value ? noteInput.value : '').trim();
-    var totalLabel = unitPrice > 0 ? ('NPR ' + formatNprAmount(total)) : 'Contact for price';
-    var payload = {
+    let quantity = toPositiveInteger(quantityInput.value);
+    let unitPrice = parsePositiveNumber(currentProduct.unitPriceValue);
+    let total = unitPrice > 0 ? quantity * unitPrice : 0;
+    let customerName = String(customerNameInput && customerNameInput.value ? customerNameInput.value : '').trim();
+    let phoneNumber = String(phoneInput && phoneInput.value ? phoneInput.value : '').trim();
+    let customerEmail = String(customerEmailInput && customerEmailInput.value ? customerEmailInput.value : '').trim().toLowerCase();
+    let note = String(noteInput && noteInput.value ? noteInput.value : '').trim();
+    let totalLabel = unitPrice > 0 ? ('NPR ' + formatNprAmount(total)) : 'Contact for price';
+    let payload = {
       productId: currentProduct.id,
       productName: currentProduct.name || 'Product',
       productType: currentProduct.type || 'N/A',
@@ -556,10 +556,10 @@
       customerEmail: customerEmail,
       note: note,
     };
-    var targetUrl = '';
-    var response = null;
-    var result = null;
-    var whatsappMessage = '';
+    let targetUrl = '';
+    let response = null;
+    let result = null;
+    let whatsappMessage = '';
 
     event.preventDefault();
 

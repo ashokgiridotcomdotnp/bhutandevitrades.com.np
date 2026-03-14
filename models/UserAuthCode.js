@@ -1,7 +1,8 @@
-var mongoose = require('mongoose');
-var allowedAuthCodePurposes = ['signup', 'password-reset'];
+import mongoose from 'mongoose';
 
-var userAuthCodeSchema = new mongoose.Schema(
+let allowedAuthCodePurposes = ['signup', 'password-reset'];
+
+let userAuthCodeSchema = new mongoose.Schema(
   {
     recordKey: {
       type: String,
@@ -66,5 +67,4 @@ userAuthCodeSchema.index({ recordKey: 1 }, { unique: true, sparse: true, name: '
 userAuthCodeSchema.index({ email: 1, purpose: 1, createdAt: -1 });
 userAuthCodeSchema.index({ email: 1, purpose: 1, usedAt: 1, expiresAt: 1, createdAt: -1 }, { name: 'idx_user_auth_code_lookup' });
 userAuthCodeSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 });
-
-module.exports = mongoose.models.UserAuthCode || mongoose.model('UserAuthCode', userAuthCodeSchema);
+export default mongoose.models.UserAuthCode || mongoose.model('UserAuthCode', userAuthCodeSchema);

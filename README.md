@@ -64,7 +64,7 @@ Uploads
 ```
 .
 ├── app.js
-├── bin/www
+├── bin/www.js
 ├── controllers/
 │   ├── adminController.js
 │   ├── authController.js

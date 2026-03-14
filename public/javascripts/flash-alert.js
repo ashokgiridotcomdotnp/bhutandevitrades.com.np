@@ -1,21 +1,21 @@
 (function () {
-  var TOAST_MAX_COUNT = 5;
-  var TOAST_DURATION_SUCCESS = 3200;
-  var TOAST_DURATION_ERROR = 4500;
-  var TOAST_DURATION_WARNING = 4000;
-  var TOAST_ROOT_ID = 'bd-toast-root';
-  var TOAST_TEMPLATE_ID = 'bd-toast-template';
-  var TOAST_ROOT_CLASSNAME = 'bd-toast-root';
-  var TOAST_ITEM_CLASSNAME = 'bd-toast-item';
+  let TOAST_MAX_COUNT = 5;
+  let TOAST_DURATION_SUCCESS = 3200;
+  let TOAST_DURATION_ERROR = 4500;
+  let TOAST_DURATION_WARNING = 4000;
+  let TOAST_ROOT_ID = 'bd-toast-root';
+  let TOAST_TEMPLATE_ID = 'bd-toast-template';
+  let TOAST_ROOT_CLASSNAME = 'bd-toast-root';
+  let TOAST_ITEM_CLASSNAME = 'bd-toast-item';
 
   function getToastRoot() {
-    var existingRoot = document.getElementById(TOAST_ROOT_ID);
+    let existingRoot = document.getElementById(TOAST_ROOT_ID);
 
     if (existingRoot) {
       return existingRoot;
     }
 
-    var root = document.createElement('div');
+    let root = document.createElement('div');
     root.id = TOAST_ROOT_ID;
     root.className = TOAST_ROOT_CLASSNAME;
     document.body.appendChild(root);
@@ -37,7 +37,7 @@
   }
 
   function getToastTemplate() {
-    var template = document.getElementById(TOAST_TEMPLATE_ID);
+    let template = document.getElementById(TOAST_TEMPLATE_ID);
 
     if (!template || !template.content || !template.content.firstElementChild) {
       return null;
@@ -51,8 +51,8 @@
       return '';
     }
 
-    var dedicatedMessage = alert.querySelector('[data-toast-message]');
-    var clonedNode = null;
+    let dedicatedMessage = alert.querySelector('[data-toast-message]');
+    let clonedNode = null;
 
     if (dedicatedMessage) {
       return String(dedicatedMessage.textContent || '').trim();
@@ -88,11 +88,11 @@
   }
 
   function clearFlashQueryParams() {
-    var currentUrl = null;
-    var hasStatus = false;
-    var hasError = false;
-    var nextQuery = '';
-    var nextUrl = '';
+    let currentUrl = null;
+    let hasStatus = false;
+    let hasError = false;
+    let nextQuery = '';
+    let nextUrl = '';
 
     if (!window.history || typeof window.history.replaceState !== 'function') {
       return;
@@ -132,7 +132,7 @@
   }
 
   function getToastIconWrapClassName(type) {
-    var baseClass = 'bd-toast-icon-wrap';
+    let baseClass = 'bd-toast-icon-wrap';
 
     if (type === 'error') {
       return baseClass + ' bd-toast-icon-wrap--error';
@@ -170,8 +170,8 @@
   }
 
   function createSvg(pathValue, className) {
-    var svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-    var path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    let svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    let path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
 
     if (className) {
       svg.setAttribute('class', className);
@@ -194,15 +194,15 @@
   }
 
   function createToast(toastId, type, message) {
-    var template = getToastTemplate();
-    var toast = null;
-    var iconWrap = null;
-    var iconPath = null;
-    var iconSrText = null;
-    var messageWrap = null;
-    var button = null;
-    var buttonSrText = null;
-    var closeSvg = null;
+    let template = getToastTemplate();
+    let toast = null;
+    let iconWrap = null;
+    let iconPath = null;
+    let iconSrText = null;
+    let messageWrap = null;
+    let button = null;
+    let buttonSrText = null;
+    let closeSvg = null;
 
     if (template) {
       toast = template.content.firstElementChild.cloneNode(true);
@@ -273,14 +273,14 @@
   }
 
   function showToast(messageOrConfig, fallbackType) {
-    var toastConfig = normalizeToastInput(messageOrConfig, fallbackType);
-    var toastRoot = null;
-    var toast = null;
-    var toastId = '';
-    var message = '';
-    var type = 'success';
-    var duration = TOAST_DURATION_SUCCESS;
-    var closeButton = null;
+    let toastConfig = normalizeToastInput(messageOrConfig, fallbackType);
+    let toastRoot = null;
+    let toast = null;
+    let toastId = '';
+    let message = '';
+    let type = 'success';
+    let duration = TOAST_DURATION_SUCCESS;
+    let closeButton = null;
 
     if (!toastConfig || !toastConfig.message) {
       return;
@@ -336,16 +336,16 @@
   }
 
   function consumeInlineAlerts() {
-    var alerts = document.querySelectorAll('[data-success-alert], [data-error-alert], [data-warning-alert]');
-    var hasConsumedAnyAlert = false;
+    let alerts = document.querySelectorAll('[data-success-alert], [data-error-alert], [data-warning-alert]');
+    let hasConsumedAnyAlert = false;
 
     if (!alerts.length) {
       return;
     }
 
     alerts.forEach(function (alert) {
-      var message = extractAlertMessage(alert);
-      var type = 'success';
+      let message = extractAlertMessage(alert);
+      let type = 'success';
 
       if (alert.hasAttribute('data-error-alert')) {
         type = 'error';

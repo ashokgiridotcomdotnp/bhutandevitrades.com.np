@@ -1,18 +1,83 @@
 (function () {
+  function isSuccessResponsePayload(payload) {
+    return Boolean(payload && (payload.success === true || payload.ok === true));
+  }
+
+  function buildResponseMessage(payload, fallbackMessage) {
+    if (payload && typeof payload === 'object') {
+      let message = String(payload.message || payload.error || payload.errorCode || '').trim();
+      let requestId = String(payload.requestId || '').trim();
+
+      if (message && requestId) {
+        return message + ' (Request ID: ' + requestId + ')';
+      }
+
+      if (message) {
+        return message;
+      }
+    }
+
+    return String(fallbackMessage || '').trim() || 'Request failed. Please try again.';
+  }
+
+  async function readResponsePayload(response) {
+    let text = '';
+
+    try {
+      text = await response.text();
+    } catch (error) {
+      return { payload: null, text: '' };
+    }
+
+    if (!text) {
+      return { payload: null, text: '' };
+    }
+
+    try {
+      return { payload: JSON.parse(text), text: text };
+    } catch (error) {
+      return { payload: null, text: text };
+    }
+  }
+
+  async function fetchAdminJson(url, options) {
+    let response = await fetch(url, options);
+
+    if (response && response.url) {
+      try {
+        let finalUrl = new URL(response.url, window.location.href);
+        if (finalUrl.pathname === '/admin/login') {
+          window.location.href = '/admin/login';
+          return { response: response, payload: null, redirectedToLogin: true };
+        }
+      } catch (error) {
+        // ignore URL parsing issues
+      }
+    }
+
+    let payloadResult = await readResponsePayload(response);
+
+    return {
+      response: response,
+      payload: payloadResult.payload,
+      redirectedToLogin: false,
+    };
+  }
+
   function replaceStateWithUrl(url) {
     if (!window.history || typeof window.history.replaceState !== 'function') {
       return;
     }
 
-    var nextQuery = url.searchParams.toString();
-    var nextUrl = url.pathname + (nextQuery ? '?' + nextQuery : '') + url.hash;
+    let nextQuery = url.searchParams.toString();
+    let nextUrl = url.pathname + (nextQuery ? '?' + nextQuery : '') + url.hash;
     window.history.replaceState({}, document.title, nextUrl);
   }
 
   function sanitizeUrlQuery() {
-    var currentUrl = new URL(window.location.href);
-    var hasStatus = currentUrl.searchParams.has('status');
-    var hasError = currentUrl.searchParams.has('error');
+    let currentUrl = new URL(window.location.href);
+    let hasStatus = currentUrl.searchParams.has('status');
+    let hasError = currentUrl.searchParams.has('error');
 
     if (!hasStatus && !hasError) {
       return;
@@ -24,8 +89,8 @@
   }
 
   function setOrdersLoadingState(isLoading) {
-    var skeletonPanel = document.querySelector('[data-orders-skeleton]');
-    var contentPanel = document.querySelector('[data-orders-content]');
+    let skeletonPanel = document.querySelector('[data-orders-skeleton]');
+    let contentPanel = document.querySelector('[data-orders-content]');
 
     if (!skeletonPanel || !contentPanel) {
       return;
@@ -49,7 +114,7 @@
   }
 
   function setLoadingOverlay(isVisible) {
-    var globalLoading = window.bdLoading || null;
+    let globalLoading = window.bdLoading || null;
     if (!globalLoading || typeof globalLoading !== 'object') {
       return;
     }
@@ -65,10 +130,10 @@
   }
 
   async function submitOrderFormAsync(form) {
-    var response = null;
-    var result = null;
-    var orderId = null;
-    var formPayload = null;
+    let response = null;
+    let result = null;
+    let orderId = null;
+    let formPayload = null;
 
     if (!form) {
       return;
@@ -78,7 +143,7 @@
 
     try {
       formPayload = new URLSearchParams(new FormData(form));
-      response = await fetch(form.action, {
+      let fetchResult = await fetchAdminJson(form.action, {
         method: 'POST',
         body: formPayload,
         credentials: 'same-origin',
@@ -89,19 +154,24 @@
         },
       });
 
-      if (response.url && response.url.indexOf('/admin/login') !== -1) {
-        window.location.href = '/admin/login';
+      if (fetchResult.redirectedToLogin) {
         return;
       }
 
-      result = await response.json();
+      response = fetchResult.response;
+      result = fetchResult.payload;
 
-      if (result.success) {
-        showToast('success', result.message || 'Operation successful');
+      if (!result || typeof result !== 'object') {
+        showToast('error', 'Unexpected server response. Please refresh and try again.');
+        return;
+      }
+
+      if (isSuccessResponsePayload(result)) {
+        showToast('success', buildResponseMessage(result, 'Operation successful'));
         // Remove the row from DOM
         orderId = form.querySelector('input[name="orderId"]')?.value;
         if (orderId) {
-          var row = form.closest('tr');
+          let row = form.closest('tr');
           if (row) {
             row.style.transition = 'opacity 0.3s ease';
             row.style.opacity = '0';
@@ -111,7 +181,7 @@
           }
         }
       } else {
-        showToast('error', result.message || 'Operation failed');
+        showToast('error', buildResponseMessage(result, 'Operation failed'));
       }
     } catch (error) {
       showToast('error', 'Failed to process request. Please try again.');
@@ -121,7 +191,7 @@
   }
 
   function bindOrdersLoadingState() {
-    var links = Array.prototype.slice.call(document.querySelectorAll('[data-orders-nav-link]'));
+    let links = Array.prototype.slice.call(document.querySelectorAll('[data-orders-nav-link]'));
 
     links.forEach(function (link) {
       link.addEventListener('click', function (event) {

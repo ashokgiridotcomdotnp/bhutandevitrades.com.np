@@ -11,9 +11,9 @@
     <link rel="stylesheet" href="<%= assetPath('/stylesheets/style.css') %>" />
   </head>
   <%
-    var authenticatedUser = currentUser && currentUser.email ? currentUser : null;
-    var accountActionHref = authenticatedUser ? '/my-orders' : '/login';
-    var accountActionLabel = authenticatedUser ? 'My orders' : 'Login';
+    let authenticatedUser = currentUser && currentUser.email ? currentUser : null;
+    let accountActionHref = authenticatedUser ? '/my-orders' : '/login';
+    let accountActionLabel = authenticatedUser ? 'My orders' : 'Login';
   %>
   <body class="text-slate-900">
     <main class="app-shell flex min-h-screen items-center py-8 pro-page-enter">

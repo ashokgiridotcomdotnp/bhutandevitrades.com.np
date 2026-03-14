@@ -1,6 +1,5 @@
 {
   "ignore": [
-    "data/admin-data.json",
     "public/uploads/**"
   ]
 }
