@@ -13,8 +13,8 @@ import resendService from './resendService.js';
 let AppError = errors.AppError;
 let adminOrderRequestsLimit = 150;
 let adminOrderRequestsPageSize = 10;
-let adminOrderListSelectFields = 'productId productName productType quantity totalLabel customerName customerEmail phoneNumber note createdAt adminMessage adminAcceptedAt adminStatus';
-let customerOrderListSelectFields = 'productName productType quantity unitPriceLabel totalLabel phoneNumber note customerName createdAt status adminStatus adminMessage adminAcceptedAt productId';
+let adminOrderListSelectFields = 'productId productName productType quantity totalLabel customerName customerEmail phoneNumber note createdAt adminAcceptedAt adminStatus';
+let customerOrderListSelectFields = 'productName productType quantity unitPriceLabel totalLabel phoneNumber note customerName createdAt status adminStatus adminAcceptedAt productId';
 
 function toTrimmedString(value) {
   return String(value || '').trim();
@@ -517,8 +517,8 @@ async function acceptOrderRequest(payload) {
       }
     }
 
-    acceptedOrder = await Order.findByIdAndUpdate(
-      orderId,
+    acceptedOrder = await Order.findOneAndUpdate(
+      { _id: orderId, adminStatus: 'processing' },
       {
         $set: {
           adminStatus: 'accepted',
@@ -529,6 +529,10 @@ async function acceptOrderRequest(payload) {
       },
       { returnDocument: 'after' }
     );
+
+    if (!acceptedOrder) {
+      throw new Error('order-accept-update-failed');
+    }
   } catch (error) {
     if (updatedProduct && updatedProduct._id && !acceptedOrder) {
       try {

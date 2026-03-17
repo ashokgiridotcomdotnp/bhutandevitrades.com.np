@@ -1,4 +1,5 @@
 import adminAuth from '../lib/adminAuth.js';
+import config from '../lib/config.js';
 import fs from 'fs';
 import path from 'path';
 
@@ -148,10 +149,16 @@ async function renderAdminProfile(req, res) {
     errorMessage = 'Failed to update password. Please try again.';
   }
 
+  if (errorCode === 'password-update-disabled') {
+    errorMessage = 'Password updates are disabled in production. Set ADMIN_PASSWORD in the environment and restart the server.';
+  }
+
   return res.render('admin-profile', {
     title: 'Admin Profile | BhutanDevi Trade and Suppliers',
     username: authConfig.username,
-    statusMessage: req.query.status === 'password-updated' ? 'Password updated successfully. Please log in again with your new password.' : '',
+    statusMessage: req.query.status === 'password-updated'
+      ? 'Password updated. Restart the server to apply the new password, then log in again.'
+      : '',
     errorMessage: errorMessage,
   });
 }
@@ -162,6 +169,18 @@ async function handleAdminUpdatePassword(req, res) {
   let confirmPassword = String(req.body.confirmPassword || '');
   let authConfig = adminAuth.getAuthConfig();
   let isAjax = isAjaxRequest(req);
+
+  // This app reads admin credentials from env at startup (config.js). Updating passwords at runtime
+  // by editing `.env` is not safe in production (PM2 cluster, file permissions, multiple hosts).
+  if (config.app.isProduction) {
+    return sendPasswordUpdateError(
+      res,
+      isAjax,
+      'password-update-disabled',
+      403,
+      'Password updates are disabled in production. Set ADMIN_PASSWORD in your environment and restart the server.'
+    );
+  }
 
   if (!currentPassword || currentPassword.length > maxAdminPasswordLength) {
     return sendPasswordUpdateError(res, isAjax, 'invalid-current-password', 400, 'Current password is required');
@@ -208,23 +227,27 @@ async function handleAdminUpdatePassword(req, res) {
 
     await fs.promises.writeFile(envPath, envContent, 'utf8');
 
-    // Update runtime config
-    process.env.ADMIN_PASSWORD = newPassword;
-
     // Clear auth cookie to force re-login
     adminAuth.clearAuthCookie(res);
 
     if (isAjax) {
       return res.json({
         success: true,
-        message: 'Password updated successfully. Please log in again with your new password.',
-        redirectUrl: '/admin/login'
+        message: 'Password updated. Restart the server to apply the new password, then log in again.',
+        redirectUrl: '/admin/login',
+        requiresRestart: true,
       });
     }
 
     return res.redirect('/admin/profile?status=password-updated');
   } catch (error) {
-    console.error('Failed to update admin password:', error);
+    console.error('[ERROR]', {
+      route: req && req.originalUrl ? req.originalUrl : '',
+      method: req && req.method ? req.method : '',
+      message: error && error.message ? error.message : 'Failed to update admin password',
+      stack: error && error.stack ? error.stack : '',
+      timestamp: new Date().toISOString(),
+    });
     return sendPasswordUpdateError(res, isAjax, 'password-update-failed', 500, 'Failed to update password. Please try again.');
   }
 }

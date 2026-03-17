@@ -68,11 +68,10 @@ let brandSchema = new mongoose.Schema(
   }
 );
 
-brandSchema.pre('validate', function (next) {
+brandSchema.pre('validate', function () {
   this.name = toTrimmedString(this.name);
   this.normalizedName = normalizeName(this.name);
   this.slug = slugify(this.name || this.slug);
-  next();
 });
 
 brandSchema.index({ category: 1, normalizedName: 1 }, { unique: true, name: 'uq_brand_category_normalized_name' });

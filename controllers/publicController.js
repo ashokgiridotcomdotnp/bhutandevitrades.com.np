@@ -1,7 +1,9 @@
 import mongoose from 'mongoose';
 import crypto from 'crypto';
+import createError from 'http-errors';
 import catalogService from '../services/catalogService.js';
 import database from '../lib/db.js';
+import config from '../lib/config.js';
 import userAuth from '../lib/userAuth.js';
 import resendService from '../services/resendService.js';
 import User from '../models/User.js';
@@ -113,7 +115,7 @@ function getSignupPrefillCookieOptions(req) {
     maxAge: signupPrefillCookieTtlMs,
     path: '/signup',
     sameSite: 'lax',
-    secure: Boolean(req && req.secure),
+    secure: Boolean(req && req.secure) || config.app.isProduction,
   };
 }
 
@@ -182,7 +184,7 @@ function getSignupStateCookieOptions(req) {
     maxAge: signupPrefillCookieTtlMs,
     path: '/signup',
     sameSite: 'lax',
-    secure: Boolean(req && req.secure),
+    secure: Boolean(req && req.secure) || config.app.isProduction,
   };
 }
 
@@ -241,7 +243,7 @@ function getScopedCookieOptions(req, path) {
     maxAge: signupPrefillCookieTtlMs,
     path: path,
     sameSite: 'lax',
-    secure: Boolean(req && req.secure),
+    secure: Boolean(req && req.secure) || config.app.isProduction,
   };
 }
 
@@ -1047,7 +1049,7 @@ async function findAuthenticatedUserRecord(authenticatedUser, options) {
   return userRecord;
 }
 
-async function renderHomePage(req, res, next) {
+async function renderHomePage(req, res) {
   let catalog = null;
   let statusCodeFromQuery = toTrimmedString(req.query.status);
   let homeState = null;
@@ -1069,24 +1071,20 @@ async function renderHomePage(req, res, next) {
   let totalPages = 1;
   let currentPage = parsePositiveInteger(req.query.page, 1);
 
-  try {
-    catalog = await catalogService.getCatalogContext();
-    selectedCategory = catalogService.resolveCategoryName(rawCategory, catalog.categoryGroups);
-    hasActiveFilters = q.length > 0 || Boolean(selectedCategory);
-    showCarousel = isRootRoute && !hasActiveFilters;
-    categoryGroupsForView = catalogService.buildCategoryViewData(query, selectedCategory, catalog.categoryGroups);
-    filteredProductSections = catalogService.filterProductData(
-      query,
-      selectedCategory,
-      catalog.productSections,
-      catalog.categoryKeywordMap
-    );
-    openCategoryName = catalogService.getOpenCategoryName(categoryGroupsForView, selectedCategory, query);
-    totalResults = catalogService.countItems(filteredProductSections);
-    totalPages = Math.max(1, Math.ceil(totalResults / storefrontPageSize));
-  } catch (error) {
-    return next(error);
-  }
+  catalog = await catalogService.getCatalogContext();
+  selectedCategory = catalogService.resolveCategoryName(rawCategory, catalog.categoryGroups);
+  hasActiveFilters = q.length > 0 || Boolean(selectedCategory);
+  showCarousel = isRootRoute && !hasActiveFilters;
+  categoryGroupsForView = catalogService.buildCategoryViewData(query, selectedCategory, catalog.categoryGroups);
+  filteredProductSections = catalogService.filterProductData(
+    query,
+    selectedCategory,
+    catalog.productSections,
+    catalog.categoryKeywordMap
+  );
+  openCategoryName = catalogService.getOpenCategoryName(categoryGroupsForView, selectedCategory, query);
+  totalResults = catalogService.countItems(filteredProductSections);
+  totalPages = Math.max(1, Math.ceil(totalResults / storefrontPageSize));
 
   if (currentPage > totalPages) {
     currentPage = totalPages;
@@ -1142,7 +1140,7 @@ async function renderHomePage(req, res, next) {
   });
 }
 
-async function renderProductDetail(req, res, next) {
+async function renderProductDetail(req, res) {
   let productId = typeof req.params.productId === 'string' ? req.params.productId.trim() : '';
   let q = typeof req.query.q === 'string' ? req.query.q.trim() : '';
   let rawCategory = typeof req.query.category === 'string' ? req.query.category.trim() : '';
@@ -1154,7 +1152,7 @@ async function renderProductDetail(req, res, next) {
   let soldStockCount = 0;
 
   if (!productMatch) {
-    return next();
+    throw createError(404);
   }
 
   soldStockCount = await getAcceptedSoldStockCount(productMatch.item && productMatch.item.id);
@@ -1178,7 +1176,7 @@ async function renderProductDetail(req, res, next) {
   });
 }
 
-async function renderOrderPage(req, res, next) {
+async function renderOrderPage(req, res) {
   let authenticatedUser = req.userAuth && req.userAuth.email ? req.userAuth : null;
   let productId = typeof req.params.productId === 'string' ? req.params.productId.trim() : '';
   let q = typeof req.query.q === 'string' ? req.query.q.trim() : '';
@@ -1194,13 +1192,13 @@ async function renderOrderPage(req, res, next) {
   }
 
   if (!productId) {
-    return next();
+    throw createError(404);
   }
 
   productMatch = catalogService.findProductById(productId, catalog.productSections);
 
   if (!productMatch || !productMatch.item) {
-    return next();
+    throw createError(404);
   }
 
   return res.render('order', {
@@ -1441,7 +1439,7 @@ async function renderMyOrdersPage(req, res) {
       ordersLoadError = 'Could not load your order history right now. Please try again later.';
     } else {
       orders = await Order.find(orderQuery)
-        .select('productName productType quantity unitPriceLabel totalLabel phoneNumber note customerName createdAt status adminStatus adminMessage adminAcceptedAt productId')
+        .select('productName productType quantity unitPriceLabel totalLabel phoneNumber note customerName createdAt status adminStatus adminAcceptedAt productId')
         .sort({ createdAt: -1 })
         .limit(200)
         .lean();

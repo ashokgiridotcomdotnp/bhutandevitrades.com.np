@@ -261,20 +261,20 @@
 
       <div class="grid grid-cols-2 gap-2 border-t border-slate-200 bg-white px-4 py-3">
         <a href="<%= productHref %>" class="pro-btn-secondary pro-btn-xs w-full gap-1.5">
-          <img src="/icons/details.svg" alt="" aria-hidden="true" class="shrink-0" style="width: 14px; height: 14px;" />
-          <span>Details</span>
+          <img src="/icons/details.svg" alt="" aria-hidden="true" class="shrink-0" style="height: 1rem; width: 1rem;" />
+          <span class="text-[18px] tracking-wider sm:text-sm">Details</span>
         </a>
         <a href="<%= whatsappInquiryHref %>" target="_blank" rel="noopener noreferrer" class="pro-btn-secondary pro-btn-xs w-full gap-1.5">
-          <img src="/icons/whatsapp.svg" alt="" aria-hidden="true" class="shrink-0" style="width: 14px; height: 14px;" />
-          <span>WhatsApp</span>
+          <img src="/icons/whatsapp.svg" alt="" aria-hidden="true" class="shrink-0" style="height: 1rem; width: 1rem;"  />
+          <span class="text-[18px] tracking-wider sm:text-sm">WhatsApp</span>
         </a>
         <a
           href="<%= callHref %>"
           class="pro-btn-secondary pro-btn-xs w-full gap-1.5 <%= hasStoreContactNumber ? '' : 'pointer-events-none opacity-50' %>"
           aria-disabled="<%= hasStoreContactNumber ? 'false' : 'true' %>"
         >
-          <img src="/icons/phone.svg" alt="" aria-hidden="true" class="shrink-0" style="width: 14px; height: 14px;" />
-          <span>Call</span>
+          <img src="/icons/phone.svg" alt="" aria-hidden="true" class="shrink-0" style="height: 1rem; width: 1rem;" />
+          <span class="text-[18px] tracking-wider sm:text-sm">Call</span>
         </a>
         <% if (canPlaceOrder) { %>
         <a
@@ -282,13 +282,13 @@
           class="pro-btn-primary pro-btn-xs w-full gap-1.5 <%= canOrderItem ? '' : 'pointer-events-none opacity-50' %>"
           aria-disabled="<%= canOrderItem ? 'false' : 'true' %>"
         >
-          <img src="/icons/order.svg" alt="" aria-hidden="true" class="shrink-0" style="width: 14px; height: 14px;" />
-          <span><%= hasStockQuantity ? 'Order' : 'Out of stock' %></span>
+          <img src="/icons/order.svg" alt="" aria-hidden="true" class="shrink-0" style="height: 1rem; width: 1rem;"  />
+          <span class="text-[18px] tracking-wider sm:text-sm"><%= hasStockQuantity ? 'Order' : 'Out of stock' %></span>
         </a>
         <% } else { %>
         <a href="<%= loginToOrderHref %>" class="pro-btn-primary pro-btn-xs w-full gap-1.5">
-          <img src="/icons/login-white.svg" alt="" aria-hidden="true" class="shrink-0" style="width: 14px; height: 14px;" />
-          <span>Login to Order</span>
+          <img src="/icons/login-white.svg" alt="" aria-hidden="true" class="shrink-0" style="height: 1rem; width: 1rem;"   />
+          <span class="text-[18px] text-nowrap tracking-wider sm:text-sm">Login to Order</span>
         </a>
         <% } %>
       </div>
@@ -311,7 +311,7 @@
       <% if (pageNumber === 1 || pageNumber === totalPages || Math.abs(pageNumber - currentPage) <= 1) { %>
       <a
         href="<%= buildStorePageHref(pageNumber) %>"
-        class="inline-flex min-w-[2.15rem] items-center justify-center rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition <%= pageNumber === currentPage ? 'border-cyan-600 bg-cyan-600 text-white' : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-100' %>"
+        class="inline-flex min-w-[2.15rem] items-center justify-center rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition <%= pageNumber === currentPage ? 'border-cyan-600 text-white' : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-100' %>"
       >
         <%= pageNumber %>
       </a>

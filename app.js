@@ -106,8 +106,13 @@ function buildAssetPath(assetPath) {
 }
 
 function isSecureTransportRequest(req) {
-  let forwardedProto = String(req.get('x-forwarded-proto') || '').split(',')[0].trim().toLowerCase();
-  return req.secure || forwardedProto === 'https';
+  if (!req) {
+    return false;
+  }
+
+  // Rely on Express' protocol detection (which honors `trust proxy`), instead of trusting
+  // user-controlled forwarded headers directly.
+  return Boolean(req.secure || req.protocol === 'https');
 }
 
 function createContentSecurityPolicyDirectives(enableHttpsUpgrade) {
@@ -273,7 +278,7 @@ app.use(function (req, res, next) {
 
 // error handler
 app.use(function (err, req, res, next) {
-  let statusCode = err.status || 500;
+  let statusCode = err.status || err.statusCode || 500;
   let safeRequestedPath = '/';
   let isDevelopmentEnv = req.app.get('env') === 'development';
   let isJsonRequest = Boolean(
@@ -307,6 +312,15 @@ app.use(function (err, req, res, next) {
       };
 
   if (statusCode >= 500) {
+    console.error('[ERROR]', {
+      route: req && req.originalUrl ? req.originalUrl : '',
+      method: req && req.method ? req.method : '',
+      message: err && err.message ? err.message : 'Unhandled request error',
+      stack: err && err.stack ? err.stack : '',
+      timestamp: new Date().toISOString(),
+      requestId: req && req.requestId ? req.requestId : '',
+    });
+
     logger.error('Unhandled request error', {
       requestId: req && req.requestId ? req.requestId : '',
       method: req && req.method ? req.method : '',

@@ -5,11 +5,102 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;700;800&display=swap" rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
     <title><%= title %></title>
     <link rel="stylesheet" href="<%= assetPath('/stylesheets/style.css') %>" />
+    <style>
+      /* Smooth transitions */
+      .pro-transition {
+        transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+      }
+      
+      .pro-hover-lift:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+      }
+      
+      .pro-table-row {
+        transition: background-color 0.15s ease;
+      }
+      
+      .pro-edit-row-enter {
+        opacity: 0;
+        transform: translateY(-8px);
+      }
+      
+      .pro-edit-row-enter-active {
+        opacity: 1;
+        transform: translateY(0);
+        transition: opacity 0.2s ease, transform 0.2s ease;
+      }
+      
+      .pro-edit-row-exit {
+        opacity: 1;
+        transform: translateY(0);
+      }
+      
+      .pro-edit-row-exit-active {
+        opacity: 0;
+        transform: translateY(-8px);
+        transition: opacity 0.2s ease, transform 0.2s ease;
+      }
+      
+      /* Custom scrollbar */
+      .pro-scrollbar::-webkit-scrollbar {
+        height: 8px;
+        width: 8px;
+      }
+      
+      .pro-scrollbar::-webkit-scrollbar-track {
+        background: #f1f5f9;
+        border-radius: 4px;
+      }
+      
+      .pro-scrollbar::-webkit-scrollbar-thumb {
+        background: #94a3b8;
+        border-radius: 4px;
+      }
+      
+      .pro-scrollbar::-webkit-scrollbar-thumb:hover {
+        background: #64748b;
+      }
+      
+      /* Focus styles */
+      .pro-focus-ring:focus {
+        outline: none;
+        ring: 2px solid #06b6d4;
+        ring-offset: 2px;
+      }
+      
+      /* Loading shimmer effect */
+      .pro-shimmer {
+        background: linear-gradient(
+          90deg,
+          #f1f5f9 0%,
+          #e2e8f0 40%,
+          #f1f5f9 80%
+        );
+        background-size: 200% 100%;
+        animation: shimmer 1.5s infinite;
+      }
+      
+      @keyframes shimmer {
+        0% { background-position: 200% 0; }
+        100% { background-position: -200% 0; }
+      }
+      
+      /* Card hover effects */
+      .pro-stat-card {
+        transition: all 0.2s ease;
+      }
+      
+      .pro-stat-card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.05);
+      }
+    </style>
   </head>
-  <body class="text-slate-900">
+  <body class="text-slate-900 antialiased">
     <main class="app-shell py-6 pro-page-enter">
       <%
         let safeTotalProductCount = typeof totalProductCount !== 'undefined' ? totalProductCount : 0;
@@ -158,14 +249,14 @@
         }
       %>
 
-      <header class="mb-4 pro-panel px-5 py-4 pro-stagger">
+      <header class="mb-4 pro-panel px-5 py-4 pro-stagger pro-transition pro-hover-lift">
         <div class="flex flex-wrap items-start gap-3">
-            <h1 class="text-2xl font-extrabold tracking-tight text-slate-900">Products</h1>
+            <h1 class="text-2xl font-extrabold tracking-tight text-slate-900 bg-gradient-to-r from-slate-900 to-slate-700 bg-clip-text">Products</h1>
           <div class="ml-auto flex flex-wrap items-center gap-2">
-            <a href="/admin" class="pro-btn-secondary pro-btn-sm">Dashboard</a>
-            <a href="/admin/orders" class="pro-btn-secondary pro-btn-sm">Order Requests</a>
-            <a href="/admin/profile" class="pro-btn-primary pro-btn-sm">Profile</a>
-            <a href="/admin/logout" class="pro-btn-secondary pro-btn-sm gap-1.5">
+            <a href="/admin" class="pro-btn-secondary pro-btn-sm pro-transition">Dashboard</a>
+            <a href="/admin/orders" class="pro-btn-secondary pro-btn-sm pro-transition">Order Requests</a>
+            <a href="/admin/profile" class="pro-btn-primary pro-btn-sm pro-transition">Profile</a>
+            <a href="/admin/logout" class="pro-btn-secondary pro-btn-sm gap-1.5 pro-transition">
               <span>Logout</span>
             </a>
           </div>
@@ -181,33 +272,33 @@
       <% } %>
 
       <section class="mb-4 grid gap-3 sm:grid-cols-3">
-        <article class="pro-panel p-4">
+        <article class="pro-panel p-4 pro-stat-card pro-transition">
           <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Products</p>
           <p class="pt-2 text-3xl font-extrabold text-slate-900" data-product-overview-count>
             <%= toCount(safeTotalProductCount) %><%= isFiltered ? (' of ' + allProductCount) : '' %> products
           </p>
           <p class="pt-1 text-xs text-slate-500"><%= toCount(stats.adminOnlyProducts) %> admin-added</p>
         </article>
-        <article class="pro-panel p-4">
+        <article class="pro-panel p-4 pro-stat-card pro-transition">
           <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Categories</p>
           <p class="pt-2 text-3xl font-extrabold text-slate-900"><%= toCount(stats.totalCategories) %></p>
           <p class="pt-1 text-xs text-slate-500">Visible product groups</p>
         </article>
-        <article class="pro-panel p-4">
+        <article class="pro-panel p-4 pro-stat-card pro-transition">
           <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Avg Products</p>
           <p class="pt-2 text-3xl font-extrabold text-slate-900"><%= toCount(stats.averageProductsPerCategory) %></p>
           <p class="pt-1 text-xs text-slate-500">Per category</p>
         </article>
       </section>
 
-      <section class="mb-4 pro-panel grid gap-4 p-5 pro-stagger" data-category-section>
+      <section class="mb-4 pro-panel grid gap-4 p-5 pro-stagger pro-transition" data-category-section>
         <div class="flex flex-wrap items-center gap-2">
           <div class="min-w-0 flex-1">
             <h2 class="text-xl font-extrabold tracking-tight text-slate-900">Categories</h2>
             <% if (isFiltered) { %>
             <p class="pt-1 text-xs text-slate-600">
               Filtering products by: <span class="font-semibold text-slate-800"><%= safeSelectedCategoryName || safeSelectedCategorySlug %></span>
-              <a href="/admin/products" class="ml-2 underline decoration-slate-300 underline-offset-2 hover:decoration-slate-500">Clear filter</a>
+              <a href="/admin/products" class="ml-2 underline decoration-slate-300 underline-offset-2 hover:decoration-slate-500 pro-transition">Clear filter</a>
             </p>
             <% } %>
           </div>
@@ -217,7 +308,7 @@
         <div class="flex flex-wrap items-center gap-2" data-category-filter-buttons data-all-product-count="<%= allProductCount %>">
           <a
             href="/admin/products"
-            class="<%= isFiltered ? 'pro-btn-secondary' : 'pro-btn-primary' %> pro-btn-xs"
+            class="<%= isFiltered ? 'pro-btn-secondary' : 'pro-btn-primary' %> pro-btn-xs pro-transition"
             <%= isFiltered ? '' : 'aria-current="page"' %>
             data-category-filter-button="__all__"
           >
@@ -234,7 +325,7 @@
           %>
           <a
             href="<%= buildAdminProductsCategoryFilterHref(optionSlug) %>"
-            class="<%= isActiveCategory ? 'pro-btn-primary' : 'pro-btn-secondary' %> pro-btn-xs"
+            class="<%= isActiveCategory ? 'pro-btn-primary' : 'pro-btn-secondary' %> pro-btn-xs pro-transition"
             <%= isActiveCategory ? 'aria-current="page"' : '' %>
             data-category-filter-button="<%= optionSlug %>"
           >
@@ -245,7 +336,7 @@
         </div>
       </section>
 
-      <section class="pro-panel min-w-0 self-start px-4 pb-4 pt-5 sm:px-4 sm:pb-4 sm:pt-5" data-managed-products-root>
+      <section class="pro-panel min-w-0 self-start px-4 pb-4 pt-5 sm:px-4 sm:pb-4 sm:pt-5 pro-transition" data-managed-products-root>
           <div class="flex flex-wrap items-start gap-1.5 border-b border-slate-200 pb-3">
             <div class="min-w-0 flex-1 grid gap-0.5">
               <p class="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Inventory</p>
@@ -261,9 +352,9 @@
           <% } else { %>
           <div class="hidden pt-4 text-sm text-slate-500" data-managed-products-empty>No products left.</div>
           <div class="pt-3" data-managed-products-table>
-            <div class="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-              <div class="h-fit">
-                <table class="w-full min-w-[72rem] border-collapse text-sm">
+            <div class="overflow-x-auto rounded-2xl border border-slate-200 bg-white shadow-sm pro-scrollbar">
+              <div class="min-w-full inline-block align-middle">
+                <table class="w-full border-collapse text-sm whitespace-nowrap">
                   <thead class="sticky top-0 z-10 bg-slate-50/95 backdrop-blur">
                     <tr class="text-left text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-600">
                       <th class="px-3 py-3">Product</th>
@@ -283,25 +374,25 @@
                     <tr data-skeleton-target class="hidden">
                       <td class="px-3 py-3">
                         <div class="grid gap-1">
-                          <div class="h-4 w-48 rounded bg-slate-200 animate-pulse"></div>
-                          <div class="h-3 w-28 rounded bg-slate-200 animate-pulse"></div>
+                          <div class="h-4 w-48 rounded pro-shimmer"></div>
+                          <div class="h-3 w-28 rounded pro-shimmer"></div>
                         </div>
                       </td>
-                      <td class="px-3 py-3"><div class="h-4 w-24 rounded bg-slate-200 animate-pulse"></div></td>
-                      <td class="px-3 py-3"><div class="h-4 w-48 rounded bg-slate-200 animate-pulse"></div></td>
-                      <td class="px-3 py-3"><div class="h-4 w-24 rounded bg-slate-200 animate-pulse"></div></td>
-                      <td class="px-3 py-3"><div class="h-4 w-12 rounded bg-slate-200 animate-pulse"></div></td>
-                      <td class="px-3 py-3"><div class="h-10 w-24 rounded bg-slate-200 animate-pulse"></div></td>
-                      <td class="px-3 py-3"><div class="h-8 w-24 rounded bg-slate-200 animate-pulse"></div></td>
+                      <td class="px-3 py-3"><div class="h-4 w-24 rounded pro-shimmer"></div></td>
+                      <td class="px-3 py-3"><div class="h-4 w-48 rounded pro-shimmer"></div></td>
+                      <td class="px-3 py-3"><div class="h-4 w-24 rounded pro-shimmer"></div></td>
+                      <td class="px-3 py-3"><div class="h-4 w-12 rounded pro-shimmer"></div></td>
+                      <td class="px-3 py-3"><div class="h-10 w-24 rounded pro-shimmer"></div></td>
+                      <td class="px-3 py-3"><div class="h-8 w-24 rounded pro-shimmer"></div></td>
                     </tr>
                     <tr data-skeleton-target class="hidden">
-                      <td class="px-3 py-3"><div class="h-4 w-48 rounded bg-slate-200 animate-pulse"></div></td>
-                      <td class="px-3 py-3"><div class="h-4 w-24 rounded bg-slate-200 animate-pulse"></div></td>
-                      <td class="px-3 py-3"><div class="h-4 w-48 rounded bg-slate-200 animate-pulse"></div></td>
-                      <td class="px-3 py-3"><div class="h-4 w-24 rounded bg-slate-200 animate-pulse"></div></td>
-                      <td class="px-3 py-3"><div class="h-4 w-12 rounded bg-slate-200 animate-pulse"></div></td>
-                      <td class="px-3 py-3"><div class="h-10 w-24 rounded bg-slate-200 animate-pulse"></div></td>
-                      <td class="px-3 py-3"><div class="h-8 w-24 rounded bg-slate-200 animate-pulse"></div></td>
+                      <td class="px-3 py-3"><div class="h-4 w-48 rounded pro-shimmer"></div></td>
+                      <td class="px-3 py-3"><div class="h-4 w-24 rounded pro-shimmer"></div></td>
+                      <td class="px-3 py-3"><div class="h-4 w-48 rounded pro-shimmer"></div></td>
+                      <td class="px-3 py-3"><div class="h-4 w-24 rounded pro-shimmer"></div></td>
+                      <td class="px-3 py-3"><div class="h-4 w-12 rounded pro-shimmer"></div></td>
+                      <td class="px-3 py-3"><div class="h-10 w-24 rounded pro-shimmer"></div></td>
+                      <td class="px-3 py-3"><div class="h-8 w-24 rounded pro-shimmer"></div></td>
                     </tr>
                     <% rows.forEach(function (item) { %>
                     <% let editImageInputId = 'edit-image-' + item.id; %>
@@ -312,17 +403,16 @@
                     <% let stockValue = item.quantity || item.quantity === 0 ? item.quantity : '-'; %>
                     <% let productCategoryLabel = String(item.categoryName || item.type || 'Other'); %>
                     <% let productCategorySlug = toCategorySlug(productCategoryLabel); %>
-                    <tr class="align-middle transition-colors hover:bg-slate-50/70" data-view-panel="<%= item.id %>">
+                    <tr class="align-middle pro-table-row transition-colors hover:bg-slate-50/70" data-view-panel="<%= item.id %>">
                       <td class="px-3 py-3" data-product-name-cell>
                         <div class="grid gap-1">
                           <p class="text-sm font-bold leading-5 text-slate-900" data-product-name-text><%= item.name %></p>
-                          <p class="font-mono text-[11px] text-slate-500">ID: <span data-product-id-text><%= item.id %></span></p>
                         </div>
                       </td>
                       <td class="px-3 py-3">
                         <a
                           href="<%= buildAdminProductsCategoryFilterHref(productCategorySlug) %>"
-                          class="inline-flex rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-semibold text-slate-700 transition hover:bg-slate-100"
+                          class="inline-flex rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-semibold text-slate-700 transition-all hover:bg-slate-100 hover:border-slate-300"
                           title="Filter products by <%= productCategoryLabel %>"
                           data-product-category-link
                         >
@@ -335,7 +425,7 @@
                       <td class="px-3 py-3 text-slate-800" data-product-actual-price-cell>
                         <% let actualPrice = item.originalPrice || item.price; %>
                         <% let hasDiscount = Boolean(item.originalPrice) && item.originalPrice !== item.price; %>
-                        <p class="<%= hasDiscount ? 'text-xs font-semibold text-red-600 line-through' : 'text-sm font-semibold text-slate-800' %>" data-product-original-price-text><%= actualPrice %></p>
+                        <p class="<%= hasDiscount ? 'text-xs text-red-600 line-through' : 'text-sm font-semibold text-slate-800' %>" data-product-original-price-text><%= actualPrice %></p>
                       </td>
                       <td class="px-3 py-3 text-slate-800" data-product-final-price-cell>
                         <p class="pt-0.5 font-semibold text-emerald-700" data-product-final-price-text><%= item.price %></p>
@@ -354,7 +444,7 @@
                         <img
                           src="<%= item.image %>"
                           alt="<%= item.name %>"
-                          class="h-16 w-24 rounded-lg border border-slate-200 bg-white object-contain"
+                          class="h-16 w-24 rounded-lg border border-slate-200 bg-white object-contain transition-opacity hover:opacity-90"
                           loading="lazy"
                           data-product-image
                         />
@@ -365,7 +455,7 @@
                             type="button"
                             title="Edit item"
                             data-edit-toggle="<%= item.id %>"
-                            class="pro-btn-secondary pro-btn-xs pro-btn-action"
+                            class="pro-btn-secondary pro-btn-xs pro-btn-action pro-transition"
                           >
                             Edit
                           </button>
@@ -374,20 +464,20 @@
                             title="Delete item"
                             data-delete-product-trigger="<%= item.id %>"
                             data-product-name="<%= item.name %>"
-                            class="pro-btn-danger-muted pro-btn-xs pro-btn-action"
+                            class="pro-btn-danger-muted pro-btn-xs pro-btn-action pro-transition"
                           >
                             Delete
                           </button>
                         </div>
                       </td>
                     </tr>
-                    <tr class="hidden bg-cyan-50/30 ring-1 ring-cyan-100" data-edit-row="<%= item.id %>">
+                    <tr class="hidden bg-cyan-50/30 ring-1 ring-cyan-100 pro-edit-row-enter-active" data-edit-row="<%= item.id %>">
                       <td colspan="10" class="px-0 py-3">
                         <form
                           action="/admin/products/edit"
                           method="post"
                           enctype="multipart/form-data"
-                          class="grid gap-4 w-full rounded-none border-t border-slate-200 bg-cyan-50 p-4 xl:grid-cols-[minmax(0,1fr)_18rem]"
+                          class="grid gap-4 w-full rounded-none border-t border-slate-200 bg-gradient-to-br from-cyan-50 to-white p-4 xl:grid-cols-[minmax(0,1fr)_18rem]"
                           data-edit-form="<%= item.id %>"
                         >
                           <input type="hidden" name="productId" value="<%= item.id %>" />
@@ -402,7 +492,7 @@
                                 name="productCategory"
                                 value="<%= item.categoryName || item.type || '' %>"
                                 required
-                                class="pro-input"
+                                class="pro-input pro-focus-ring"
                               />
                             </div>
 
@@ -413,7 +503,7 @@
                                 name="productName"
                                 value="<%= item.name %>"
                                 required
-                                class="pro-input"
+                                class="pro-input pro-focus-ring"
                               />
                             </div>
 
@@ -424,7 +514,7 @@
                                 name="productSpec"
                                 value="<%= item.spec %>"
                                 placeholder="Description (optional)"
-                                class="pro-input"
+                                class="pro-input pro-focus-ring"
                               />
                             </div>
 
@@ -438,7 +528,7 @@
                                 step="0.01"
                                 data-form-mrp-input
                                 required
-                                class="pro-input"
+                                class="pro-input pro-focus-ring"
                               />
                             </div>
 
@@ -452,7 +542,7 @@
                                 max="100"
                                 step="0.01"
                                 data-form-discount-input
-                                class="pro-input"
+                                class="pro-input pro-focus-ring"
                               />
                             </div>
 
@@ -464,11 +554,11 @@
                                 value="<%= editQuantityInputValue %>"
                                 min="0"
                                 step="1"
-                                class="pro-input"
+                                class="pro-input pro-focus-ring"
                               />
                             </div>
 
-                            <div class="hidden rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2" data-form-price-preview>
+                            <div class="hidden rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 pro-transition" data-form-price-preview>
                               <p class="text-[11px] font-semibold uppercase tracking-wide text-emerald-700">Price Preview</p>
                               <div class="pt-1 flex items-end gap-2">
                                 <span class="hidden text-xs font-semibold text-red-600 line-through" data-form-price-original></span>
@@ -477,25 +567,25 @@
                             </div>
 
                             <div class="sm:col-span-2 flex flex-wrap items-center gap-2 pt-1">
-                              <button type="submit" class="pro-btn-primary pro-btn-xs">Save Product</button>
+                              <button type="submit" class="pro-btn-primary pro-btn-xs pro-transition">Save Product</button>
                               <button
                                 type="button"
                                 data-edit-cancel="<%= item.id %>"
-                                class="pro-btn-secondary pro-btn-xs"
+                                class="pro-btn-secondary pro-btn-xs pro-transition"
                               >
                                 Cancel
                               </button>
                             </div>
                           </div>
 
-                          <div class="grid gap-3 rounded-xl border border-slate-200 bg-slate-50 p-4">
+                          <div class="grid gap-3 rounded-xl border border-slate-200 bg-slate-50 p-4 pro-transition">
                             <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Photo</p>
 
                             <div class="overflow-hidden rounded-xl border border-slate-200 bg-white">
                               <img
                                 src="<%= item.image %>"
                                 alt="<%= item.name %>"
-                                class="aspect-[4/3] h-full w-full object-contain"
+                                class="aspect-[4/3] h-full w-full object-contain transition-opacity"
                                 data-image-preview-for="<%= editImageInputId %>"
                                 data-image-preview-default-src="<%= item.image %>"
                               />
@@ -514,7 +604,7 @@
                               <div class="flex flex-wrap text-center items-center gap-2">
                                 <label
                                   for="<%= editImageInputId %>"
-                                  class="inline-flex justify-center items-center rounded-lg border border-slate-300 bg-slate-100 px-3 cursor-pointer text-xs w-full py-2 font-semibold text-slate-700 transition hover:bg-slate-200"
+                                  class="inline-flex justify-center items-center rounded-lg border border-slate-300 bg-slate-100 px-3 cursor-pointer text-xs w-full py-2 font-semibold text-slate-700 transition-all hover:bg-slate-200 hover:border-slate-400"
                                 >
                                   Choose Product Photo
                                 </label>
@@ -542,7 +632,7 @@
             <div class="flex flex-wrap items-center justify-between gap-2 border-t border-slate-200 pt-3">
               <a
                 href="<%= buildAdminProductsPageHref(currentPage - 1) %>"
-                class="pro-btn-secondary pro-btn-xs <%= currentPage <= 1 ? 'pointer-events-none opacity-50' : '' %>"
+                class="pro-btn-secondary pro-btn-xs pro-transition <%= currentPage <= 1 ? 'pointer-events-none opacity-50' : '' %>"
                 aria-disabled="<%= currentPage <= 1 ? 'true' : 'false' %>"
               >
                 Prev
@@ -553,7 +643,7 @@
                 <% if (pageNumber === 1 || pageNumber === totalPages || Math.abs(pageNumber - currentPage) <= 1) { %>
                 <a
                   href="<%= buildAdminProductsPageHref(pageNumber) %>"
-                  class="inline-flex min-w-[2.15rem] items-center justify-center rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition <%= pageNumber === currentPage ? 'border-cyan-600 bg-cyan-600 text-white' : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-100' %>"
+                  class="inline-flex min-w-[2.15rem] items-center justify-center rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition-all <%= pageNumber === currentPage ? 'border-cyan-600 bg-cyan-600 text-white shadow-sm' : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-100 hover:border-slate-400' %>"
                 >
                   <%= pageNumber %>
                 </a>
@@ -565,7 +655,7 @@
 
               <a
                 href="<%= buildAdminProductsPageHref(currentPage + 1) %>"
-                class="pro-btn-secondary pro-btn-xs <%= currentPage >= totalPages ? 'pointer-events-none opacity-50' : '' %>"
+                class="pro-btn-secondary pro-btn-xs pro-transition <%= currentPage >= totalPages ? 'pointer-events-none opacity-50' : '' %>"
                 aria-disabled="<%= currentPage >= totalPages ? 'true' : 'false' %>"
               >
                 Next
@@ -576,22 +666,22 @@
         </section>
     </main>
 
-    <div id="delete-alert" class="fixed inset-0 z-50 hidden items-center justify-center bg-slate-900/50 p-4">
-      <div class="pro-panel w-full max-w-md p-5">
-        <h3 class="text-lg font-bold text-slate-900" id="delete-alert-title">Delete</h3>
-        <p class="pt-2 text-sm text-slate-700" id="delete-alert-message">Are you sure you want to delete this product?</p>
+    <div id="delete-alert" class="fixed inset-0 z-50 hidden items-center justify-center bg-slate-900/50 p-4 backdrop-blur-sm transition-all">
+      <div class="pro-panel w-full max-w-md p-5 pro-transition scale-95 opacity-0" data-delete-modal-content>
+        <h3 class="text-lg font-bold text-slate-900" id="delete-alert-title">Delete Product</h3>
+        <p class="pt-2 text-sm text-slate-700" id="delete-alert-message">Are you sure you want to delete this product? This action cannot be undone.</p>
         <div class="pt-4 flex items-center justify-end gap-2">
           <button
             type="button"
             id="delete-alert-cancel"
-            class="pro-btn-secondary"
+            class="pro-btn-secondary pro-transition"
           >
             Cancel
           </button>
           <button
             type="button"
             id="delete-alert-confirm"
-            class="pro-btn-danger"
+            class="pro-btn-danger pro-transition"
           >
             Delete
           </button>
@@ -698,14 +788,13 @@
 
           nameCell.innerHTML =
             '<div class="grid gap-1">' +
-            '<input name="productName" class="pro-input" value="' + escapeHtml(nameVal) + '">' +
-            '<p class="font-mono text-[11px] text-slate-500">ID: <span>' + escapeHtml(idVal) + '</span></p>' +
+            '<input name="productName" class="pro-input pro-focus-ring" value="' + escapeHtml(nameVal) + '">' +
             '</div>';
-          categoryCell.innerHTML = '<input name="productCategory" class="pro-input" value="' + escapeHtml(categoryVal) + '">';
-          specCell.innerHTML = '<input name="productSpec" class="pro-input" value="' + escapeHtml(specVal) + '">';
-          actualPriceCell.innerHTML = '<input name="productPrice" type="number" min="0" step="0.01" class="pro-input" value="' + escapeHtml(origText || '') + '">';
-          discountCell.innerHTML = '<input name="productDiscountPercent" type="number" min="0" max="100" step="0.01" class="pro-input" value="' + escapeHtml(discountText || '0') + '">';
-          stockCell.innerHTML = '<input name="productQuantity" type="number" min="0" step="1" class="pro-input" value="' + escapeHtml(qtyText || '') + '">';
+          categoryCell.innerHTML = '<input name="productCategory" class="pro-input pro-focus-ring" value="' + escapeHtml(categoryVal) + '">';
+          specCell.innerHTML = '<input name="productSpec" class="pro-input pro-focus-ring" value="' + escapeHtml(specVal) + '">';
+          actualPriceCell.innerHTML = '<input name="productPrice" type="number" min="0" step="1" class="pro-input pro-focus-ring" value="' + escapeHtml(origText || '') + '">';
+          discountCell.innerHTML = '<input name="productDiscountPercent" type="number" min="0" max="100" step="1" class="pro-input pro-focus-ring" value="' + escapeHtml(discountText || '0') + '">';
+          stockCell.innerHTML = '<input name="productQuantity" type="number" min="0" step="1" class="pro-input w-20 pro-focus-ring" value="' + escapeHtml(qtyText || '') + '">';
 
           finalPriceCell.innerHTML = '<p class="pt-0.5 font-semibold text-emerald-700" data-product-final-price-text></p>';
 
@@ -729,13 +818,13 @@
           actionsWrap.setAttribute('data-inline-actions', id);
           const saveBtn = document.createElement('button');
           saveBtn.type = 'button';
-          saveBtn.className = 'pro-btn-primary pro-btn-xs';
+          saveBtn.className = 'pro-btn-primary w-full pro-btn-xs pro-transition';
           saveBtn.textContent = 'Save';
           saveBtn.setAttribute('data-inline-save', id);
 
           const cancelBtn = document.createElement('button');
           cancelBtn.type = 'button';
-          cancelBtn.className = 'pro-btn-secondary pro-btn-xs';
+          cancelBtn.className = 'pro-btn-secondary w-full pro-btn-xs pro-transition';
           cancelBtn.textContent = 'Cancel';
           cancelBtn.setAttribute('data-inline-cancel', id);
 
@@ -811,6 +900,30 @@
 
         // initial bind
         bindRowButtons();
+
+        // Smooth delete modal animation
+        const deleteModal = document.getElementById('delete-alert');
+        const modalContent = deleteModal?.querySelector('[data-delete-modal-content]');
+        
+        if (deleteModal && modalContent) {
+          const observer = new MutationObserver(function(mutations) {
+            mutations.forEach(function(mutation) {
+              if (mutation.attributeName === 'class') {
+                if (!deleteModal.classList.contains('hidden')) {
+                  setTimeout(() => {
+                    modalContent.classList.remove('scale-95', 'opacity-0');
+                    modalContent.classList.add('scale-100', 'opacity-100');
+                  }, 10);
+                } else {
+                  modalContent.classList.add('scale-95', 'opacity-0');
+                  modalContent.classList.remove('scale-100', 'opacity-100');
+                }
+              }
+            });
+          });
+          
+          observer.observe(deleteModal, { attributes: true });
+        }
       })();
     </script>
   </body>

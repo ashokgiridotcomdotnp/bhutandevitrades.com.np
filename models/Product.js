@@ -286,33 +286,6 @@ productSchema.pre('validate', async function () {
   });
 });
 
-productSchema.pre('findOneAndUpdate', function (next) {
-  try {
-    applyQuantityUpdateGuards.call(this);
-    next();
-  } catch (error) {
-    next(error);
-  }
-});
-
-productSchema.pre('updateOne', function (next) {
-  try {
-    applyQuantityUpdateGuards.call(this);
-    next();
-  } catch (error) {
-    next(error);
-  }
-});
-
-productSchema.pre('updateMany', function (next) {
-  try {
-    applyQuantityUpdateGuards.call(this);
-    next();
-  } catch (error) {
-    next(error);
-  }
-});
-
 productSchema.index({ legacyId: 1 }, { unique: true, sparse: true, name: 'uq_product_legacy_id' });
 productSchema.index({ sku: 1 }, { unique: true, sparse: true, name: 'uq_product_sku' });
 productSchema.index({ category: 1, normalizedName: 1 }, { unique: true, name: 'uq_product_category_name' });

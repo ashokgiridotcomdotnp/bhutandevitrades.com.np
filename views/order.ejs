@@ -218,8 +218,8 @@
                     class="pro-btn-secondary pro-btn-xs w-full gap-1.5 sm:w-auto <%= hasStoreContactNumber ? '' : 'pointer-events-none opacity-50' %>"
                     aria-disabled="<%= hasStoreContactNumber ? 'false' : 'true' %>"
                   >
-                    <img src="/icons/phone.svg" alt="" aria-hidden="true" class="shrink-0" style="width: 14px; height: 14px;" />
-                    <span>Call</span>
+                    <img src="/icons/phone.svg" alt="" aria-hidden="true" class="shrink-0" style="width: 1rem; height: 1rem;" />
+                    <span class="text-[18px] tracking-wider sm:text-sm">Call</span>
                   </a>
                   <button
                     type="submit"
@@ -228,8 +228,8 @@
                     data-order-method="email"
                     <%= isOutOfStock ? 'disabled aria-disabled=\"true\"' : '' %>
                   >
-                    <img src="/icons/order-balck.svg" alt="" aria-hidden="true" class="shrink-0" style="width: 14px; height: 14px;" />
-                    <span data-order-submit-label>Order with Email</span>
+                    <img src="/icons/order-balck.svg" alt="" aria-hidden="true" class="shrink-0" style="width: 1rem; height: 1rem;" />
+                    <span class="text-[18px] tracking-wider sm:text-sm" data-order-submit-label>Order with Email</span>
                   </button>
                   <button
                     type="submit"
@@ -238,8 +238,8 @@
                     data-order-method="whatsapp"
                     <%= isOutOfStock ? 'disabled aria-disabled=\"true\"' : '' %>
                   >
-                    <img src="/icons/whatsapp.svg" alt="" aria-hidden="true" class="shrink-0" style="width: 14px; height: 14px;" />
-                    <span data-order-submit-label>Order with WhatsApp</span>
+                    <img src="/icons/whatsapp.svg" alt="" aria-hidden="true" class="shrink-0" style="width: 1rem; height: 1rem;" />
+                    <span class="text-[18px] tracking-wider sm:text-sm"data-order-submit-label>Order with WhatsApp</span>
                   </button>
                 </div>
               </form>

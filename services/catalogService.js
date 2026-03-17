@@ -13,6 +13,8 @@ const __dirname = path.dirname(__filename);
 
 
 
+import NodeCache from 'node-cache';
+
 let uploadedProductImagesDirPath = path.join(__dirname, '..', 'public', 'uploads', 'products');
 let publicAssetsDirPath = path.join(__dirname, '..', 'public');
 let defaultProductImagePath = '';
@@ -26,6 +28,8 @@ let parsedCatalogCacheTtlMs = Number(process.env.CATALOG_CACHE_TTL_MS);
 let catalogCacheTtlMs = Number.isFinite(parsedCatalogCacheTtlMs) && parsedCatalogCacheTtlMs >= 0
   ? parsedCatalogCacheTtlMs
   : 15000;
+const catalogCache = new NodeCache({ stdTTL: catalogCacheTtlMs / 1000 }); // TTL in seconds
+
 let cloudinaryUploadFolder = String(process.env.CLOUDINARY_PRODUCT_UPLOAD_FOLDER || 'bhutandevi/products').trim()
   || 'bhutandevi/products';
 let parsedCloudinaryUploadTimeoutMs = Number(process.env.CLOUDINARY_UPLOAD_TIMEOUT_MS);
@@ -34,9 +38,6 @@ let cloudinaryUploadTimeoutMs = Number.isFinite(parsedCloudinaryUploadTimeoutMs)
   : 3500;
 let catalogCategorySelectFields = 'name normalizedName slug description items sortOrder isActive';
 let catalogProductSelectFields = 'legacyId category name spec description price compareAtPrice quantity imageUrl images createdAt status isActive';
-let cachedCatalogContext = null;
-let cachedCatalogContextExpiresAt = 0;
-let catalogContextPromise = null;
 
 function ensureDirectoryExists(directoryPath) {
   if (!fs.existsSync(directoryPath)) {
@@ -51,20 +52,20 @@ let imageUploadStorage = multer.diskStorage({
     callback(null, uploadedProductImagesDirPath);
   },
   filename: function (req, file, callback) {
-    let extension = path.extname(file && file.originalname ? file.originalname : '').toLowerCase();
     let baseName = path
-      .basename(file && file.originalname ? file.originalname : 'image', extension)
+      .basename(file && file.originalname ? file.originalname : 'image')
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, '-')
       .replace(/^-+|-+$/g, '');
     let uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
-    let safeExtension = extension || '.webp';
 
-    callback(null, (baseName || 'image') + '-' + uniqueSuffix + safeExtension);
+    // Never trust the original extension. The uploaded file is temporarily stored in a public
+    // directory, so forcing a non-executable extension avoids serving attacker-controlled JS/HTML.
+    callback(null, (baseName || 'image') + '-' + uniqueSuffix + '.upload');
   },
 });
 
-let allowedImageTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'image/svg+xml'];
+let allowedImageTypes = ['image/jpeg', 'image/png', 'image/webp'];
 let maxFileSize = 5 * 1024 * 1024;
 
 let imageUpload = multer({
@@ -288,7 +289,7 @@ async function optimizeUploadedImage(file) {
   let optimizedFilePath = '';
 
   if (!sourceFilePath || !uploadedImagePath) {
-    return uploadedImagePath;
+    return '';
   }
 
   sourcePathParts = path.parse(sourceFilePath);
@@ -317,7 +318,8 @@ async function optimizeUploadedImage(file) {
     return '/uploads/products/' + optimizedBaseName;
   } catch (error) {
     console.error('Failed to optimize uploaded image:', error.message);
-    return uploadedImagePath;
+    await deleteFileSafely(sourceFilePath);
+    return '';
   }
 }
 
@@ -459,9 +461,7 @@ async function cleanupLocalImageAsset(assetPath) {
 }
 
 function clearCatalogContextCache() {
-  cachedCatalogContext = null;
-  cachedCatalogContextExpiresAt = 0;
-  catalogContextPromise = null;
+  catalogCache.flushAll();
 }
 
 function createEmptyCatalogContext() {
@@ -654,74 +654,50 @@ function buildCatalogContext(categoryDocs, productDocs) {
 }
 
 async function getCatalogContext(options) {
+  const cacheKey = 'catalog-context';
   let forceRefresh = Boolean(options && options.forceRefresh);
-  let loadPromise = null;
-  let catalogContext = null;
 
-  if (!forceRefresh && cachedCatalogContext && cachedCatalogContextExpiresAt > Date.now()) {
-    return cloneValue(cachedCatalogContext);
+  if (!forceRefresh) {
+    const cachedContext = catalogCache.get(cacheKey);
+    if (cachedContext) {
+      return cloneValue(cachedContext);
+    }
   }
 
-  if (!forceRefresh && catalogContextPromise) {
-    catalogContext = await catalogContextPromise;
-    return cloneValue(catalogContext);
-  }
-
-  loadPromise = (async function () {
-    let hasDatabaseConnection = false;
-    let categoryDocs = [];
-    let productDocs = [];
-
-    hasDatabaseConnection = await database.connectToDatabase();
+  try {
+    const hasDatabaseConnection = await database.connectToDatabase();
     if (!hasDatabaseConnection) {
       clearCatalogContextCache();
       return createEmptyCatalogContext();
     }
 
-    try {
-      let catalogResults = await Promise.all([
-        Category.find({ isActive: true })
-          .select(catalogCategorySelectFields)
-          .sort({ sortOrder: 1, name: 1 })
-          .lean(),
-        Product.find({
-          isActive: true,
-          status: 'active',
+    const [categoryDocs, productDocs] = await Promise.all([
+      Category.find({ isActive: true })
+        .select(catalogCategorySelectFields)
+        .sort({ sortOrder: 1, name: 1 })
+        .lean(),
+      Product.find({ isActive: true, status: 'active' })
+        .select(catalogProductSelectFields)
+        .populate({
+          path: 'category',
+          select: catalogCategorySelectFields,
+          options: { lean: true },
         })
-          .select(catalogProductSelectFields)
-          .populate({
-            path: 'category',
-            select: catalogCategorySelectFields,
-            options: { lean: true },
-          })
-          .sort({ createdAt: -1, name: 1 })
-          .lean(),
-      ]);
+        .sort({ createdAt: -1, name: 1 })
+        .lean(),
+    ]);
 
-      categoryDocs = Array.isArray(catalogResults[0]) ? catalogResults[0] : [];
-      productDocs = Array.isArray(catalogResults[1]) ? catalogResults[1] : [];
-      cachedCatalogContext = buildCatalogContext(categoryDocs, productDocs);
-      cachedCatalogContextExpiresAt = Date.now() + catalogCacheTtlMs;
+    const catalogContext = buildCatalogContext(
+      Array.isArray(categoryDocs) ? categoryDocs : [],
+      Array.isArray(productDocs) ? productDocs : []
+    );
 
-      return cachedCatalogContext;
-    } catch (error) {
-      console.error('Failed to load catalog context:', error.message);
-      clearCatalogContextCache();
-      return createEmptyCatalogContext();
-    }
-  })();
-
-  if (!forceRefresh) {
-    catalogContextPromise = loadPromise;
-  }
-
-  try {
-    catalogContext = await loadPromise;
+    catalogCache.set(cacheKey, catalogContext);
     return cloneValue(catalogContext);
-  } finally {
-    if (!forceRefresh && catalogContextPromise === loadPromise) {
-      catalogContextPromise = null;
-    }
+  } catch (error) {
+    console.error('Failed to load catalog context:', error.message);
+    clearCatalogContextCache();
+    return createEmptyCatalogContext();
   }
 }
 

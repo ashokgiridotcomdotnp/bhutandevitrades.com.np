@@ -165,7 +165,7 @@ let orderSchema = new mongoose.Schema(
   }
 );
 
-orderSchema.pre('validate', function (next) {
+orderSchema.pre('validate', async function () {
   this.userId = toTrimmedString(this.userId);
   this.customerEmail = normalizeEmail(this.customerEmail);
   this.customerName = toTrimmedString(this.customerName);
@@ -197,8 +197,6 @@ orderSchema.pre('validate', function (next) {
   if (this.adminStatus !== 'accepted' && this.adminStatus !== 'processing' && this.adminAcceptedAt) {
     this.adminAcceptedAt = null;
   }
-
-  next();
 });
 
 orderSchema.index({ user: 1, createdAt: -1 }, { name: 'idx_order_user_created_at' });

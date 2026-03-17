@@ -112,7 +112,7 @@
         <article class="pro-panel p-4">
           <p class="text-xs font-semibold uppercase tracking-wide text-emerald-700">Accepted</p>
           <p class="mt-1 text-2xl font-extrabold tracking-tight text-emerald-700"><%= acceptedOrdersCount %></p>
-          <p class="mt-1 text-xs text-slate-500">Customer already notified</p>
+          <p class="mt-1 text-xs text-slate-500">Accepted by admin</p>
         </article>
       </section>
 
@@ -256,7 +256,6 @@
                       <form action="/admin/orders/accept" method="post" data-orders-nav-form>
                         <input type="hidden" name="orderId" value="<%= orderId %>" />
                         <input type="hidden" name="redirectTo" value="<%= ordersPagePath %>" data-order-redirect-input />
-                        <input type="hidden" name="adminMessage" value="" />
                         <button type="submit" class="pro-btn-primary pro-btn-xs pro-btn-action">Accept</button>
                       </form>
                       <form action="/admin/orders/delete" method="post" data-orders-nav-form onsubmit="return window.confirm('Delete this order request?');">
@@ -337,9 +336,7 @@
                   let phoneNumberAccepted = String(orderItem && orderItem.phoneNumber ? orderItem.phoneNumber : '-');
                   let noteAccepted = String(orderItem && orderItem.note ? orderItem.note : '-');
                   let createdAtLabelAccepted = formatDateTime(orderItem && orderItem.createdAt);
-                  let adminMessageAccepted = String(orderItem && orderItem.adminMessage ? orderItem.adminMessage : '-');
                   let acceptedAtLabel = formatDateTime(orderItem && orderItem.adminAcceptedAt);
-                  let isAdminEmailSent = Boolean(orderItem && orderItem.adminEmailNotificationSent);
                 %>
                 <tr class="align-top transition-colors hover:bg-slate-50">
                   <td class="border border-slate-200 px-3 py-2">
@@ -365,7 +362,6 @@
                     <p><span class="font-semibold text-slate-800">Requested:</span> <%= createdAtLabelAccepted %></p>
                     <p><span class="font-semibold text-slate-800">Accepted:</span> <%= acceptedAtLabel %></p>
                     <p><span class="font-semibold text-slate-800">Note:</span> <%= noteAccepted %></p>
-                    <p><span class="font-semibold text-slate-800">Admin Message:</span> <%= adminMessageAccepted %></p>
                   </td>
                   <td class="border border-slate-200 px-3 py-2">
                     <div class="flex flex-wrap items-center gap-2">
@@ -374,9 +370,6 @@
                       <% } else { %>
                       <span class="pro-btn-secondary pro-btn-xs pro-btn-action pointer-events-none opacity-50" aria-disabled="true">Open</span>
                       <% } %>
-                      <span class="inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-semibold <%= isAdminEmailSent ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-amber-200 bg-amber-50 text-amber-700' %>">
-                        <%= isAdminEmailSent ? 'Email Sent' : 'Email Not Sent' %>
-                      </span>
                       <form action="/admin/orders/delete" method="post" data-orders-nav-form onsubmit="return window.confirm('Delete this order request?');">
                         <input type="hidden" name="orderId" value="<%= orderIdAccepted %>" />
                         <input type="hidden" name="redirectTo" value="<%= ordersPagePath %>" data-order-redirect-input />

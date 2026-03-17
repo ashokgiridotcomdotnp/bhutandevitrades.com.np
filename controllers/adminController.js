@@ -5,6 +5,7 @@ import Category from '../models/Category.js';
 import Order from '../models/Order.js';
 import Product from '../models/Product.js';
 import database from '../lib/db.js';
+import config from '../lib/config.js';
 import resendService from '../services/resendService.js';
 
 
@@ -23,7 +24,7 @@ let adminCategoryItemsPageSize = 12;
 let maxAdminOrderMessageLength = 1000;
 let adminOrderRequestsLimit = 150;
 let adminOrderRequestsPageSize = 10;
-let adminOrderListSelectFields = 'productId productName productType quantity totalLabel customerName customerEmail phoneNumber note createdAt adminMessage adminAcceptedAt adminStatus';
+let adminOrderListSelectFields = 'productId productName productType quantity totalLabel customerName customerEmail phoneNumber note createdAt adminAcceptedAt adminStatus';
 let adminMutationQueue = Promise.resolve();
 
 function toCategorySlug(value) {
@@ -754,6 +755,18 @@ function isDuplicateKeyError(error) {
   return Boolean(error) && Number(error.code) === 11000;
 }
 
+function isTransactionNotSupportedError(error) {
+  let message = String(error && error.message ? error.message : '').toLowerCase();
+  let codeName = String(error && error.codeName ? error.codeName : '').toLowerCase();
+
+  return (
+    codeName === 'illegaloperation' ||
+    message.indexOf('transaction numbers are only allowed') !== -1 ||
+    message.indexOf('replica set member or mongos') !== -1 ||
+    message.indexOf('transactions are not supported') !== -1
+  );
+}
+
 async function findCategoryDocByName(categoryName) {
   let normalizedCategoryName = catalogService.normalizeForSearch(categoryName);
 
@@ -1056,97 +1069,114 @@ function saveProductImage(req, res) {
     let mutationResult = null;
     let uploadedImagePath = '';
 
-    if (uploadError) {
-      let uploadErrorCode = uploadError.code === 'LIMIT_FILE_SIZE' ? 'image-too-large' : 'invalid-image-file';
-      let uploadErrorMessage = uploadError.code === 'LIMIT_FILE_SIZE' ? 'Image too large' : 'Invalid image file';
-
-      if (isAjax) {
-        return res.status(400).json({ success: false, error: uploadErrorCode, message: uploadErrorMessage });
-      }
-
-      return res.redirect(buildErrorRedirect(redirectPath, uploadErrorCode));
-    }
-
-    if (!req.file) {
-      if (isAjax) {
-        return res.status(400).json({ success: false, error: 'product-image-file-required', message: 'Image file required' });
-      }
-
-      return res.redirect(buildErrorRedirect(redirectPath, 'product-image-file-required'));
-    }
-
-    if (!await ensureDatabaseConnection()) {
-      if (isAjax) {
-        return res.status(503).json({ success: false, error: 'db-unavailable', message: 'Database unavailable' });
-      }
-
-      return res.redirect(buildErrorRedirect(redirectPath, 'db-unavailable'));
-    }
-
-    uploadedImagePath = await catalogService.optimizeAndPromoteUploadedImage(req.file);
-
-    if (!uploadedImagePath) {
-      if (isAjax) {
-        return res.status(500).json({ success: false, error: 'cloudinary-upload-failed', message: 'Image upload failed' });
-      }
-
-      return res.redirect(buildErrorRedirect(redirectPath, 'cloudinary-upload-failed'));
-    }
-
-    mutationResult = await runAdminMutation(async function () {
-      let productId = catalogService.toTrimmedString(req.body.productId);
-      let productDoc = null;
-
-      if (!productId || !isValidEntityId(productId)) {
-        return {
-          ok: false,
-          errorCode: 'product-id-required',
-          message: 'Product ID required',
-          statusCode: 400,
-        };
-      }
-
-      productDoc = await Product.findOne(buildProductIdentifierFilter(productId));
-
-      if (!productDoc) {
-        return {
-          ok: false,
-          errorCode: 'product-not-found',
-          message: 'Product not found',
-          statusCode: 404,
-        };
-      }
-
-      productDoc.imageUrl = uploadedImagePath;
-      productDoc.images = catalogService.normalizeImageList([uploadedImagePath].concat(productDoc.images || []), uploadedImagePath);
-      await productDoc.save();
-      catalogService.clearCatalogContextCache();
-
-      return {
-        ok: true,
-        image: uploadedImagePath,
-      };
-    });
-
-    if (!mutationResult || !mutationResult.ok) {
-      await catalogService.cleanupLocalImageAsset(uploadedImagePath);
-
-      if (isAjax) {
-        return res.status(mutationResult && mutationResult.statusCode ? mutationResult.statusCode : 500).json({
-          success: false,
-          error: mutationResult && mutationResult.errorCode ? mutationResult.errorCode : 'save-failed',
-          message: mutationResult && mutationResult.message ? mutationResult.message : 'Failed to save image',
+    function sendErrorResponse(errorCode, message, statusCode) {
+      if (uploadedImagePath) {
+        catalogService.cleanupLocalImageAsset(uploadedImagePath).catch(function (error) {
+          console.error('Failed to cleanup rejected uploaded image:', error.message);
         });
       }
 
-      return res.redirect(buildErrorRedirect(redirectPath, mutationResult && mutationResult.errorCode ? mutationResult.errorCode : 'save-failed'));
+      if (!uploadedImagePath && req && req.file && req.file.path) {
+        fs.promises.unlink(req.file.path).catch(function (error) {
+          if (error && error.code !== 'ENOENT') {
+            console.error('Failed to cleanup rejected upload:', error.message);
+          }
+        });
+      }
+
+      if (isAjax) {
+        return res.status(statusCode || 400).json({ success: false, error: errorCode, message: message });
+      }
+
+      return res.redirect(buildErrorRedirect(redirectPath, errorCode));
     }
 
-    if (isAjax) {
-      return res.json({ success: true, message: 'Image saved successfully', image: mutationResult.image });
-    }
+    try {
+      if (uploadError) {
+        return sendErrorResponse(
+          uploadError.code === 'LIMIT_FILE_SIZE' ? 'image-too-large' : 'invalid-image-file',
+          uploadError.code === 'LIMIT_FILE_SIZE' ? 'Image too large' : 'Invalid image file',
+          400
+        );
+      }
 
-    return res.redirect(buildStatusRedirect(redirectPath, 'image-saved'));
+      if (!req.file) {
+        return sendErrorResponse('product-image-file-required', 'Image file required', 400);
+      }
+
+      if (!await ensureDatabaseConnection()) {
+        return sendErrorResponse('db-unavailable', 'Database unavailable', 503);
+      }
+
+      uploadedImagePath = await catalogService.optimizeAndPromoteUploadedImage(req.file);
+
+      if (!uploadedImagePath) {
+        return sendErrorResponse('invalid-image-file', 'Image upload failed', 400);
+      }
+
+      mutationResult = await runAdminMutation(async function () {
+        let productId = catalogService.toTrimmedString(req.body.productId);
+        let productDoc = null;
+
+        if (!productId || !isValidEntityId(productId)) {
+          return {
+            ok: false,
+            errorCode: 'product-id-required',
+            message: 'Product ID required',
+            statusCode: 400,
+          };
+        }
+
+        productDoc = await Product.findOne(buildProductIdentifierFilter(productId));
+
+        if (!productDoc) {
+          return {
+            ok: false,
+            errorCode: 'product-not-found',
+            message: 'Product not found',
+            statusCode: 404,
+          };
+        }
+
+        productDoc.imageUrl = uploadedImagePath;
+        productDoc.images = catalogService.normalizeImageList([uploadedImagePath].concat(productDoc.images || []), uploadedImagePath);
+        await productDoc.save();
+        catalogService.clearCatalogContextCache();
+
+        return {
+          ok: true,
+          image: uploadedImagePath,
+        };
+      });
+
+      if (!mutationResult || !mutationResult.ok) {
+        return sendErrorResponse(
+          mutationResult && mutationResult.errorCode ? mutationResult.errorCode : 'save-failed',
+          mutationResult && mutationResult.message ? mutationResult.message : 'Failed to save image',
+          mutationResult && mutationResult.statusCode ? mutationResult.statusCode : 500
+        );
+      }
+
+      if (isAjax) {
+        return res.json({ success: true, message: 'Image saved successfully', image: mutationResult.image });
+      }
+
+      return res.redirect(buildStatusRedirect(redirectPath, 'image-saved'));
+    } catch (error) {
+      console.error('[ERROR]', {
+        route: req && req.originalUrl ? req.originalUrl : '',
+        method: req && req.method ? req.method : '',
+        message: error && error.message ? error.message : 'Unknown error',
+        stack: error && error.stack ? error.stack : '',
+        timestamp: new Date().toISOString(),
+      });
+
+      if (res.headersSent) {
+        return;
+      }
+
+      return sendErrorResponse('save-failed', 'Failed to save image', 500);
+    }
   });
 }
 
@@ -1161,6 +1191,13 @@ async function editProduct(req, res) {
       await catalogService.cleanupLocalImageAsset(uploadedImagePath).catch(err =>
         console.error('Failed to cleanup rejected uploaded image:', err.message)
       );
+    }
+    if (!uploadedImagePath && req && req.file && req.file.path) {
+      await fs.promises.unlink(req.file.path).catch(function (error) {
+        if (error && error.code !== 'ENOENT') {
+          console.error('Failed to cleanup rejected upload:', error.message);
+        }
+      });
     }
     if (isAjax) return res.status(statusCode).json({ success: false, error: errorCode, message });
     return res.redirect(buildErrorRedirect(redirectPath, errorCode));
@@ -1244,7 +1281,18 @@ async function editProduct(req, res) {
       return res.redirect(buildStatusRedirect(redirectPath, 'product-updated'));
 
     } catch (err) {
-      console.error(err);
+      console.error('[ERROR]', {
+        route: req && req.originalUrl ? req.originalUrl : '',
+        method: req && req.method ? req.method : '',
+        name: err && err.name ? String(err.name) : 'Error',
+        message: err && err.message ? String(err.message) : 'Product edit failed',
+        stack: err && err.stack ? String(err.stack) : '',
+        timestamp: new Date().toISOString(),
+      });
+
+      if (isDuplicateKeyError(err)) {
+        return sendError('duplicate-product', 'Product already exists', 409);
+      }
       return sendError('save-failed', 'Unexpected error occurred', 500);
     }
   });
@@ -1518,6 +1566,7 @@ async function acceptOrderRequest(req, res) {
   let adminMessage = normalizeMultilineText(requestBody.adminMessage);
   let redirectPath = getSafeRedirectPath(req, defaultAdminOrdersPath);
   let isAjax = isAjaxRequest(req);
+  let requestId = req && req.requestId ? String(req.requestId) : '';
   let claimedOrder = null;
   let productDoc = null;
   let updatedProduct = null;
@@ -1529,7 +1578,12 @@ async function acceptOrderRequest(req, res) {
 
   function sendErrorResponse(errorCode, message, statusCode) {
     if (isAjax) {
-      return res.status(statusCode || 400).json({ success: false, error: errorCode, message: message });
+      return res.status(statusCode || 400).json({
+        success: false,
+        error: errorCode,
+        message: message,
+        requestId: requestId,
+      });
     }
 
     return res.redirect(buildErrorRedirect(redirectPath, errorCode));
@@ -1542,6 +1596,7 @@ async function acceptOrderRequest(req, res) {
         message: message,
         orderId: orderId,
         alreadyAccepted: Boolean(alreadyAccepted),
+        requestId: requestId,
       });
     }
 
@@ -1562,6 +1617,194 @@ async function acceptOrderRequest(req, res) {
 
   if (!await ensureDatabaseConnection()) {
     return sendErrorResponse('db-unavailable', 'Database unavailable', 503);
+  }
+
+  if (config.app.isProduction) {
+    let session = null;
+    let transactionResult = null;
+
+    try {
+      session = await mongoose.startSession();
+
+      transactionResult = await session.withTransaction(async function () {
+        let claimedOrder = await Order.findOneAndUpdate(
+          { _id: orderId, adminStatus: 'pending' },
+          {
+            $set: {
+              adminStatus: 'processing',
+              adminMessage: adminMessage,
+              adminAcceptedAt: null,
+            },
+          },
+          { returnDocument: 'after', session: session }
+        );
+
+        if (!claimedOrder) {
+          claimedOrder = await Order.findById(orderId).session(session);
+
+          if (!claimedOrder) {
+            return { kind: 'order-not-found' };
+          }
+
+          if (catalogService.toTrimmedString(claimedOrder.adminStatus).toLowerCase() === 'accepted') {
+            return { kind: 'already-accepted' };
+          }
+
+          return { kind: 'already-processing' };
+        }
+
+        let orderQuantity = parsePositiveInteger(claimedOrder.quantity, 1);
+        let productDoc = null;
+        let updatedProduct = null;
+
+        if (claimedOrder.product) {
+          productDoc = await Product.findById(claimedOrder.product).session(session);
+        }
+
+        if (!productDoc && claimedOrder.productId) {
+          productDoc = await Product.findOne(buildProductIdentifierFilter(claimedOrder.productId)).session(session);
+        }
+
+        if (productDoc) {
+          updatedProduct = await Product.findOneAndUpdate(
+            { _id: productDoc._id, quantity: mongoose.trusted({ $gte: orderQuantity }) },
+            { $inc: { quantity: -orderQuantity } },
+            { returnDocument: 'after', session: session }
+          );
+
+          if (!updatedProduct) {
+            await Order.updateOne(
+              { _id: orderId, adminStatus: 'processing' },
+              {
+                $set: {
+                  adminStatus: 'pending',
+                  adminMessage: adminMessage || '',
+                  adminAcceptedAt: null,
+                },
+              },
+              { session: session }
+            );
+
+            if (Number(productDoc.quantity) < 1) {
+              return { kind: 'out-of-stock' };
+            }
+
+            return { kind: 'insufficient-stock' };
+          }
+        }
+
+        let acceptedOrder = await Order.findOneAndUpdate(
+          { _id: orderId, adminStatus: 'processing' },
+          {
+            $set: {
+              adminStatus: 'accepted',
+              adminMessage: adminMessage,
+              adminAcceptedAt: new Date(),
+              adminEmailNotificationSent: false,
+            },
+          },
+          { returnDocument: 'after', session: session }
+        );
+
+        if (!acceptedOrder) {
+          throw new Error('order-accept-update-failed');
+        }
+
+        return { kind: 'accepted', order: acceptedOrder };
+      }, {
+        readConcern: { level: 'snapshot' },
+        writeConcern: { w: 'majority' },
+      });
+
+      if (!transactionResult || typeof transactionResult !== 'object' || !transactionResult.kind) {
+        throw new Error('order-accept-transaction-failed');
+      }
+
+      if (transactionResult.kind === 'order-not-found') {
+        return sendErrorResponse('order-not-found', 'Order not found', 404);
+      }
+
+      if (transactionResult.kind === 'already-accepted') {
+        return sendSuccessResponse('Order already accepted', true);
+      }
+
+      if (transactionResult.kind === 'already-processing') {
+        return sendErrorResponse('save-failed', 'Order is already being processed', 409);
+      }
+
+      if (transactionResult.kind === 'out-of-stock') {
+        return sendErrorResponse('out-of-stock', 'Product out of stock', 400);
+      }
+
+      if (transactionResult.kind === 'insufficient-stock') {
+        return sendErrorResponse('insufficient-stock', 'Insufficient stock', 400);
+      }
+
+      if (transactionResult.kind !== 'accepted') {
+        throw new Error('order-accept-transaction-invalid-result');
+      }
+
+      acceptedOrder = transactionResult.order;
+      catalogService.clearCatalogContextCache();
+
+      customerEmail = normalizeEmail(acceptedOrder && acceptedOrder.customerEmail);
+      productName = catalogService.toTrimmedString(acceptedOrder && acceptedOrder.productName) || 'Product';
+      emailSubject = 'Order accepted: ' + productName;
+
+      if (customerEmail && isLikelyEmailAddress(customerEmail) && acceptedOrder && acceptedOrder._id) {
+        Promise.resolve().then(async function () {
+          let sendResult = null;
+          let refreshedOrder = null;
+
+          try {
+            sendResult = await resendService.sendEmail({
+              to: customerEmail,
+              subject: emailSubject,
+              text: buildAdminOrderAcceptedEmailText(acceptedOrder, adminMessage),
+              html: buildAdminOrderAcceptedEmailHtml(acceptedOrder, adminMessage),
+            });
+
+            if (!sendResult.ok) {
+              console.error('Order accepted email failed:', sendResult.errorCode || 'unknown');
+              return;
+            }
+
+            refreshedOrder = await Order.findById(acceptedOrder._id);
+            if (!refreshedOrder) {
+              return;
+            }
+
+            refreshedOrder.adminEmailNotificationSent = true;
+            await refreshedOrder.save();
+          } catch (emailError) {
+            console.error('Order accepted email async failed:', emailError.message);
+          }
+        });
+      }
+
+      return sendSuccessResponse('Order accepted successfully', false);
+    } catch (error) {
+      console.error('[ERROR]', {
+        route: req && req.originalUrl ? req.originalUrl : '',
+        method: req && req.method ? req.method : '',
+        name: error && error.name ? String(error.name) : 'Error',
+        message: error && error.message ? String(error.message) : 'Order accept transaction failed',
+        stack: error && error.stack ? String(error.stack) : '',
+        timestamp: new Date().toISOString(),
+        requestId: requestId,
+        orderId: orderId,
+      });
+
+      if (isTransactionNotSupportedError(error)) {
+        return sendErrorResponse('db-unavailable', 'Database must support transactions to accept orders', 503);
+      }
+
+      return sendErrorResponse('save-failed', 'Failed to process order', 500);
+    } finally {
+      if (session) {
+        session.endSession();
+      }
+    }
   }
 
   try {
@@ -1619,8 +1862,8 @@ async function acceptOrderRequest(req, res) {
       }
     }
 
-    acceptedOrder = await Order.findByIdAndUpdate(
-      orderId,
+    acceptedOrder = await Order.findOneAndUpdate(
+      { _id: orderId, adminStatus: 'processing' },
       {
         $set: {
           adminStatus: 'accepted',
@@ -1631,6 +1874,10 @@ async function acceptOrderRequest(req, res) {
       },
       { returnDocument: 'after' }
     );
+
+    if (!acceptedOrder) {
+      throw new Error('order-accept-update-failed');
+    }
 
     catalogService.clearCatalogContextCache();
 
@@ -1671,7 +1918,16 @@ async function acceptOrderRequest(req, res) {
 
     return sendSuccessResponse('Order accepted successfully', false);
   } catch (error) {
-    console.error('Order accept action failed:', error.message);
+    console.error('[ERROR]', {
+      route: req && req.originalUrl ? req.originalUrl : '',
+      method: req && req.method ? req.method : '',
+      name: error && error.name ? String(error.name) : 'Error',
+      message: error && error.message ? String(error.message) : 'Order accept action failed',
+      stack: error && error.stack ? String(error.stack) : '',
+      timestamp: new Date().toISOString(),
+      requestId: requestId,
+      orderId: orderId,
+    });
     if (updatedProduct && updatedProduct._id && !acceptedOrder) {
       try {
         await Product.updateOne({ _id: updatedProduct._id }, { $inc: { quantity: orderQuantity } });
@@ -1724,7 +1980,15 @@ async function deleteOrderRequest(req, res) {
 
     return res.redirect(buildStatusRedirect(redirectPath, 'order-deleted'));
   } catch (error) {
-    console.error('Order delete action failed:', error.message);
+    console.error('[ERROR]', {
+      route: req && req.originalUrl ? req.originalUrl : '',
+      method: req && req.method ? req.method : '',
+      name: error && error.name ? String(error.name) : 'Error',
+      message: error && error.message ? String(error.message) : 'Order delete action failed',
+      stack: error && error.stack ? String(error.stack) : '',
+      timestamp: new Date().toISOString(),
+      orderId: orderId,
+    });
     return sendErrorResponse('save-failed', 'Failed to delete order', 500);
   }
 }
@@ -1770,108 +2034,137 @@ function saveProduct(req, res) {
       return sendErrorResponse('product-image-file-required', 'Product image required', 400);
     }
 
-    if (!await ensureDatabaseConnection()) {
-      return sendErrorResponse('db-unavailable', 'Database unavailable', 503);
-    }
-
-    let categoryName = normalizeSingleLineText(req.body.productCategory);
-    let productName = normalizeSingleLineText(req.body.productName);
-    let rawProductSpec = normalizeMultilineText(req.body.productSpec);
-    let productSpec = buildProductSpec(categoryName, rawProductSpec);
-    let productPricing = resolveProductPricing(req.body.productPrice, req.body.productDiscountPercent);
-
-    if (!categoryName || !isWithinLength(categoryName, maxCategoryNameLength)) {
-      return sendErrorResponse('product-category-required', 'Product category required', 400);
-    }
-
-    if (!productName || !isWithinLength(productName, maxProductNameLength)) {
-      return sendErrorResponse('product-name-required', 'Product name required', 400);
-    }
-
-    if (!hasValidPriceValue(req.body.productPrice) || productPricing.isPriceMissing || !Number.isFinite(productPricing.priceValue)) {
-      return sendErrorResponse('product-price-required', 'Valid price required', 400);
-    }
-
-    if (!isWithinLength(rawProductSpec, maxProductSpecLength) || !hasValidQuantityValue(req.body.productQuantity)) {
-      return sendErrorResponse('invalid-input', 'Invalid input', 400);
-    }
-
-    uploadedImagePath = await catalogService.optimizeAndPromoteUploadedImage(req.file);
-
-    if (!uploadedImagePath) {
-      return sendErrorResponse('cloudinary-upload-failed', 'Image upload failed', 500);
-    }
-
-    mutationResult = await runAdminMutation(async function () {
-      let categoryDoc = await findOrCreateCategoryDocByName(categoryName);
-      let duplicateProduct = null;
-      let legacyId = '';
-      let createdProduct = null;
-      let productDto = null;
-
-      if (!categoryDoc) {
-        return {
-          ok: false,
-          errorCode: 'category-not-found',
-          message: 'Category not found',
-          statusCode: 404,
-        };
+    try {
+      if (!await ensureDatabaseConnection()) {
+        return sendErrorResponse('db-unavailable', 'Database unavailable', 503);
       }
 
-      duplicateProduct = await Product.findOne({
-        category: categoryDoc._id,
-        normalizedName: catalogService.normalizeForSearch(productName),
-      }).select('_id');
+      let categoryName = normalizeSingleLineText(req.body.productCategory);
+      let productName = normalizeSingleLineText(req.body.productName);
+      let rawProductSpec = normalizeMultilineText(req.body.productSpec);
+      let productSpec = buildProductSpec(categoryName, rawProductSpec);
+      let productPricing = resolveProductPricing(req.body.productPrice, req.body.productDiscountPercent);
 
-      if (duplicateProduct) {
-        return {
-          ok: false,
-          errorCode: 'duplicate-product',
-          message: 'Product already exists',
-          statusCode: 409,
-        };
+      if (!categoryName || !isWithinLength(categoryName, maxCategoryNameLength)) {
+        return sendErrorResponse('product-category-required', 'Product category required', 400);
       }
 
-      legacyId = await catalogService.buildUniqueProductLegacyId(categoryDoc.name, productName);
+      if (!productName || !isWithinLength(productName, maxProductNameLength)) {
+        return sendErrorResponse('product-name-required', 'Product name required', 400);
+      }
 
-      createdProduct = await Product.create({
-        legacyId: legacyId,
-        category: categoryDoc._id,
-        name: productName,
-        description: productSpec,
-        spec: productSpec,
-        price: productPricing.priceValue,
-        compareAtPrice: productPricing.compareAtPriceValue,
-        quantity: Math.max(0, Math.floor(parseNonNegativeNumber(req.body.productQuantity))),
-        imageUrl: uploadedImagePath,
-        images: catalogService.normalizeImageList([uploadedImagePath], uploadedImagePath),
-        searchKeywords: [categoryDoc.name, productName],
-        status: 'active',
-        isActive: true,
+      if (!hasValidPriceValue(req.body.productPrice) || productPricing.isPriceMissing || !Number.isFinite(productPricing.priceValue)) {
+        return sendErrorResponse('product-price-required', 'Valid price required', 400);
+      }
+
+      if (!isWithinLength(rawProductSpec, maxProductSpecLength) || !hasValidQuantityValue(req.body.productQuantity)) {
+        return sendErrorResponse('invalid-input', 'Invalid input', 400);
+      }
+
+      uploadedImagePath = await catalogService.optimizeAndPromoteUploadedImage(req.file);
+
+      if (!uploadedImagePath) {
+        return sendErrorResponse('invalid-image-file', 'Image upload failed', 400);
+      }
+
+      mutationResult = await runAdminMutation(async function () {
+        let categoryDoc = await findOrCreateCategoryDocByName(categoryName);
+        let duplicateProduct = null;
+        let legacyId = '';
+        let createdProduct = null;
+        let productDto = null;
+
+        if (!categoryDoc) {
+          return {
+            ok: false,
+            errorCode: 'category-not-found',
+            message: 'Category not found',
+            statusCode: 404,
+          };
+        }
+
+        duplicateProduct = await Product.findOne({
+          category: categoryDoc._id,
+          normalizedName: catalogService.normalizeForSearch(productName),
+        }).select('_id');
+
+        if (duplicateProduct) {
+          return {
+            ok: false,
+            errorCode: 'duplicate-product',
+            message: 'Product already exists',
+            statusCode: 409,
+          };
+        }
+
+        legacyId = await catalogService.buildUniqueProductLegacyId(categoryDoc.name, productName);
+
+        try {
+          createdProduct = await Product.create({
+            legacyId: legacyId,
+            category: categoryDoc._id,
+            name: productName,
+            description: productSpec,
+            spec: productSpec,
+            price: productPricing.priceValue,
+            compareAtPrice: productPricing.compareAtPriceValue,
+            quantity: Math.max(0, Math.floor(parseNonNegativeNumber(req.body.productQuantity))),
+            imageUrl: uploadedImagePath,
+            images: catalogService.normalizeImageList([uploadedImagePath], uploadedImagePath),
+            searchKeywords: [categoryDoc.name, productName],
+            status: 'active',
+            isActive: true,
+          });
+        } catch (error) {
+          if (isDuplicateKeyError(error)) {
+            return {
+              ok: false,
+              errorCode: 'duplicate-product',
+              message: 'Product already exists',
+              statusCode: 409,
+            };
+          }
+
+          throw error;
+        }
+
+        catalogService.clearCatalogContextCache();
+        productDto = await loadProductDtoById(createdProduct.legacyId || String(createdProduct._id));
+
+        return {
+          ok: true,
+          product: productDto,
+        };
       });
 
-      catalogService.clearCatalogContextCache();
-      productDto = await loadProductDtoById(createdProduct.legacyId || String(createdProduct._id));
+      if (!mutationResult || !mutationResult.ok) {
+        return sendErrorResponse(
+          mutationResult && mutationResult.errorCode ? mutationResult.errorCode : 'save-failed',
+          mutationResult && mutationResult.message ? mutationResult.message : 'Failed to save product',
+          mutationResult && mutationResult.statusCode ? mutationResult.statusCode : 500
+        );
+      }
 
-      return {
-        ok: true,
-        product: productDto,
-      };
-    });
+      if (isAjax) {
+        return res.json({ success: true, message: 'Product saved successfully', product: mutationResult.product });
+      }
 
-    if (!mutationResult || !mutationResult.ok) {
-      return sendErrorResponse(
-        mutationResult && mutationResult.errorCode ? mutationResult.errorCode : 'save-failed',
-        mutationResult && mutationResult.message ? mutationResult.message : 'Failed to save product',
-        mutationResult && mutationResult.statusCode ? mutationResult.statusCode : 500
-      );
+      return res.redirect(buildStatusRedirect(redirectPath, 'product-saved'));
+    } catch (error) {
+      console.error('[ERROR]', {
+        route: req && req.originalUrl ? req.originalUrl : '',
+        method: req && req.method ? req.method : '',
+        message: error && error.message ? error.message : 'Unknown error',
+        stack: error && error.stack ? error.stack : '',
+        timestamp: new Date().toISOString(),
+      });
+
+      if (res.headersSent) {
+        return;
+      }
+
+      return sendErrorResponse('save-failed', 'Failed to save product', 500);
     }
-
-    if (isAjax) {
-      return res.json({ success: true, message: 'Product saved successfully', product: mutationResult.product });
-    }
-
-    return res.redirect(buildStatusRedirect(redirectPath, 'product-saved'));
   });
 }
 export default {
